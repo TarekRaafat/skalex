@@ -1,5 +1,5 @@
 {
-  "name": "onebase",
+  "name": "skalex",
   "version": "1.0.0",
   "description": "A simple local file-based database",
   "main": "index.js",

@@ -1,3 +1,3 @@
-const OneBase = require("./src/database");
+const Skalex = require("./src/database");
 
-module.exports = OneBase;
+module.exports = Skalex;
