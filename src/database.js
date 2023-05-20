@@ -1,4 +1,5 @@
 const fs = require("fs");
+const Collection = require("./collections");
 
 class Database {
   constructor(dataDirectory) {
