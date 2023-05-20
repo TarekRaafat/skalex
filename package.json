@@ -1,0 +1,25 @@
+{
+  "name": "onebase",
+  "version": "1.0.0",
+  "description": "A simple local file-based database",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TarekRaafat/OneBase.git"
+  },
+  "keywords": [
+    "simple",
+    "local",
+    "file-based",
+    "database"
+  ],
+  "author": "Tarek Raafat",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/TarekRaafat/OneBase/issues"
+  },
+  "homepage": "https://github.com/TarekRaafat/OneBase#readme"
+}
