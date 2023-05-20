@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TarekRaafat/OneBase.git"
+    "url": "git+https://github.com/TarekRaafat/Skalex.git"
   },
   "keywords": [
     "simple",
@@ -20,7 +20,7 @@
   "author": "Tarek Raafat",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/TarekRaafat/OneBase/issues"
+    "url": "https://github.com/TarekRaafat/Skalex/issues"
   },
-  "homepage": "https://github.com/TarekRaafat/OneBase#readme"
+  "homepage": "https://github.com/TarekRaafat/Skalex#readme"
 }
