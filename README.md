@@ -2,14 +2,14 @@
 
 <br>
 
-# Skalex
+# skalex
 
 Skalex is an innovative local hybrid file-based and table-based JavaScript database that can be used on server or in the browser. It provides a simple yet highly flexible solution for developers to scale their applications quickly and easily, enabling them to customize it according to their specific needs.
 
 Skalex also offers a wide range of features such as easy setup, and fast response times making it an ideal choice for small to medium projects looking for a reliable data storage solution.
 
-
 # Todo
+
 - [ ] Documentation
 - [ ] Table-based option
 - [ ] Remote db access
@@ -21,6 +21,6 @@ Skalex also offers a wide range of features such as easy setup, and fast respons
 - [ ] Improve error handling
 - [ ] Add `createdAt` and `updatedAt`
 - [ ] Surgical saving process
-- [ ] Setting a threshold for saving
+- [ ] Auto Saving threshold
 - [ ] Enhance Memory usage
 - [ ] Improve index search utilize `Map`
