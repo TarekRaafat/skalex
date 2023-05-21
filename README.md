@@ -14,7 +14,7 @@ Skalex also offers a wide range of features such as easy setup, and fast respons
 - [ ] Table-based option
 - [ ] Remote db access
 - [ ] Automated backup
-- [ ] Filtering by REGEX
+- [ ] Filtering by `REGEX`
 - [ ] Table relations
 - [ ] Data projection
 - [ ] Data population
@@ -23,5 +23,4 @@ Skalex also offers a wide range of features such as easy setup, and fast respons
 - [ ] Surgical saving process
 - [ ] Setting a threshold for saving
 - [ ] Enhance Memory usage
-- [ ] Add schema and validation
 - [ ] Improve index search utilize `Map`
