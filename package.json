@@ -1,7 +1,7 @@
 {
   "name": "skalex",
-  "version": "1.1.1",
-  "description": "A simple local file-based database",
+  "version": "1.1.2",
+  "description": "Simple & intuitive way to manage collections of data.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
