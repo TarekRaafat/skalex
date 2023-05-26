@@ -1,10 +1,30 @@
 const fs = require("fs");
 const Collection = require("./collections");
 
+/**
+ * Skalex is a simple JavaScript code library for managing a database with collections.
+ * @class
+ */
 class Skalex {
+  /**
+   * Creates an instance of Skalex.
+   * @param {string} dataDirectory - The directory where data files will be stored.
+   */
   constructor(dataDirectory) {
+    /**
+     * The directory where data files are stored.
+     * @type {string}
+     */
     this.dataDirectory = dataDirectory;
+    /**
+     * The collections in the database.
+     * @type {object}
+     */
     this.collections = {};
+    /**
+     * Indicates whether the database is connected or not.
+     * @type {boolean}
+     */
     this.isConnected = false;
 
     // Create the data directory if it does not exist
@@ -13,7 +33,10 @@ class Skalex {
     }
   }
 
-  // Connect to the database
+  /**
+   * Connects to the database and loads existing data.
+   * @returns {Promise<void>}
+   */
   async connect() {
     try {
       // Load existing data
@@ -26,7 +49,10 @@ class Skalex {
     }
   }
 
-  // Disconnect from the database
+  /**
+   * Disconnects from the database and saves data.
+   * @returns {Promise<void>}
+   */
   async disconnect() {
     try {
       // Save data before disconnecting
@@ -39,7 +65,11 @@ class Skalex {
     }
   }
 
-  // Use a collection in the database
+  /**
+   * Retrieves an existing collection or creates a new one.
+   * @param {string} collectionName - The name of the collection.
+   * @returns {Collection} The collection object.
+   */
   useCollection(collectionName) {
     if (this.collections[collectionName]) {
       // Collection already exists, return it
@@ -50,7 +80,11 @@ class Skalex {
     return this.createCollection(collectionName);
   }
 
-  // Create a new collection
+  /**
+   * Creates a new collection.
+   * @param {string} collectionName - The name of the collection.
+   * @returns {Collection} The new collection object.
+   */
   createCollection(collectionName) {
     this.collections[collectionName] = {
       collectionName,
@@ -61,7 +95,10 @@ class Skalex {
     return new Collection(this.collections[collectionName], this);
   }
 
-  // Load data from JSON files in the data directory
+  /**
+   * Loads data from JSON files in the data directory.
+   * @returns {Promise<void>}
+   */
   async loadData() {
     try {
       const filenames = await fs.promises.readdir(this.dataDirectory);
@@ -84,7 +121,11 @@ class Skalex {
     }
   }
 
-  // Save data to JSON files in the data directory
+  /**
+   * Saves data to JSON files in the data directory.
+   * @param {any} [output] - Output data.
+   * @returns {Promise<any>} The output data.
+   */
   async saveData(output) {
     try {
       await fs.promises.mkdir(this.dataDirectory, { recursive: true });
@@ -110,7 +151,11 @@ class Skalex {
     }
   }
 
-  // Build index for quick document lookup
+  /**
+   * Builds an index for quick document lookup.
+   * @param {Array} data - The data to build the index from.
+   * @returns {Map} The index map.
+   */
   buildIndex(data) {
     const index = new Map();
 

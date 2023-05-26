@@ -1,14 +1,43 @@
 const fs = require("fs");
 
+/**
+ * Collection represents a collection of documents in the database.
+ * @class
+ */
 class Collection {
+  /**
+   * Creates an instance of Collection.
+   * @param {object} collectionData - The data of the collection.
+   * @param {Skalex} database - The Skalex database instance.
+   */
   constructor(collectionData, database) {
+    /**
+     * The name of the collection.
+     * @type {string}
+     */
     this.name = collectionData.collectionName;
+    /**
+     * The data stored in the collection.
+     * @type {Array}
+     */
     this.data = collectionData.data;
+    /**
+     * The index map for quick document lookup.
+     * @type {Map}
+     */
     this.index = collectionData.index;
+    /**
+     * The Skalex database instance.
+     * @type {Skalex}
+     */
     this.database = database;
   }
 
-  // Insert a single document into the collection
+  /**
+   * Inserts a single document into the collection.
+   * @param {object} item - The document to insert.
+   * @returns {object} An object containing the inserted document and a save function to save the data.
+   */
   insertOne(item) {
     const newItem = {
       _id: generateUniqueId(),
@@ -23,7 +52,11 @@ class Collection {
     };
   }
 
-  // Insert multiple documents into the collection
+  /**
+   * Inserts multiple documents into the collection.
+   * @param {Array} items - The documents to insert.
+   * @returns {object} An object containing the inserted documents and a save function to save the data.
+   */
   insertMany(items) {
     const newItems = items.map((item) => ({
       _id: generateUniqueId(),
@@ -40,7 +73,12 @@ class Collection {
     };
   }
 
-  // Update a single document in the collection
+  /**
+   * Updates a single document in the collection.
+   * @param {object} filter - The filter to find the document to update.
+   * @param {object} update - The update to apply to the document.
+   * @returns {object|null} An object containing the updated document and a save function to save the data, or null if no document was found.
+   */
   updateOne(filter, update) {
     const item = this.findOne(filter);
     if (item) {
@@ -53,7 +91,12 @@ class Collection {
     return null;
   }
 
-  // Update multiple documents in the collection
+  /**
+   * Updates multiple documents in the collection.
+   * @param {object} filter - The filter to find the documents to update.
+   * @param {object} update - The update to apply to the documents.
+   * @returns {object|Array} An object containing the updated documents and a save function to save the data, or an empty array if no documents were found.
+   */
   updateMany(filter, update) {
     const items = this.find(filter);
     if (items.length > 0) {
@@ -68,7 +111,11 @@ class Collection {
     return [];
   }
 
-  // Find a single document in the collection
+  /**
+   * Finds a single document in the collection.
+   * @param {object} filter - The filter to match the document.
+   * @returns {object|null} The matching document, or null if no document was found.
+   */
   findOne(filter) {
     const index = this.findIndex(filter);
     if (index !== -1) {
@@ -81,7 +128,14 @@ class Collection {
     return null;
   }
 
-  // Find documents in the collection based on a filter
+  /**
+   * Finds documents in the collection based on a filter.
+   * @param {object} filter - The filter to match the documents.
+   * @param {object} options - The options for the find operation.
+   * @param {Array} options.populate - The fields to populate with related data.
+   * @param {Array} options.select - The fields to select from the documents.
+   * @returns {Array} The matching documents.
+   */
   find(filter, options = {}) {
     const { populate, select } = options;
 
@@ -125,7 +179,11 @@ class Collection {
     return result;
   }
 
-  // Delete a single document from the collection
+  /**
+   * Deletes a single document from the collection.
+   * @param {object} filter - The filter to find the document to delete.
+   * @returns {object|null} An object containing the deleted document and a save function to save the data, or null if no document was found.
+   */
   deleteOne(filter) {
     const index = this.findIndex(filter);
     if (index !== -1) {
@@ -139,7 +197,11 @@ class Collection {
     return null;
   }
 
-  // Delete multiple documents from the collection
+  /**
+   * Deletes multiple documents from the collection.
+   * @param {object} filter - The filter to find the documents to delete.
+   * @returns {Array} An array containing the deleted documents and a save function to save the data.
+   */
   deleteMany(filter) {
     const deletedItems = [];
     const remainingItems = [];
@@ -158,7 +220,12 @@ class Collection {
     };
   }
 
-  // Check if a document matches a filter
+  /**
+   * Checks if a document matches a filter.
+   * @param {object} document - The document to check.
+   * @param {object} filter - The filter to match.
+   * @returns {boolean} Whether the document matches the filter or not.
+   */
   matchesFilter(item, filter) {
     for (const key in filter) {
       const filterValue = filter[key];
@@ -201,7 +268,11 @@ class Collection {
     return true;
   }
 
-  // Find the index of a document in the collection based on a filter
+  /**
+   * Finds the index of the first document that matches a filter.
+   * @param {object} filter - The filter to match.
+   * @returns {number} The index of the matching document, or -1 if no document was found.
+   */
   findIndex(filter) {
     for (let i = 0; i < this.data.length; i++) {
       const item = this.data[i];
@@ -212,7 +283,11 @@ class Collection {
     return -1;
   }
 
-  // Export data to CSV file in the root directory
+  /**
+   * Exports the filtered collection data to a CSV file in the root directory.
+   * @param {object} filter - The filter to match the documents to export (default: {}).
+   * @throws {Error} If no matching data is found.
+   */
   exportToCSV(filter = {}) {
     const filteredData = this.data.filter((item) =>
       this.matchesFilter(item, filter)
@@ -230,7 +305,10 @@ class Collection {
   }
 }
 
-// Generate a unique ID for a document
+/**
+ * Generates a unique ID.
+ * @returns {string} The unique ID.
+ */
 function generateUniqueId() {
   // A simple implementation to generate unique IDs (not guaranteed to be globally unique)
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
