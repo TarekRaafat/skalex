@@ -13,8 +13,10 @@ class Skalex {
     }
   }
 
+  // Connect to the database
   async connect() {
     try {
+      // Load existing data
       await this.loadData();
       this.isConnected = true;
       console.log(`> - Connected to the database (√)`);
@@ -24,8 +26,10 @@ class Skalex {
     }
   }
 
+  // Disconnect from the database
   async disconnect() {
     try {
+      // Save data before disconnecting
       await this.saveData();
       this.collections = {};
       this.isConnected = false;
@@ -35,14 +39,18 @@ class Skalex {
     }
   }
 
+  // Use a collection in the database
   useCollection(collectionName) {
     if (this.collections[collectionName]) {
+      // Collection already exists, return it
       return new Collection(this.collections[collectionName], this);
     }
 
+    // Create a new collection and return it
     return this.createCollection(collectionName);
   }
 
+  // Create a new collection
   createCollection(collectionName) {
     this.collections[collectionName] = {
       collectionName,
@@ -53,6 +61,7 @@ class Skalex {
     return new Collection(this.collections[collectionName], this);
   }
 
+  // Load data from JSON files in the data directory
   async loadData() {
     try {
       const filenames = await fs.promises.readdir(this.dataDirectory);
@@ -75,6 +84,7 @@ class Skalex {
     }
   }
 
+  // Save data to JSON files in the data directory
   async saveData(output) {
     try {
       await fs.promises.mkdir(this.dataDirectory, { recursive: true });
@@ -100,6 +110,7 @@ class Skalex {
     }
   }
 
+  // Build index for quick document lookup
   buildIndex(data) {
     const index = new Map();
 

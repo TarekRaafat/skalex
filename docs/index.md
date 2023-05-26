@@ -1,8 +1,4 @@
-<img src="./docs/imgs/skalex_logo.png" alt= "skalex Logo" id="logo">
-
-<br>
-
-# Skalex
+# Skalex Documentation
 
 ## Introduction
 
@@ -250,20 +246,3 @@ await db.disconnect();
 ```
 
 Please note that these are just basic examples to illustrate the usage of the `Skalex` library. You can explore and utilize the various methods and options provided by the `Skalex` to suit your specific use case and data management requirements.
-
-# Todo
-
-- [x] Documentation
-- [x] Add `createdAt` and `updatedAt`
-- [x] Data projection
-- [x] Data population
-- [ ] Table-based option
-- [ ] Remote db access
-- [ ] Automated backup
-- [ ] Filtering by `REGEX`
-- [ ] Table relations
-- [ ] Improve error handling
-- [ ] Surgical saving process
-- [ ] Auto Saving threshold
-- [ ] Enhance Memory usage
-- [ ] Improve index search utilize `Map`

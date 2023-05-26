@@ -8,6 +8,7 @@ class Collection {
     this.database = database;
   }
 
+  // Insert a single document into the collection
   insertOne(item) {
     const newItem = {
       _id: generateUniqueId(),
@@ -22,6 +23,7 @@ class Collection {
     };
   }
 
+  // Insert multiple documents into the collection
   insertMany(items) {
     const newItems = items.map((item) => ({
       _id: generateUniqueId(),
@@ -38,6 +40,7 @@ class Collection {
     };
   }
 
+  // Update a single document in the collection
   updateOne(filter, update) {
     const item = this.findOne(filter);
     if (item) {
@@ -50,6 +53,7 @@ class Collection {
     return null;
   }
 
+  // Update multiple documents in the collection
   updateMany(filter, update) {
     const items = this.find(filter);
     if (items.length > 0) {
@@ -64,6 +68,7 @@ class Collection {
     return [];
   }
 
+  // Find a single document in the collection
   findOne(filter) {
     const index = this.findIndex(filter);
     if (index !== -1) {
@@ -76,6 +81,7 @@ class Collection {
     return null;
   }
 
+  // Find documents in the collection based on a filter
   find(filter, options = {}) {
     const { populate, select } = options;
 
@@ -119,6 +125,7 @@ class Collection {
     return result;
   }
 
+  // Delete a single document from the collection
   deleteOne(filter) {
     const index = this.findIndex(filter);
     if (index !== -1) {
@@ -132,6 +139,7 @@ class Collection {
     return null;
   }
 
+  // Delete multiple documents from the collection
   deleteMany(filter) {
     const deletedItems = [];
     const remainingItems = [];
@@ -150,6 +158,7 @@ class Collection {
     };
   }
 
+  // Check if a document matches a filter
   matchesFilter(item, filter) {
     for (const key in filter) {
       const filterValue = filter[key];
@@ -192,6 +201,7 @@ class Collection {
     return true;
   }
 
+  // Find the index of a document in the collection based on a filter
   findIndex(filter) {
     for (let i = 0; i < this.data.length; i++) {
       const item = this.data[i];
@@ -202,6 +212,7 @@ class Collection {
     return -1;
   }
 
+  // Export data to CSV file in the root directory
   exportToCSV(filter = {}) {
     const filteredData = this.data.filter((item) =>
       this.matchesFilter(item, filter)
@@ -219,6 +230,7 @@ class Collection {
   }
 }
 
+// Generate a unique ID for a document
 function generateUniqueId() {
   // A simple implementation to generate unique IDs (not guaranteed to be globally unique)
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
