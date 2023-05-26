@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Collection = require("./collections");
 
-class Database {
+class Skalex {
   constructor(dataDirectory) {
     this.dataDirectory = dataDirectory;
     this.collections = {};
@@ -13,17 +13,11 @@ class Database {
     }
   }
 
-  async connect(collectionName) {
+  async connect() {
     try {
       await this.loadData();
       this.isConnected = true;
-      console.log("Connected to the database");
-
-      if (this.collections[collectionName]) {
-        return new Collection(this.collections[collectionName], this);
-      }
-
-      return this.createCollection(collectionName);
+      console.log(`> - Connected to the database (√)`);
     } catch (error) {
       console.error("Error connecting to the database:", error);
       throw error;
@@ -35,10 +29,18 @@ class Database {
       await this.saveData();
       this.collections = {};
       this.isConnected = false;
-      console.log("Disconnected from the database");
+      console.log(`> - Disconnected from the database (√)`);
     } catch (error) {
       console.error("Error disconnecting from the database:", error);
     }
+  }
+
+  useCollection(collectionName) {
+    if (this.collections[collectionName]) {
+      return new Collection(this.collections[collectionName], this);
+    }
+
+    return this.createCollection(collectionName);
   }
 
   createCollection(collectionName) {
@@ -110,4 +112,4 @@ class Database {
   }
 }
 
-module.exports = Database;
+module.exports = Skalex;

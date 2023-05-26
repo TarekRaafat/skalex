@@ -8,8 +8,12 @@ class Collection {
     this.database = database;
   }
 
-  insertOne(data) {
-    const newItem = { _id: generateUniqueId(), ...data };
+  insertOne(item) {
+    const newItem = {
+      _id: generateUniqueId(),
+      ...item,
+      createdAt: new Date(),
+    };
     this.data.push(newItem);
     this.index.set(newItem._id, newItem);
     return {
@@ -18,8 +22,12 @@ class Collection {
     };
   }
 
-  insertMany(data) {
-    const newItems = data.map((item) => ({ _id: generateUniqueId(), ...item }));
+  insertMany(items) {
+    const newItems = items.map((item) => ({
+      _id: generateUniqueId(),
+      ...item,
+      createdAt: new Date(),
+    }));
     this.data.push(...newItems);
     for (const newItem of newItems) {
       this.index.set(newItem._id, newItem);
@@ -33,7 +41,7 @@ class Collection {
   updateOne(filter, update) {
     const item = this.findOne(filter);
     if (item) {
-      Object.assign(item, update);
+      Object.assign(item, { ...update, updatedAt: new Date() });
       return {
         data: item,
         save: () => this.database.saveData(item),
@@ -46,7 +54,7 @@ class Collection {
     const items = this.find(filter);
     if (items.length > 0) {
       for (const item of items) {
-        Object.assign(item, update);
+        Object.assign(item, { ...update, updatedAt: new Date() });
       }
       return {
         data: items,
@@ -68,13 +76,46 @@ class Collection {
     return null;
   }
 
-  find(filter) {
+  find(filter, options = {}) {
+    const { populate, select } = options;
+
     const result = [];
+
     for (const item of this.data) {
       if (this.matchesFilter(item, filter)) {
-        result.push(item);
+        const newItem = {};
+
+        // Populate related data if specified
+        if (populate) {
+          for (const field of populate) {
+            if (this.relations[field]) {
+              const relatedCollection = this.database.getCollection(
+                this.relations[field].collection
+              );
+              const relatedItem = relatedCollection.findOne({
+                _id: newItem[field],
+              });
+
+              if (relatedItem) {
+                newItem[field] = relatedItem;
+              }
+            }
+          }
+        }
+
+        // Select specified fields
+        if (select) {
+          for (const field of select) {
+            newItem[field] = item[field];
+          }
+        } else {
+          Object.assign(newItem, item);
+        }
+
+        result.push(newItem);
       }
     }
+
     return result;
   }
 

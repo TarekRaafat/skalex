@@ -1,3 +1,3 @@
-const Skalex = require("./src/database");
+const Skalex = require("./src/skalex");
 
 module.exports = Skalex;
