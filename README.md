@@ -10,7 +10,7 @@ The `Skalex` Library provides a simple and intuitive way to manage collections o
 
 ## Installation
 
-To use the Skalex library, you need to have Node.js installed on your machine. Then, follow these steps:
+To use the `Skalex` library, you need to have Node.js installed on your machine. Then, follow these steps:
 
 1. Create a new directory for your project.
 2. Open a terminal and navigate to the project directory.
@@ -18,14 +18,14 @@ To use the Skalex library, you need to have Node.js installed on your machine. T
    ```
    npm init -y
    ```
-4. Install the Skalex library by running the following command:
+4. Install the `Skalex` library by running the following command:
    ```
    npm install skalex
    ```
 
 ## Getting Started
 
-To start using the Skalex library, you need to require it in your JavaScript file. Here's an example:
+To start using the `Skalex` library, you need to require it in your JavaScript file. Here's an example:
 
 ```javascript
 const Skalex = require("skalex");
@@ -39,7 +39,7 @@ The `Skalex` class represents the main database instance. It provides methods fo
 
 - `dataDirectory` (string): The directory where the database files will be stored.
 
-Creates a new instance of the Skalex database.
+Creates a new instance of the `Skalex` database.
 
 #### Example
 
@@ -85,12 +85,9 @@ Saves the data from memory to the database files.
 
 ### Class: Collection
 
-The `Collection` class represents a collection of documents in the Skalex database. It provides methods for inserting, updating, deleting, and querying documents in the collection.
+The `Collection` class represents a collection of documents in the `Skalex` database. It provides methods for inserting, updating, deleting, and querying documents in the collection.
 
-#### Constructor: Collection(collectionData, database)
-
-- `collectionData` (object): The data of the collection.
-- `database` (Skalex): The parent database instance.
+#### Constructor: Collection()
 
 Creates a new instance of the Collection.
 
@@ -182,15 +179,6 @@ Deletes multiple documents from the collection that match the filter.
 
 - `data` (array): The deleted documents.
 - `save()` (function): Saves the collection data to the database.
-
-#### matchesFilter(item, filter)
-
-- `item` (object): The document to compare.
-- `filter` (object): The filter object.
-
-Checks if a document matches a given filter.
-
-**Returns**: boolean
 
 #### exportToCSV(filter)
 
