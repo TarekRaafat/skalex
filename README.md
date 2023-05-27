@@ -4,12 +4,12 @@
 
 # Skalex
 
-[![GitHub package.json version](https://img.shields.io/github/package-json/v/TarekRaafat/skalex)](https://badge.fury.io/gh/tarekraafat%2Fskalex)
-[![npm](https://img.shields.io/npm/v/skalex)](https://badge.fury.io/js/skalex)
+[![GitHub package.json version](https://img.shields.io/github/package-json/v/TarekRaafat/skalex)](https://github.com/TarekRaafat/skalex)
+[![npm](https://img.shields.io/npm/v/skalex)](https://www.npmjs.com/package/skalex)
 ![100% Javascript](https://img.shields.io/github/languages/top/TarekRaafat/skalex?color=yellow)
 ![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-blue.svg)
 ![Yes Maintained](https://img.shields.io/badge/Maintained%3F-yes-success)
-![npm](https://img.shields.io/npm/dm/skalex?label=npm)
+[![npm](https://img.shields.io/npm/dm/skalex?label=npm)](https://www.npmjs.com/package/skalex)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/TarekRaafat/skalex)
 
 ## Introduction
