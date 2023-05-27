@@ -325,4 +325,5 @@ Additionally, we showcase the usage of the projection feature with the `select` 
 - [ ] Surgical saving process
 - [ ] Auto Saving threshold
 - [ ] Enhance Memory usage
-- [ ] Improve index search utilize `Map`
+- [ ] Improve search index utilize `Map`
+- [ ] Add different export formats
