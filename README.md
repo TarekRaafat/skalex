@@ -14,7 +14,7 @@
 
 ## Introduction
 
-The `Skalex` Library provides a simple and intuitive way to manage collections of data in a database-like manner in pure vanilla JavaScript. It allows you to create collections, insert and retrieve data, update and delete documents, and perform queries on the data in a simple yet highly flexible way to scale any application quickly and easily, while customizing your data according to your specific needs.
+The `Skalex`DB provides a simple and intuitive way to manage collections of data in a database-like manner in pure vanilla JavaScript. It allows you to create collections, insert and retrieve data, update and delete documents, and perform queries on the data in a simple yet highly flexible way to scale any application quickly and easily, while customizing your data according to your specific needs.
 
 <!-- * * * -->
 
