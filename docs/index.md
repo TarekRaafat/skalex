@@ -29,7 +29,7 @@
 
 ## What it is? <!-- {docsify-ignore} -->
 
-`skalex`DB Simplify data management in pure JavaScript. Scale applications effortlessly, while customizing data to meet specific needs and streamline development <sub><sup>(Made for a better developer experience)</sub></pub>
+`skalex` DB Simplify data management in pure JavaScript. Scale applications effortlessly, while customizing data to meet specific needs and streamline development <sub><sup>(Made for a better developer experience)</sub></pub>
 
 ## Features <!-- {docsify-ignore} -->
 
