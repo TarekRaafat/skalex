@@ -1,5 +1,5 @@
 const fs = require("fs");
-const Collection = require("./collections");
+const Collection = require("./Collections");
 
 /**
  * Skalex is a simple JavaScript code library for managing a database with collections.

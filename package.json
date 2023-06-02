@@ -1,27 +1,62 @@
 {
   "name": "skalex",
-  "version": "1.1.2",
+  "version": "1.1.3",
+  "license": "Apache-2.0",
   "description": "Simple & intuitive way to manage collections of data.",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "keywords": [
+    "skalex",
+    "light",
+    "lightweight",
+    "simple",
+    "intuitive",
+    "fast",
+    "flexible",
+    "local",
+    "file-based",
+    "easy",
+    "database",
+    "collections",
+    "management",
+    "speed",
+    "modern",
+    "versatile",
+    "customizable",
+    "data",
+    "db",
+    "scale",
+    "scalable",
+    "json",
+    "csv"
+  ],
+  "author": {
+    "name": "Tarek Raafat",
+    "email": "tarek.m.raafat@gmail.com"
   },
+  "homepage": "https://github.com/TarekRaafat/skalex#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TarekRaafat/skalex.git"
   },
-  "keywords": [
-    "skalex",
-    "simple",
-    "flexible",
-    "local",
-    "file-based",
-    "database"
-  ],
-  "author": "Tarek Raafat",
-  "license": "ISC",
   "bugs": {
     "url": "https://github.com/TarekRaafat/skalex/issues"
   },
-  "homepage": "https://github.com/TarekRaafat/skalex#readme"
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=10.0.0"
+  },
+  "contributors": [
+    {
+      "name": "Tarek Raafat",
+      "email": "tarek.m.raafat@gmail.com"
+    }
+  ],
+  "maintainers": [
+    {
+      "name": "Tarek Raafat",
+      "email": "tarek.m.raafat@gmail.com"
+    }
+  ]
 }
