@@ -2,7 +2,7 @@
 
 ---
 
-To start using the `skalex` library, you need to require it in your JavaScript file. Here's an example:
+To start using the `Skalex` library, you need to require it in your JavaScript file. Here's an example:
 
 ```javascript
 const Skalex = require("skalex");
@@ -16,7 +16,7 @@ The `skalex` class represents the main database instance. It provides methods fo
 
 - `dataDirectory` (string): The directory where the database files will be stored.
 
-Creates a new instance of the `skalex` database.
+Creates a new instance of the `Skalex` database.
 
 #### Example
 
@@ -54,7 +54,7 @@ Saves the data from memory to the database files.
 
 ## Class: Collection
 
-The `Collection` class represents a collection of documents in the `skalex` database. It provides methods for inserting, updating, deleting, and querying documents in the collection.
+The `Collection` class represents a collection of documents in the `Skalex` database. It provides methods for inserting, updating, deleting, and querying documents in the collection.
 
 ### Constructor: Collection()
 
@@ -165,4 +165,4 @@ Generates a unique ID string.
 
 **Returns**: string
 
-> This documentation provides an overview of the `skalex` Library and its main features. For more detailed information on each method and its usage, please refer to the code comments and examples provided in the library documentation examples section.
+> This documentation provides an overview of the `Skalex` Library and its main features. For more detailed information on each method and its usage, please refer to the code comments and examples provided in the library documentation examples section.
