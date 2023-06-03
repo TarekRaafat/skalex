@@ -22,7 +22,7 @@
 
 ---
 
-# skalex <!-- {docsify-ignore} -->
+# Skalex <!-- {docsify-ignore} -->
 
 > Simple & intuitive way to manage collections of data :rocket:
 
