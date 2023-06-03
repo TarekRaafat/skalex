@@ -2,7 +2,7 @@
 
 ---
 
-To use the `skalex` library, you need to have Node.js installed on your machine. Then, follow these steps:
+To use the `Skalex` library, you need to have Node.js installed on your machine. Then, follow these steps:
 
 1. Create a new directory for your project.
 2. Open a terminal and navigate to the project directory.
@@ -10,7 +10,7 @@ To use the `skalex` library, you need to have Node.js installed on your machine.
    ```
    npm init -y
    ```
-4. Install the `skalex` library by running the following command:
+4. Install the `Skalex` library by running the following command:
 
    ```
    npm i skalex

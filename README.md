@@ -22,7 +22,7 @@ The `Skalex` DB provides a simple and intuitive way to manage collections of dat
 
 ## Documentation:
 
-- For usage & configuration details check out **skalex** <a href="https://tarekraafat.github.io/skalex/">**docs** :notebook_with_decorative_cover:</a>
+- For usage & configuration details check out **Skalex** <a href="https://tarekraafat.github.io/skalex/">**docs** :notebook_with_decorative_cover:</a>
 
 ---
 
@@ -32,7 +32,7 @@ Technical questions and support, please post your question on Stack Overflow usi
 
 - Stack Overflow [skalex][stackOverflow]
 
-General questions or new ideas for `skalex` please start a discussion on Github using the below link
+General questions or new ideas for `Skalex` please start a discussion on Github using the below link
 
 - Github [Discussions]
 

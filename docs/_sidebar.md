@@ -1,9 +1,9 @@
 - <div class="title">Getting Started</div>
-- - [<div class="ps-icon ps-icon-download"></div> Installation](installation.md "Installation | skalex")
-- - [<div class="ps-icon ps-icon-book-tag"></div>Documentation](documentation.md "Documentation | skalex")
-- - [<div class="ps-icon ps-icon-lab"></div> Usage Examples](usage-examples.md "Usage Examples | skalex")
+- - [<div class="ps-icon ps-icon-download"></div> Installation](installation.md "Installation | Skalex")
+- - [<div class="ps-icon ps-icon-book-tag"></div>Documentation](documentation.md "Documentation | Skalex")
+- - [<div class="ps-icon ps-icon-lab"></div> Usage Examples](usage-examples.md "Usage Examples | Skalex")
 - <div class="title">References</div>
-- - [<div class="ps-icon ps-icon-headset"></div> Support](support.md "Support | skalex")
-- - [<div class="ps-icon ps-icon-road"></div> Roadmap](roadmap.md "Roadmap | skalex")
-  - [<div class="ps-icon ps-icon-organisation"></div> Release Notes](release-notes.md "Release Notes | skalex")
-  - [<div class="ps-icon ps-icon-wand"></div> Contributions](contributions.md "Contributions | skalex")
+- - [<div class="ps-icon ps-icon-headset"></div> Support](support.md "Support | Skalex")
+- - [<div class="ps-icon ps-icon-road"></div> Roadmap](roadmap.md "Roadmap | Skalex")
+  - [<div class="ps-icon ps-icon-organisation"></div> Release Notes](release-notes.md "Release Notes | Skalex")
+  - [<div class="ps-icon ps-icon-wand"></div> Contributions](contributions.md "Contributions | Skalex")

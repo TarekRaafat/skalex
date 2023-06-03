@@ -1,9 +1,7 @@
 <div class="cover">
 
 <div>
-<a href="/skalex/demo/" alt="skalex Demo" target="\_blank">
-<img src="./imgs/skalex_banner.png" alt= "skalex Logo" id="logo">
-</a>
+<img src="./imgs/skalex_banner.png" alt= "Skalex Logo" id="logo">
 
 <br>
 
@@ -30,7 +28,7 @@
 
 ## What it is? <!-- {docsify-ignore} -->
 
-`skalex` DB Simplify data management in pure JavaScript. Scale applications effortlessly, while customizing data to meet specific needs and streamline development <sub><sup>(Made for a better developer experience)</sub></pub>
+`Skalex` DB Simplify data management in pure JavaScript. Scale applications effortlessly, while customizing data to meet specific needs and streamline development <sub><sup>(Made for a better developer experience)</sub></pub>
 
 ## Features <!-- {docsify-ignore} -->
 
@@ -51,6 +49,6 @@
 
 ## License <!-- {docsify-ignore} -->
 
-`skalex` is released under the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
+`Skalex` is released under the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
 
 © 2023 [Tarek Raafat](http://www.tarekraafat.com)
