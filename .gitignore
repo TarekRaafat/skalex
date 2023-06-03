@@ -42,7 +42,6 @@ build/Release
 node_modules/
 jspm_packages/
 .vscode
-./src/index.d.ts
 test
 
 # Snowpack dependency directory (https://snowpack.dev/)
