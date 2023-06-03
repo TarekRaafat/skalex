@@ -114,13 +114,43 @@ class Collection {
   /**
    * Finds a single document in the collection.
    * @param {object} filter - The filter to match the document.
+   * @param {object} options - The options for the find operation.
+   * @param {Array} options.populate - The fields to populate with related data.
+   * @param {Array} options.select - The fields to select from the documents.
    * @returns {object|null} The matching document, or null if no document was found.
    */
-  findOne(filter) {
+  findOne(filter, options = {}) {
+    const { populate, select } = options;
+
     const index = this.findIndex(filter);
     if (index !== -1) {
       for (const item of this.data) {
         if (this.matchesFilter(item, filter)) {
+          const newItem = {};
+
+          // Populate related data if specified
+          if (populate) {
+            for (const field of populate) {
+              const relatedCollection = this.database.useCollection(field);
+              const relatedItem = relatedCollection.findOne({
+                _id: item[field],
+              });
+
+              if (relatedItem) {
+                newItem[field] = relatedItem;
+              }
+            }
+          }
+
+          // Select specified fields
+          if (select) {
+            for (const field of select) {
+              newItem[field] = item[field];
+            }
+          } else {
+            Object.assign(newItem, item);
+          }
+
           return item;
         }
       }
@@ -148,17 +178,13 @@ class Collection {
         // Populate related data if specified
         if (populate) {
           for (const field of populate) {
-            if (this.relations[field]) {
-              const relatedCollection = this.database.getCollection(
-                this.relations[field].collection
-              );
-              const relatedItem = relatedCollection.findOne({
-                _id: newItem[field],
-              });
+            const relatedCollection = this.database.useCollection(field);
+            const relatedItem = relatedCollection.findOne({
+              _id: item[field],
+            });
 
-              if (relatedItem) {
-                newItem[field] = relatedItem;
-              }
+            if (relatedItem) {
+              newItem[field] = relatedItem;
             }
           }
         }

@@ -36,7 +36,14 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v1.1.3 ✨
+### v1.1.4 ✨
+
+- 🔧 Fixed: Collection population of `find` method
+- ➕ Added: Collection population to `findOne` method
+
+---
+
+### v1.1.3
 
 - 🎛️ Updated: Library Documentation
 
