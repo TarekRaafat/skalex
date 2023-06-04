@@ -14,7 +14,7 @@ For technical questions and support, please post your question on Stack Overflow
 
 ## General
 
-For general questions or new ideas for `skalex` please start a discussion on Github using the below link
+For general questions or new ideas for `Skalex` please start a discussion on Github using the below link
 
 - Github [Discussions]
 
