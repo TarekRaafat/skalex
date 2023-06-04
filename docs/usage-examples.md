@@ -74,23 +74,23 @@ console.log("Inserted user:", insertedUser.data);
 
 // Insert documents into the posts collection
 const insertedPosts = posts.insertMany([
-  { title: "Post 1", userId: insertedUser.data._id },
-  { title: "Post 2", userId: insertedUser.data._id },
+  { title: "Post 1", users: insertedUser.data._id },
+  { title: "Post 2", users: insertedUser.data._id },
 ]);
 
 console.log("Inserted posts:", insertedPosts.data);
 
 // Find user's posts with populated user information
 const userPosts = posts.find(
-  { userId: insertedUser.data._id },
-  { populate: ["userId"], select: ["title"] }
+  { users: insertedUser.data._id },
+  { populate: ["users"], select: ["title"] }
 );
 
 console.log("User's posts:", userPosts);
 
 // Find user's posts with projection (selecting specific fields)
 const userPostsProjection = posts.find(
-  { userId: insertedUser.data._id },
+  { users: insertedUser.data._id },
   { select: ["title"] }
 );
 
@@ -100,8 +100,8 @@ console.log("User's posts with projection:", userPostsProjection);
 await db.disconnect();
 ```
 
-In the above example, we have two collections: "users" and "posts". After inserting a user document into the "users" collection, we insert two post documents into the "posts" collection, associating them with the user through the "userId" field.
+In the above example, we have two collections: "users" and "posts". After inserting a user document into the "users" collection, we insert two post documents into the "posts" collection, associating them with the user through the "users" collection name and user id.
 
-To demonstrate the population feature, we use the `populate` option when finding the user's posts. This option allows us to retrieve related information from the "users" collection and populate the "userId" field with the corresponding user document. In this example, we populate the "userId" field with the user information.
+To demonstrate the population feature, we use the `populate` option when finding the user's posts. This option allows us to retrieve related information from the "users" collection and populate the "users" field with the corresponding user document. In this example, we populate the "users" field with the user information.
 
 Additionally, we showcase the usage of the projection feature with the `select` option. By specifying the `select` array, we can choose to retrieve only specific fields from the documents. In the second `find` operation, we select only the "title" field from the user's posts.

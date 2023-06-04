@@ -108,9 +108,12 @@ Updates multiple documents in the collection that match the filter.
 - `data` (object or array): The updated documents, or an empty array if no documents were found.
 - `save()` (function): Saves the collection data to the database.
 
-#### findOne(filter)
+#### findOne(filter, options)
 
 - `filter` (object): The filter for finding the document.
+- `options` (object, optional): Additional options for the query.
+  - `populate` (array): An array of collection names to populate with related data.
+  - `select` (array): An array of field names to select from the documents.
 
 Finds and returns a single document from the collection that matches the filter.
 
@@ -120,7 +123,7 @@ Finds and returns a single document from the collection that matches the filter.
 
 - `filter` (object): The filter for finding the documents.
 - `options` (object, optional): Additional options for the query.
-  - `populate` (array): An array of field names to populate with related data.
+  - `populate` (array): An array of collection names to populate with related data.
   - `select` (array): An array of field names to select from the documents.
 
 Finds and returns documents from the collection that match the filter.
