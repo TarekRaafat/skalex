@@ -49,7 +49,7 @@
     "src": "./src",
     "dist": "./src",
     "lib": "./src",
-    "doc": "./doc"
+    "doc": "./docs"
   },
   "files": [
     "src"
