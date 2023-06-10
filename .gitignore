@@ -43,7 +43,7 @@ node_modules/
 jspm_packages/
 .vscode
 test
-docs/edu
+.edu
 
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
