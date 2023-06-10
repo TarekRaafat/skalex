@@ -125,6 +125,9 @@ Finds and returns a single document from the collection that matches the filter.
 - `options` (object, optional): Additional options for the query.
   - `populate` (array): An array of collection names to populate with related data.
   - `select` (array): An array of field names to select from the documents.
+  - `sort` (object): An object of field name to sort from the documents.
+  - `page` (number): The number of the page.
+  - `limit` (number): THe number of the documents per page.
 
 Finds and returns documents from the collection that match the filter.
 

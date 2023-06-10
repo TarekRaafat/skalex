@@ -9,7 +9,7 @@ Future features & enhancements
 - [ ] Concurrency Management
 - [ ] Automated backup
 - [ ] Unique collection key
-- [ ] Filtering by `REGEX`
+- [ ] Data Aggregation
 - [ ] Improve error handling
 - [ ] Atomical saving process
 - [ ] Enhance Memory usage
@@ -21,6 +21,9 @@ Future features & enhancements
 
 #### Done
 
+- [x] Filtering by `REGEX`
+- [x] Add Sorting
+- [x] Add Pagination
 - [x] Add Release notes
 - [x] Add `createdAt` and `updatedAt`
 - [x] Data projection

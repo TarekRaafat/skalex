@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { generateUniqueId } = require("./utils");
 
 /**
  * Collection represents a collection of documents in the database.
@@ -164,12 +165,15 @@ class Collection {
    * @param {object} options - The options for the find operation.
    * @param {Array} options.populate - The fields to populate with related data.
    * @param {Array} options.select - The fields to select from the documents.
+   * @param {object} options.sort - The sorting criteria for the result.
+   * @param {number} options.page - The page number for pagination.
+   * @param {number} options.limit - The number of documents per page.
    * @returns {Array} The matching documents.
    */
   find(filter, options = {}) {
-    const { populate, select } = options;
+    const { populate, select, sort, page = 1, limit = 10 } = options;
 
-    const result = [];
+    let results = [];
 
     for (const item of this.data) {
       if (this.matchesFilter(item, filter)) {
@@ -198,11 +202,33 @@ class Collection {
           Object.assign(newItem, item);
         }
 
-        result.push(newItem);
+        results.push(newItem);
       }
     }
+    // Apply sorting if sort criteria are specified
+    if (sort) {
+      const sortFields = Object.keys(sort);
+      results.sort((a, b) => {
+        for (const field of sortFields) {
+          const sortValue = sort[field];
+          if (a[field] < b[field]) {
+            return sortValue;
+          } else if (a[field] > b[field]) {
+            return -sortValue;
+          }
+        }
+        return 0;
+      });
+    }
 
-    return result;
+    // Apply pagination if page and limit are specified
+    if (page && limit) {
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      results = results.slice(startIndex, endIndex);
+    }
+
+    return results;
   }
 
   /**
@@ -283,6 +309,9 @@ class Collection {
         if ("$nin" in filterValue && itemValue.includes(filterValue.$nin)) {
           return false;
         }
+        if ("$regex" in filterValue && !filterValue.$regex.test(itemValue)) {
+          return false;
+        }
       } else {
         // Handle exact matching
         if (itemValue !== filterValue) {
@@ -320,7 +349,7 @@ class Collection {
     );
 
     if (filteredData.length === 0) {
-      throw new Error("No matching data found");
+      console.error("No matching data found");
     }
 
     const header = Object.keys(filteredData[0]).join(",");
@@ -329,15 +358,6 @@ class Collection {
 
     fs.writeFileSync(`./${this.name}.csv`, csv, "utf8");
   }
-}
-
-/**
- * Generates a unique ID.
- * @returns {string} The unique ID.
- */
-function generateUniqueId() {
-  // A simple implementation to generate unique IDs (not guaranteed to be globally unique)
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
 }
 
 module.exports = Collection;

@@ -1,6 +1,6 @@
 {
   "name": "skalex",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "license": "Apache-2.0",
   "description": "Simple & intuitive way to manage collections of data.",
   "keywords": [
@@ -8,6 +8,7 @@
     "skalexdb",
     "skalex-db",
     "light",
+    "portable",
     "lightweight",
     "simple",
     "intuitive",
@@ -43,11 +44,12 @@
     "url": "https://github.com/TarekRaafat/skalex/issues"
   },
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "directories": {
     "src": "./src",
     "dist": "./src",
     "lib": "./src",
-    "doc": "./docs"
+    "doc": "./doc"
   },
   "files": [
     "src"

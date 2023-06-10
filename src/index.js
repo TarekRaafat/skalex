@@ -44,7 +44,7 @@ class Skalex {
       this.isConnected = true;
       console.log(`> - Connected to the database (√)`);
     } catch (error) {
-      console.error("Error connecting to the database:", error);
+      console.error("Error connecting to the database: ", error);
       throw error;
     }
   }
@@ -61,7 +61,7 @@ class Skalex {
       this.isConnected = false;
       console.log(`> - Disconnected from the database (√)`);
     } catch (error) {
-      console.error("Error disconnecting from the database:", error);
+      console.error("Error disconnecting from the database: ", error);
     }
   }
 
@@ -116,7 +116,7 @@ class Skalex {
         };
       }
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error("Error loading data: ", error);
       throw error;
     }
   }
@@ -146,7 +146,7 @@ class Skalex {
 
       return output;
     } catch (error) {
-      console.error("Error saving data:", error);
+      console.error("Error saving data: ", error);
       throw error;
     }
   }

@@ -36,7 +36,16 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v1.1.4 ✨
+### v1.2.0 ✨
+
+- ➕ Added: `REGEX` filtering option to the `find` method
+- ➕ Added: `Pagination` option to the `find` method
+- ➕ Added: `Sorting` options to the `find` method
+- 🧹 Cleaned: Project files and some house keeping
+
+---
+
+### v1.1.4
 
 - 🔧 Fixed: Collection population of `find` method
 - ➕ Added: Collection population to `findOne` method
