@@ -1,4 +1,4 @@
-<img src="./docs/imgs/skalex_banner.png" alt= "skalex Logo" id="logo">
+<img src="./doc/imgs/skalex_banner.png" alt= "skalex Logo" id="logo">
 
 <br>
 
