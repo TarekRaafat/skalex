@@ -222,11 +222,9 @@ class Collection {
     }
 
     // Apply pagination if page and limit are specified
-    if (page && limit) {
-      const startIndex = (page - 1) * limit;
-      const endIndex = startIndex + limit;
-      results = results.slice(startIndex, endIndex);
-    }
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    results = results.slice(startIndex, endIndex);
 
     return results;
   }
@@ -279,6 +277,9 @@ class Collection {
    * @returns {boolean} Whether the document matches the filter or not.
    */
   matchesFilter(item, filter) {
+    // Handle custom function
+    if (typeof filter === "function" && !filter(item)) return false;
+
     for (const key in filter) {
       const filterValue = filter[key];
       const itemValue = item[key];
@@ -310,6 +311,9 @@ class Collection {
           return false;
         }
         if ("$regex" in filterValue && !filterValue.$regex.test(itemValue)) {
+          return false;
+        }
+        if ("$fn" in filterValue && !filterValue.$fn(itemValue)) {
           return false;
         }
       } else {

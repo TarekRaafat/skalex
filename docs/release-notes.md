@@ -36,7 +36,15 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v1.2.0 ✨
+### v1.3.0 ✨
+
+- ➕ Added: `$fn` custom function as a filtering option to the `find` method
+- ➕ Added: `function` option to the `find` method
+- 🧹 Cleaned: `Collection` class and some house keeping
+
+---
+
+### v1.2.0
 
 - ➕ Added: `REGEX` filtering option to the `find` method
 - ➕ Added: `Pagination` option to the `find` method
