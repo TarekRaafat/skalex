@@ -7,7 +7,6 @@ Future features & enhancements
 #### Todo
 
 - [ ] Concurrency Management
-- [ ] Custom search method for `find` operations
 - [ ] Automated backup
 - [ ] Unique collection key
 - [ ] Data Aggregation
@@ -15,12 +14,13 @@ Future features & enhancements
 - [ ] Atomical saving process
 - [ ] Enhance Memory usage
 - [ ] Improve search index utilize `Map`
-- [ ] Add more export formats
 - [ ] Plugins system for extending functionality
+- [ ] Add more export formats
 - [ ] Typescript Support
 
 #### Done
 
+- [x] Custom search methods for `find` operations
 - [x] Filtering by `REGEX`
 - [x] Add Sorting
 - [x] Add Pagination

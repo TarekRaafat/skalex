@@ -36,7 +36,16 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v1.3.0 ✨
+### v1.4.0 ✨
+
+- ➕ Added: `isSaving` attribute to check if there's saving in process
+- 🎛️ Updated: `buildIndex` method to accept external index key
+- 🔧 Fixed: `matchesFilter` validating `itemValue` before applying filter
+- 🧹 Cleaned: `saveData` method and some house keeping
+
+---
+
+### v1.3.0
 
 - ➕ Added: `$fn` custom function as a filtering option to the `find` method
 - ➕ Added: `function` option to the `find` method

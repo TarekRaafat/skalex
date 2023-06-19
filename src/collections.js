@@ -284,7 +284,7 @@ class Collection {
       const filterValue = filter[key];
       const itemValue = item[key];
 
-      if (typeof filterValue === "object") {
+      if (typeof filterValue === "object" && itemValue) {
         // Handle query operators
         if ("$eq" in filterValue && itemValue !== filterValue.$eq) {
           return false;

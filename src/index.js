@@ -26,6 +26,11 @@ class Skalex {
      * @type {boolean}
      */
     this.isConnected = false;
+    /**
+     * Flag to prevent multiple save operations from overlapping.
+     * @type {boolean}
+     */
+    this.isSaving = false;
 
     // Create the data directory if it does not exist
     if (!fs.existsSync(dataDirectory)) {
@@ -112,7 +117,7 @@ class Skalex {
         this.collections[collectionName] = {
           collectionName,
           data,
-          index: this.buildIndex(data),
+          index: this.buildIndex(data, "_id"),
         };
       }
     } catch (error) {
@@ -123,11 +128,12 @@ class Skalex {
 
   /**
    * Saves data to JSON files in the data directory.
-   * @param {any} [output] - Output data.
-   * @returns {Promise<any>} The output data.
+   * @returns {Promise<void>}
    */
-  async saveData(output) {
+  async saveData() {
     try {
+      this.isSaving = true;
+
       await fs.promises.mkdir(this.dataDirectory, { recursive: true });
 
       for (const collectionName in this.collections) {
@@ -144,7 +150,7 @@ class Skalex {
         );
       }
 
-      return output;
+      this.isSaving = false;
     } catch (error) {
       console.error("Error saving data: ", error);
       throw error;
@@ -154,13 +160,14 @@ class Skalex {
   /**
    * Builds an index for quick document lookup.
    * @param {Array} data - The data to build the index from.
+   * @param {string} keyField - The field to use as the index key.
    * @returns {Map} The index map.
    */
-  buildIndex(data) {
+  buildIndex(data, keyField) {
     const index = new Map();
 
     for (const item of data) {
-      const itemId = item._id;
+      const itemId = item[keyField];
       index.set(itemId, item);
     }
 
