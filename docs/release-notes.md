@@ -36,7 +36,13 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v1.4.0 ✨
+### v1.4.1 ✨
+
+- 🔧 Fixed: `saveData` method feedback was broken
+
+---
+
+### v1.4.0
 
 - ➕ Added: `isSaving` attribute to check if there's saving in process
 - 🎛️ Updated: `buildIndex` method to accept external index key

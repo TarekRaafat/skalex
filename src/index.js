@@ -128,9 +128,10 @@ class Skalex {
 
   /**
    * Saves data to JSON files in the data directory.
-   * @returns {Promise<void>}
+   * @param {any} [output] - Output data.
+   * @returns {Promise<any>} The output data.
    */
-  async saveData() {
+  async saveData(output) {
     try {
       this.isSaving = true;
 
@@ -151,6 +152,8 @@ class Skalex {
       }
 
       this.isSaving = false;
+
+      return output;
     } catch (error) {
       console.error("Error saving data: ", error);
       throw error;
