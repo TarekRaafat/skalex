@@ -131,7 +131,7 @@ Finds and returns a single document from the collection that matches the filter.
 
 Finds and returns documents from the collection that match the filter.
 
-**Returns**: array
+**Returns**: object
 
 #### deleteOne(filter)
 

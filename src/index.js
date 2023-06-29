@@ -1,5 +1,6 @@
 const fs = require("fs");
 const Collection = require("./Collections");
+const { logger } = require("./utils");
 
 /**
  * Skalex is a simple JavaScript code library for managing a database with collections.
@@ -47,9 +48,11 @@ class Skalex {
       // Load existing data
       await this.loadData();
       this.isConnected = true;
-      console.log(`> - Connected to the database (√)`);
+
+      logger(`> - Connected to the database (√)`);
     } catch (error) {
-      console.error("Error connecting to the database: ", error);
+      logger(`Error connecting to the database: ${error}`, "error");
+
       throw error;
     }
   }
@@ -64,9 +67,12 @@ class Skalex {
       await this.saveData();
       this.collections = {};
       this.isConnected = false;
-      console.log(`> - Disconnected from the database (√)`);
+
+      logger(`> - Disconnected from the database (√)`);
     } catch (error) {
-      console.error("Error disconnecting from the database: ", error);
+      logger(`Error disconnecting from the database: ${error}`, "error");
+
+      throw error;
     }
   }
 
@@ -121,7 +127,8 @@ class Skalex {
         };
       }
     } catch (error) {
-      console.error("Error loading data: ", error);
+      logger(`Error loading data: ${error}`, "error");
+
       throw error;
     }
   }
@@ -132,31 +139,40 @@ class Skalex {
    * @returns {Promise<any>} The output data.
    */
   async saveData(output) {
-    try {
+    if (!this.isSaving) {
       this.isSaving = true;
 
-      await fs.promises.mkdir(this.dataDirectory, { recursive: true });
+      try {
+        await fs.promises.mkdir(this.dataDirectory, { recursive: true });
 
-      for (const collectionName in this.collections) {
-        const collectionData = this.collections[collectionName];
-        const jsonData = JSON.stringify({
-          collectionName,
-          data: collectionData.data,
-        });
+        for (const collectionName in this.collections) {
+          const collectionData = this.collections[collectionName];
+          const jsonData = JSON.stringify({
+            collectionName,
+            data: collectionData.data,
+          });
 
-        await fs.promises.writeFile(
-          `${this.dataDirectory}/${collectionName}.json`,
-          jsonData,
-          "utf8"
-        );
+          const tempFileName = `${collectionName}_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(6)}.tmp`;
+          const tempFilePath = `${this.dataDirectory}/${tempFileName}`;
+
+          await fs.promises.writeFile(tempFilePath, jsonData, "utf8");
+
+          await fs.promises.rename(
+            tempFilePath,
+            `${this.dataDirectory}/${collectionName}.json`
+          );
+        }
+
+        this.isSaving = false;
+
+        return output;
+      } catch (error) {
+        logger(`Error saving data: ${error}`, "error");
+
+        throw error;
       }
-
-      this.isSaving = false;
-
-      return output;
-    } catch (error) {
-      console.error("Error saving data: ", error);
-      throw error;
     }
   }
 

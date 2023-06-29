@@ -36,7 +36,18 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v1.4.1 ✨
+### v2.0.0 ✨
+
+- ➕ Added: Pagination info on the `find` method return
+- ➕ Added: Custom `logger` utility function
+- 🎛️ Updated: `generateUniqueId` method to generate better and more unique IDs
+- 🎛️ Updated: `createdAt` to be eligible for modification on creation
+- 🎛️ Updated: `updatedAt` to be eligible for modification on update
+- 🎛️ Updated: `saveData` to provide better performance without conflicts
+
+---
+
+### v1.4.1
 
 - 🔧 Fixed: `saveData` method feedback was broken
 

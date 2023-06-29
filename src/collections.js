@@ -42,11 +42,13 @@ class Collection {
   insertOne(item) {
     const newItem = {
       _id: generateUniqueId(),
-      ...item,
       createdAt: new Date(),
+      ...item,
     };
+
     this.data.push(newItem);
     this.index.set(newItem._id, newItem);
+
     return {
       data: newItem,
       save: () => this.database.saveData(newItem),
@@ -61,13 +63,16 @@ class Collection {
   insertMany(items) {
     const newItems = items.map((item) => ({
       _id: generateUniqueId(),
-      ...item,
       createdAt: new Date(),
+      ...item,
     }));
+
     this.data.push(...newItems);
+
     for (const newItem of newItems) {
       this.index.set(newItem._id, newItem);
     }
+
     return {
       data: newItems,
       save: () => this.database.saveData(newItems),
@@ -82,13 +87,15 @@ class Collection {
    */
   updateOne(filter, update) {
     const item = this.findOne(filter);
+
     if (item) {
-      Object.assign(item, { ...update, updatedAt: new Date() });
+      Object.assign(item, { updatedAt: new Date(), ...update });
       return {
         data: item,
         save: () => this.database.saveData(item),
       };
     }
+
     return null;
   }
 
@@ -100,15 +107,18 @@ class Collection {
    */
   updateMany(filter, update) {
     const items = this.find(filter);
+
     if (items.length > 0) {
       for (const item of items) {
-        Object.assign(item, { ...update, updatedAt: new Date() });
+        Object.assign(item, { updatedAt: new Date(), ...update });
       }
+
       return {
         data: items,
         save: () => this.database.saveData(items),
       };
     }
+
     return [];
   }
 
@@ -156,6 +166,7 @@ class Collection {
         }
       }
     }
+
     return null;
   }
 
@@ -168,7 +179,7 @@ class Collection {
    * @param {object} options.sort - The sorting criteria for the result.
    * @param {number} options.page - The page number for pagination.
    * @param {number} options.limit - The number of documents per page.
-   * @returns {Array} The matching documents.
+   * @returns {object} The matching documents.
    */
   find(filter, options = {}) {
     const { populate, select, sort, page = 1, limit = 10 } = options;
@@ -208,6 +219,7 @@ class Collection {
     // Apply sorting if sort criteria are specified
     if (sort) {
       const sortFields = Object.keys(sort);
+
       results.sort((a, b) => {
         for (const field of sortFields) {
           const sortValue = sort[field];
@@ -217,16 +229,25 @@ class Collection {
             return -sortValue;
           }
         }
+
         return 0;
       });
     }
 
     // Apply pagination if page and limit are specified
+    const totalDocs = results.length;
+    const totalPages = Math.ceil(totalDocs / limit);
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
+
     results = results.slice(startIndex, endIndex);
 
-    return results;
+    return {
+      docs: results,
+      page,
+      totalDocs,
+      totalPages,
+    };
   }
 
   /**
@@ -236,14 +257,17 @@ class Collection {
    */
   deleteOne(filter) {
     const index = this.findIndex(filter);
+
     if (index !== -1) {
       const deletedItem = this.data.splice(index, 1)[0];
       this.index.delete(deletedItem._id);
+
       return {
         data: deletedItem,
         save: () => this.database.saveData(),
       };
     }
+
     return null;
   }
 
@@ -255,6 +279,7 @@ class Collection {
   deleteMany(filter) {
     const deletedItems = [];
     const remainingItems = [];
+
     for (const item of this.data) {
       if (this.matchesFilter(item, filter)) {
         deletedItems.push(item);
@@ -263,7 +288,9 @@ class Collection {
         remainingItems.push(item);
       }
     }
+
     this.data = remainingItems;
+
     return {
       data: deletedItems,
       save: () => this.database.saveData(),
@@ -353,7 +380,7 @@ class Collection {
     );
 
     if (filteredData.length === 0) {
-      console.error("No matching data found");
+      throw new Error("No matching data found");
     }
 
     const header = Object.keys(filteredData[0]).join(",");
