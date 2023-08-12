@@ -36,7 +36,35 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v2.0.0 ✨
+### v3.0.0 ✨
+
+> Disclaimer!
+>
+> 1- This release has several breaking changes, so kindly check all the below changes before update.
+>
+> 2- The documentation is currently out of sync and the update will follow later.
+
+- ➕ Added: Find nested object values support `find({ "object.key": "value" })`
+- ➕ Added: Setting collection `export` destination directory
+- 🌀 Changed: Setting database files directory instead of `string` to `object` key of `{ path: "./.db" }`
+- 🌀 Changed: Saved default data format from `JSON` files to compressed `gz` files
+- 🌀 Changed: Operations `save` from method to an option for `insert` `update` `delete` operations
+- 🌀 Changed: `exportToCSV` method name to `export`
+- 🌀 Changed: `find` operation returns all docs by default, setting `limit` for pagination
+- 🎛️ Updated: Collection `export` default destination to `exports` directory under the set `dataDirectory`
+- 🎛️ Updated: All `many` operations output to object key `{ docs }`
+- 🎛️ Updated: Operations `save` to be more efficient by saving used collection instead of all
+- 🎛️ Updated: `population` for dynamic key population
+- 🎛️ Updated: `loadData` and `saveData` methods for improved concurrent file Reads/Writes
+- 🎛️ Updated: Files & Directory handling to ensure consistent path formatting across different operating systems
+- 🔧 Fixed: Updating index map for `updateOne` and `updateMany` operations
+- 🔧 Fixed: `updateMany` to save inserted updates
+- 🔧 Fixed: Setting `isSaving` flag in error cases while saving collections
+- 🧹 Cleaned: `matchesFilter` method for better readability
+
+---
+
+### v2.0.0
 
 - ➕ Added: Pagination info on the `find` method return
 - ➕ Added: Custom `logger` utility function

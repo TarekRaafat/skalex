@@ -1,5 +1,6 @@
 const fs = require("fs");
-const { generateUniqueId } = require("./utils");
+const path = require("path");
+const { dirCheck, generateUniqueId, logger } = require("./utils");
 
 /**
  * Collection represents a collection of documents in the database.
@@ -37,9 +38,11 @@ class Collection {
   /**
    * Inserts a single document into the collection.
    * @param {object} item - The document to insert.
-   * @returns {object} An object containing the inserted document and a save function to save the data.
+   * @param {object} options - The options for the find operation.
+   * @param {boolean} options.save - The save criteria for the operation.
+   * @returns {object} An object containing the inserted document.
    */
-  insertOne(item) {
+  async insertOne(item, options = {}) {
     const newItem = {
       _id: generateUniqueId(),
       createdAt: new Date(),
@@ -49,18 +52,21 @@ class Collection {
     this.data.push(newItem);
     this.index.set(newItem._id, newItem);
 
-    return {
-      data: newItem,
-      save: () => this.database.saveData(newItem),
-    };
+    if (options.save) {
+      this.database.saveData(this.name);
+    }
+
+    return newItem;
   }
 
   /**
    * Inserts multiple documents into the collection.
    * @param {Array} items - The documents to insert.
-   * @returns {object} An object containing the inserted documents and a save function to save the data.
+   * @param {object} options - The options for the find operation.
+   * @param {boolean} options.save - The save criteria for the operation.
+   * @returns {object} An object containing the inserted documents.
    */
-  insertMany(items) {
+  async insertMany(items, options = {}) {
     const newItems = items.map((item) => ({
       _id: generateUniqueId(),
       createdAt: new Date(),
@@ -73,27 +79,39 @@ class Collection {
       this.index.set(newItem._id, newItem);
     }
 
-    return {
-      data: newItems,
-      save: () => this.database.saveData(newItems),
-    };
+    if (options.save) {
+      this.database.saveData(this.name);
+    }
+
+    return { docs: newItems };
   }
 
   /**
    * Updates a single document in the collection.
    * @param {object} filter - The filter to find the document to update.
    * @param {object} update - The update to apply to the document.
-   * @returns {object|null} An object containing the updated document and a save function to save the data, or null if no document was found.
+   * @param {object} options - The options for the find operation.
+   * @param {boolean} options.save - The save criteria for the operation.
+   * @returns {object|null} An object containing the updated document, or null if no document was found.
    */
-  updateOne(filter, update) {
+  async updateOne(filter, update, options = {}) {
     const item = this.findOne(filter);
 
     if (item) {
-      Object.assign(item, { updatedAt: new Date(), ...update });
-      return {
-        data: item,
-        save: () => this.database.saveData(item),
+      const updatedItem = {
+        ...item,
+        updatedAt: new Date(),
+        ...update,
       };
+
+      Object.assign(item, updatedItem);
+      this.index.set(item._id, updatedItem);
+
+      if (options.save) {
+        this.database.saveData(this.name);
+      }
+
+      return item;
     }
 
     return null;
@@ -103,20 +121,33 @@ class Collection {
    * Updates multiple documents in the collection.
    * @param {object} filter - The filter to find the documents to update.
    * @param {object} update - The update to apply to the documents.
-   * @returns {object|Array} An object containing the updated documents and a save function to save the data, or an empty array if no documents were found.
+   * @param {object} options - The options for the find operation.
+   * @param {boolean} options.save - The save criteria for the operation.
+   * @returns {object|Array} An object containing the updated documents, or an empty array if no documents were found.
    */
-  updateMany(filter, update) {
-    const items = this.find(filter);
+  async updateMany(filter, update, options = {}) {
+    const { docs: items } = this.find(filter);
 
     if (items.length > 0) {
-      for (const item of items) {
-        Object.assign(item, { updatedAt: new Date(), ...update });
+      // Update data in the collection with modified documents
+      for (let item of this.data) {
+        if (this.matchesFilter(item, filter)) {
+          const updatedItem = {
+            ...item,
+            updatedAt: new Date(),
+            ...update,
+          };
+
+          Object.assign(item, updatedItem);
+          this.index.set(item._id, updatedItem);
+        }
       }
 
-      return {
-        data: items,
-        save: () => this.database.saveData(items),
-      };
+      if (options.save) {
+        this.database.saveData(this.name);
+      }
+
+      return { docs: items };
     }
 
     return [];
@@ -182,7 +213,7 @@ class Collection {
    * @returns {object} The matching documents.
    */
   find(filter, options = {}) {
-    const { populate, select, sort, page = 1, limit = 10 } = options;
+    const { populate, select, sort, page = 1, limit } = options;
 
     let results = [];
 
@@ -195,7 +226,7 @@ class Collection {
           for (const field of populate) {
             const relatedCollection = this.database.useCollection(field);
             const relatedItem = relatedCollection.findOne({
-              _id: item[field],
+              [field]: item[field],
             });
 
             if (relatedItem) {
@@ -234,38 +265,47 @@ class Collection {
       });
     }
 
-    // Apply pagination if page and limit are specified
-    const totalDocs = results.length;
-    const totalPages = Math.ceil(totalDocs / limit);
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
+    // Apply limiting if specified
+    if (limit) {
+      // Apply pagination if page and limit are specified
+      const totalDocs = results.length;
+      const totalPages = Math.ceil(totalDocs / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
 
-    results = results.slice(startIndex, endIndex);
+      // Apply pagination to the results
+      results = results.slice(startIndex, endIndex);
 
-    return {
-      docs: results,
-      page,
-      totalDocs,
-      totalPages,
-    };
+      return {
+        docs: results,
+        page,
+        totalDocs,
+        totalPages,
+      };
+    } else {
+      return { docs: results };
+    }
   }
 
   /**
    * Deletes a single document from the collection.
    * @param {object} filter - The filter to find the document to delete.
-   * @returns {object|null} An object containing the deleted document and a save function to save the data, or null if no document was found.
+   * @param {object} options - The options for the find operation.
+   * @param {boolean} options.save - The save criteria for the operation.
+   * @returns {object|null} An object containing the deleted document, or null if no document was found.
    */
-  deleteOne(filter) {
+  async deleteOne(filter, options = {}) {
     const index = this.findIndex(filter);
 
     if (index !== -1) {
       const deletedItem = this.data.splice(index, 1)[0];
       this.index.delete(deletedItem._id);
 
-      return {
-        data: deletedItem,
-        save: () => this.database.saveData(),
-      };
+      if (options.save) {
+        this.database.saveData(this.name);
+      }
+
+      return deletedItem;
     }
 
     return null;
@@ -274,9 +314,11 @@ class Collection {
   /**
    * Deletes multiple documents from the collection.
    * @param {object} filter - The filter to find the documents to delete.
-   * @returns {Array} An array containing the deleted documents and a save function to save the data.
+   * @param {object} options - The options for the find operation.
+   * @param {boolean} options.save - The save criteria for the operation.
+   * @returns {Array} An array containing the deleted documents.
    */
-  deleteMany(filter) {
+  async deleteMany(filter, options = {}) {
     const deletedItems = [];
     const remainingItems = [];
 
@@ -291,10 +333,11 @@ class Collection {
 
     this.data = remainingItems;
 
-    return {
-      data: deletedItems,
-      save: () => this.database.saveData(),
-    };
+    if (options.save) {
+      this.database.saveData(this.name);
+    }
+
+    return { docs: deletedItems };
   }
 
   /**
@@ -305,53 +348,62 @@ class Collection {
    */
   matchesFilter(item, filter) {
     // Handle custom function
-    if (typeof filter === "function" && !filter(item)) return false;
+    if (typeof filter === "function" && filter(item)) return true;
 
     for (const key in filter) {
+      const keys = key.split("."); // Split nested keys
+      const nested = keys.length > 1;
+
       const filterValue = filter[key];
-      const itemValue = item[key];
+      let itemValue = nested ? item : item[key];
+
+      if (nested) {
+        for (const nestedKey of keys) {
+          if (itemValue[nestedKey]) {
+            itemValue = itemValue[nestedKey];
+          }
+        }
+      }
 
       if (typeof filterValue === "object" && itemValue) {
         // Handle query operators
-        if ("$eq" in filterValue && itemValue !== filterValue.$eq) {
-          return false;
+        if ("$eq" in filterValue && itemValue === filterValue.$eq) {
+          return true;
         }
-        if ("$ne" in filterValue && itemValue === filterValue.$ne) {
-          return false;
+        if ("$ne" in filterValue && itemValue !== filterValue.$ne) {
+          return true;
         }
-        if ("$gt" in filterValue && itemValue <= filterValue.$gt) {
-          return false;
+        if ("$gt" in filterValue && itemValue > filterValue.$gt) {
+          return true;
         }
-        if ("$lt" in filterValue && itemValue >= filterValue.$lt) {
-          return false;
+        if ("$lt" in filterValue && itemValue < filterValue.$lt) {
+          return true;
         }
-        if ("$gte" in filterValue && itemValue < filterValue.$gte) {
-          return false;
+        if ("$gte" in filterValue && itemValue >= filterValue.$gte) {
+          return true;
         }
-        if ("$lte" in filterValue && itemValue > filterValue.$lte) {
-          return false;
+        if ("$lte" in filterValue && itemValue <= filterValue.$lte) {
+          return true;
         }
-        if ("$in" in filterValue && !itemValue.includes(filterValue.$in)) {
-          return false;
+        if ("$in" in filterValue && itemValue.includes(filterValue.$in)) {
+          return true;
         }
-        if ("$nin" in filterValue && itemValue.includes(filterValue.$nin)) {
-          return false;
+        if ("$nin" in filterValue && !itemValue.includes(filterValue.$nin)) {
+          return true;
         }
-        if ("$regex" in filterValue && !filterValue.$regex.test(itemValue)) {
-          return false;
+        if ("$regex" in filterValue && filterValue.$regex.test(itemValue)) {
+          return true;
         }
-        if ("$fn" in filterValue && !filterValue.$fn(itemValue)) {
-          return false;
+        if ("$fn" in filterValue) {
+          return filterValue.$fn(itemValue);
         }
       } else {
         // Handle exact matching
-        if (itemValue !== filterValue) {
-          return false;
-        }
+        return itemValue === filterValue;
       }
     }
 
-    return true;
+    return false;
   }
 
   /**
@@ -370,24 +422,46 @@ class Collection {
   }
 
   /**
-   * Exports the filtered collection data to a CSV file in the root directory.
+   * Exports the filtered collection data to a CSV file in the dataDirectory.
    * @param {object} filter - The filter to match the documents to export (default: {}).
+   * @param {object} options - The options for the find operation.
+   * @param {string} options.dir - The directory path of exports.
+   * @param {string} options.name - The export file name.
+   * @param {string} options.format - The export file format.
    * @throws {Error} If no matching data is found.
    */
-  exportToCSV(filter = {}) {
-    const filteredData = this.data.filter((item) =>
-      this.matchesFilter(item, filter)
+  async export(filter = {}, options = {}) {
+    const { dir, name, format = "json" } = options;
+
+    const dirPath = path.resolve(
+      dir || `${this.database.dataDirectory}/exports`
     );
+    const filePath = path.join(dirPath, `${name || this.name}.${format}`);
 
-    if (filteredData.length === 0) {
-      throw new Error("No matching data found");
+    try {
+      dirCheck(dirPath);
+
+      const filteredData = this.data.filter((item) =>
+        this.matchesFilter(item, filter)
+      );
+
+      if (filteredData.length === 0) {
+        throw new Error("No matching data found");
+      }
+
+      let data;
+      if (format === "json") {
+        data = filteredData;
+      } else {
+        const header = Object.keys(filteredData[0]).join(",");
+        const rows = filteredData.map((item) => Object.values(item).join(","));
+        data = [header, ...rows].join("\n");
+      }
+
+      fs.writeFileSync(filePath, data, "utf8");
+    } catch (error) {
+      logger(`Error exporting "${this.name}" collection: ${error}`, "error");
     }
-
-    const header = Object.keys(filteredData[0]).join(",");
-    const rows = filteredData.map((item) => Object.values(item).join(","));
-    const csv = [header, ...rows].join("\n");
-
-    fs.writeFileSync(`./${this.name}.csv`, csv, "utf8");
   }
 }
 

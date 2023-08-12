@@ -1,6 +1,8 @@
 const fs = require("fs");
+const path = require("path");
+const zlib = require("zlib");
 const Collection = require("./Collections");
-const { logger } = require("./utils");
+const { dirCheck, logger } = require("./utils");
 
 /**
  * Skalex is a simple JavaScript code library for managing a database with collections.
@@ -9,14 +11,22 @@ const { logger } = require("./utils");
 class Skalex {
   /**
    * Creates an instance of Skalex.
-   * @param {string} dataDirectory - The directory where data files will be stored.
+   * @param {object} config - The database configurations.
+   * @param {string} config.path - The directory path of the database.
+   * @param {string} config.format - The database files format.
+   *
    */
-  constructor(dataDirectory) {
+  constructor({ path = "./.db", format = "gz" }) {
     /**
      * The directory where data files are stored.
      * @type {string}
      */
-    this.dataDirectory = dataDirectory;
+    this.dataDirectory = path.resolve(path);
+    /**
+     * The format in which the data files will be stored in the database.
+     * @type {string}
+     */
+    this.dataFormat = format;
     /**
      * The collections in the database.
      * @type {object}
@@ -33,10 +43,8 @@ class Skalex {
      */
     this.isSaving = false;
 
-    // Create the data directory if it does not exist
-    if (!fs.existsSync(dataDirectory)) {
-      fs.mkdirSync(dataDirectory, { recursive: true });
-    }
+    // Ensure the data directory exists or create it if it does not exist
+    dirCheck(this.dataDirectory);
   }
 
   /**
@@ -114,18 +122,41 @@ class Skalex {
     try {
       const filenames = await fs.promises.readdir(this.dataDirectory);
 
-      for (const filename of filenames) {
-        const collectionData = await fs.promises.readFile(
-          `${this.dataDirectory}/${filename}`,
-          "utf8"
-        );
-        const { collectionName, data } = JSON.parse(collectionData);
-        this.collections[collectionName] = {
-          collectionName,
-          data,
-          index: this.buildIndex(data, "_id"),
-        };
-      }
+      const loadCollection = filenames.map(async (filename) => {
+        const filePath = path.join(this.dataDirectory, filename);
+
+        // Check if the file has a .gz extension indicating compressed data
+        const isCompressed = path.extname(filename) === ".gz";
+
+        try {
+          const stats = await fs.promises.stat(filePath);
+
+          if (stats.isFile()) {
+            const collectionData = await fs.promises.readFile(filePath);
+
+            let jsonData;
+
+            if (isCompressed) {
+              // Decompress the data if it's compressed
+              jsonData = zlib.inflateSync(collectionData).toString("utf8");
+            } else {
+              jsonData = collectionData.toString("utf8");
+            }
+
+            const { collectionName, data } = JSON.parse(jsonData);
+
+            this.collections[collectionName] = {
+              collectionName,
+              data,
+              index: this.buildIndex(data, "_id"),
+            };
+          }
+        } catch (error) {
+          logger(`Error reading files: ${error}`, "error");
+        }
+      });
+
+      await Promise.all(loadCollection);
     } catch (error) {
       logger(`Error loading data: ${error}`, "error");
 
@@ -135,43 +166,54 @@ class Skalex {
 
   /**
    * Saves data to JSON files in the data directory.
-   * @param {any} [output] - Output data.
-   * @returns {Promise<any>} The output data.
+   * @param {string} collectionName - The name of the collection to be saved.
+   * @returns {Promise<void>}
    */
-  async saveData(output) {
+  async saveData(collectionName) {
+    // If saving is already in progress, skip
     if (!this.isSaving) {
       this.isSaving = true;
 
       try {
-        await fs.promises.mkdir(this.dataDirectory, { recursive: true });
+        const promises = [];
 
-        for (const collectionName in this.collections) {
+        const saveCollection = async (collectionName) => {
           const collectionData = this.collections[collectionName];
           const jsonData = JSON.stringify({
             collectionName,
             data: collectionData.data,
           });
 
-          const tempFileName = `${collectionName}_${Date.now()}_${Math.random()
-            .toString(36)
-            .substring(6)}.tmp`;
-          const tempFilePath = `${this.dataDirectory}/${tempFileName}`;
+          const compressedData = zlib.deflateSync(jsonData); // Compress the data
 
-          await fs.promises.writeFile(tempFilePath, jsonData, "utf8");
-
-          await fs.promises.rename(
-            tempFilePath,
-            `${this.dataDirectory}/${collectionName}.json`
+          const tempFileName = `${collectionName}_${Date.now()}.tmp.${
+            this.dataFormat
+          }`;
+          const tempFilePath = path.join(this.dataDirectory, tempFileName);
+          const finalFilePath = path.join(
+            this.dataDirectory,
+            `${collectionName}.${this.dataFormat}`
           );
+
+          await fs.promises.writeFile(tempFilePath, compressedData, "binary");
+          await fs.promises.rename(tempFilePath, finalFilePath);
+        };
+
+        if (!collectionName) {
+          for (const collectionName in this.collections) {
+            promises.push(saveCollection(collectionName));
+          }
+        } else {
+          promises.push(saveCollection(collectionName));
         }
 
+        await Promise.all(promises);
+
+        this.isSaving = false;
+      } catch (error) {
         this.isSaving = false;
 
-        return output;
-      } catch (error) {
         logger(`Error saving data: ${error}`, "error");
-
-        throw error;
       }
     }
   }
