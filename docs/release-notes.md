@@ -36,7 +36,13 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v3.0.0 ✨
+### v3.0.1
+
+- 🔧 Fixed: Broken data directory `path` reference
+
+---
+
+### v3.0.0
 
 > Disclaimer!
 >

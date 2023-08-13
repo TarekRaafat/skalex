@@ -16,12 +16,12 @@ class Skalex {
    * @param {string} config.format - The database files format.
    *
    */
-  constructor({ path = "./.db", format = "gz" }) {
+  constructor({ path: dir = "./.db", format = "gz" }) {
     /**
      * The directory where data files are stored.
      * @type {string}
      */
-    this.dataDirectory = path.resolve(path);
+    this.dataDirectory = path.resolve(dir);
     /**
      * The format in which the data files will be stored in the database.
      * @type {string}
@@ -233,6 +233,21 @@ class Skalex {
     }
 
     return index;
+  }
+
+  /**
+   * Reports the current system resource usage.
+   */
+  resourceUsage() {
+    const cpuUsage = process.cpuUsage();
+    const memoryUsage = process.memoryUsage();
+
+    console.log("Resource Usage Report:");
+    console.log(`User CPU Time (microseconds): ${cpuUsage.user}`);
+    console.log(`System CPU Time (microseconds): ${cpuUsage.system}`);
+    console.log(`Memory Usage (bytes): ${memoryUsage.rss} (RSS)`);
+    console.log(`Heap Total (bytes): ${memoryUsage.heapTotal}`);
+    console.log(`Heap Used (bytes): ${memoryUsage.heapUsed}`);
   }
 }
 
