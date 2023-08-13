@@ -98,14 +98,30 @@ class Collection {
     const item = this.findOne(filter);
 
     if (item) {
-      const updatedItem = {
-        ...item,
-        updatedAt: new Date(),
-        ...update,
-      };
+      // Update fields based on the update object
+      for (const field in update) {
+        const updateValue = update[field];
+        const itemValue = item[field];
 
-      Object.assign(item, updatedItem);
-      this.index.set(item._id, updatedItem);
+        for (const key in updateValue) {
+          if (key.startsWith("$")) {
+            // Handle $inc operator (Increment field value)
+            if (key === "$inc" && typeof item[field] === "number") {
+              item[field] = itemValue + updateValue[key];
+            }
+            // Handle $push operator (Add element to an array)
+            if (key === "$push" && Array.isArray(itemValue)) {
+              item[field].push(updateValue[key]);
+            }
+          } else {
+            // For other fields, update the value
+            item[field] = updateValue;
+          }
+        }
+      }
+
+      // Update the "updatedAt" field
+      item.updatedAt = new Date();
 
       if (options.save) {
         this.database.saveData(this.name);
@@ -132,14 +148,29 @@ class Collection {
       // Update data in the collection with modified documents
       for (let item of this.data) {
         if (this.matchesFilter(item, filter)) {
-          const updatedItem = {
-            ...item,
-            updatedAt: new Date(),
-            ...update,
-          };
+          for (const field in update) {
+            const updateValue = update[field];
+            const itemValue = item[field];
 
-          Object.assign(item, updatedItem);
-          this.index.set(item._id, updatedItem);
+            for (const key in updateValue) {
+              if (key.startsWith("$")) {
+                // Handle $inc operator (Increment field value)
+                if (key === "$inc" && typeof item[field] === "number") {
+                  item[field] = itemValue + updateValue[key];
+                }
+                // Handle $push operator (Add element to an array)
+                if (key === "$push" && Array.isArray(itemValue)) {
+                  item[field].push(updateValue[key]);
+                }
+              } else {
+                // For other fields, update the value
+                item[field] = updateValue;
+              }
+            }
+          }
+
+          // Update the "updatedAt" field
+          item.updatedAt = new Date();
         }
       }
 

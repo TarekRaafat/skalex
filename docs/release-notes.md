@@ -36,6 +36,13 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
+### v3.1.0 ✨
+
+- ➕ Added: `$inc` and `$push` operators to `updateOne` and `updateMany` methods
+- 🔧 Fixed: `saveData` format according to the set `config` data format
+
+---
+
 ### v3.0.1
 
 - 🔧 Fixed: Broken data directory `path` reference

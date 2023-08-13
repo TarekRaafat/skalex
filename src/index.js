@@ -127,6 +127,7 @@ class Skalex {
 
         // Check if the file has a .gz extension indicating compressed data
         const isCompressed = path.extname(filename) === ".gz";
+        const isGZ = this.dataFormat === "gz";
 
         try {
           const stats = await fs.promises.stat(filePath);
@@ -136,7 +137,7 @@ class Skalex {
 
             let jsonData;
 
-            if (isCompressed) {
+            if (isGZ && isCompressed) {
               // Decompress the data if it's compressed
               jsonData = zlib.inflateSync(collectionData).toString("utf8");
             } else {
@@ -176,6 +177,7 @@ class Skalex {
 
       try {
         const promises = [];
+        const encoding = this.dataFormat === "gz" ? "binary" : "utf8";
 
         const saveCollection = async (collectionName) => {
           const collectionData = this.collections[collectionName];
@@ -184,7 +186,8 @@ class Skalex {
             data: collectionData.data,
           });
 
-          const compressedData = zlib.deflateSync(jsonData); // Compress the data
+          const data =
+            this.dataFormat === "gz" ? zlib.deflateSync(jsonData) : jsonData; // Compress the data
 
           const tempFileName = `${collectionName}_${Date.now()}.tmp.${
             this.dataFormat
@@ -195,7 +198,7 @@ class Skalex {
             `${collectionName}.${this.dataFormat}`
           );
 
-          await fs.promises.writeFile(tempFilePath, compressedData, "binary");
+          await fs.promises.writeFile(tempFilePath, data, encoding);
           await fs.promises.rename(tempFilePath, finalFilePath);
         };
 
@@ -233,21 +236,6 @@ class Skalex {
     }
 
     return index;
-  }
-
-  /**
-   * Reports the current system resource usage.
-   */
-  resourceUsage() {
-    const cpuUsage = process.cpuUsage();
-    const memoryUsage = process.memoryUsage();
-
-    console.log("Resource Usage Report:");
-    console.log(`User CPU Time (microseconds): ${cpuUsage.user}`);
-    console.log(`System CPU Time (microseconds): ${cpuUsage.system}`);
-    console.log(`Memory Usage (bytes): ${memoryUsage.rss} (RSS)`);
-    console.log(`Heap Total (bytes): ${memoryUsage.heapTotal}`);
-    console.log(`Heap Used (bytes): ${memoryUsage.heapUsed}`);
   }
 }
 
