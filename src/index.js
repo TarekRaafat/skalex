@@ -1,8 +1,6 @@
-const fs = require("fs");
-const path = require("path");
-const zlib = require("zlib");
 const Collection = require("./Collections");
-const { dirCheck, logger } = require("./utils");
+const { logger } = require("./utils");
+const fs = require("./filesys");
 
 /**
  * Skalex is a simple JavaScript code library for managing a database with collections.
@@ -16,12 +14,13 @@ class Skalex {
    * @param {string} config.format - The database files format.
    *
    */
-  constructor({ path: dir = "./.db", format = "gz" }) {
+  constructor({ path = "./.db", format = "gz" }) {
+    this.fs = new fs({ path });
     /**
      * The directory where data files are stored.
      * @type {string}
      */
-    this.dataDirectory = path.resolve(dir);
+    this.dataDirectory = this.fs.dir;
     /**
      * The format in which the data files will be stored in the database.
      * @type {string}
@@ -42,9 +41,6 @@ class Skalex {
      * @type {boolean}
      */
     this.isSaving = false;
-
-    // Ensure the data directory exists or create it if it does not exist
-    dirCheck(this.dataDirectory);
   }
 
   /**
@@ -120,31 +116,21 @@ class Skalex {
    */
   async loadData() {
     try {
-      const filenames = await fs.promises.readdir(this.dataDirectory);
+      const filenames = await this.fs.readDir(this.dataDirectory);
 
       const loadCollection = filenames.map(async (filename) => {
-        const filePath = path.join(this.dataDirectory, filename);
-
-        // Check if the file has a .gz extension indicating compressed data
-        const isCompressed = path.extname(filename) === ".gz";
-        const isGZ = this.dataFormat === "gz";
+        const filePath = this.fs.join(this.dataDirectory, filename);
 
         try {
-          const stats = await fs.promises.stat(filePath);
+          const docCheck = await this.fs.getStat(filePath);
 
-          if (stats.isFile()) {
-            const collectionData = await fs.promises.readFile(filePath);
+          if (docCheck.isFile()) {
+            const collectionData = await this.fs.readFile(
+              filePath,
+              this.dataFormat
+            );
 
-            let jsonData;
-
-            if (isGZ && isCompressed) {
-              // Decompress the data if it's compressed
-              jsonData = zlib.inflateSync(collectionData).toString("utf8");
-            } else {
-              jsonData = collectionData.toString("utf8");
-            }
-
-            const { collectionName, data } = JSON.parse(jsonData);
+            const { collectionName, data } = JSON.parse(collectionData);
 
             this.collections[collectionName] = {
               collectionName,
@@ -177,7 +163,6 @@ class Skalex {
 
       try {
         const promises = [];
-        const encoding = this.dataFormat === "gz" ? "binary" : "utf8";
 
         const saveCollection = async (collectionName) => {
           const collectionData = this.collections[collectionName];
@@ -186,20 +171,17 @@ class Skalex {
             data: collectionData.data,
           });
 
-          const data =
-            this.dataFormat === "gz" ? zlib.deflateSync(jsonData) : jsonData; // Compress the data
-
           const tempFileName = `${collectionName}_${Date.now()}.tmp.${
             this.dataFormat
           }`;
-          const tempFilePath = path.join(this.dataDirectory, tempFileName);
-          const finalFilePath = path.join(
+          const tempFilePath = this.fs.join(this.dataDirectory, tempFileName);
+          const finalFilePath = this.fs.join(
             this.dataDirectory,
             `${collectionName}.${this.dataFormat}`
           );
 
-          await fs.promises.writeFile(tempFilePath, data, encoding);
-          await fs.promises.rename(tempFilePath, finalFilePath);
+          await this.fs.writeFile(tempFilePath, jsonData, this.dataFormat);
+          await this.fs.renameFile(tempFilePath, finalFilePath);
         };
 
         if (!collectionName) {

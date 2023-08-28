@@ -36,7 +36,19 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v3.1.0 ✨
+### v3.2.0 ✨
+
+- ➕ Added: Complete isolated and improved `fs` module
+- 🎛️ Updated: `loadData` & `saveData` methods
+- 🎛️ Updated: `utils` by separating `fs` related methods
+- 🎛️ Updated: `logger` for better error logging
+- 🔧 Fixed: `findOne` method broken options
+- 🔧 Fixed: `find` method find all use-case
+- 🧹 Cleaned: all methods for better handling
+
+---
+
+### v3.1.0
 
 - ➕ Added: `$inc` and `$push` operators to `updateOne` and `updateMany` methods
 - 🔧 Fixed: `saveData` format according to the set `config` data format

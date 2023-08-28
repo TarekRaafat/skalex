@@ -1,5 +1,3 @@
-const fs = require("fs");
-
 /**
  * Generates a unique ID.
  * @returns {string} The unique ID.
@@ -23,7 +21,9 @@ function generateUniqueId() {
  * @param msg - Represents the message to log.
  * @param type - Specifies the type of message. It can be either "error" or any other value.
  */
-function logger(msg, type) {
+function logger(error, type) {
+  const msg = error instanceof Error ? error.message : error;
+
   if (type === "error") {
     console.error(msg);
   } else {
@@ -31,14 +31,4 @@ function logger(msg, type) {
   }
 }
 
-/**
- * Checks if a directory exists, and if not, creates it.
- * @param directoryPath - String that represents the path of the directory
- */
-function dirCheck(directoryPath) {
-  if (!fs.existsSync(directoryPath)) {
-    fs.mkdirSync(directoryPath, { recursive: true });
-  }
-}
-
-module.exports = { dirCheck, generateUniqueId, logger };
+module.exports = { generateUniqueId, logger };

@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
-const { dirCheck, generateUniqueId, logger } = require("./utils");
+const { generateUniqueId, logger } = require("./utils");
+const { checkDir } = require("./filesys");
 
 /**
  * Collection represents a collection of documents in the database.
@@ -95,7 +96,7 @@ class Collection {
    * @returns {object|null} An object containing the updated document, or null if no document was found.
    */
   async updateOne(filter, update, options = {}) {
-    const item = this.findOne(filter);
+    const item = await this.findOne(filter);
 
     if (item) {
       // Update fields based on the update object
@@ -142,7 +143,7 @@ class Collection {
    * @returns {object|Array} An object containing the updated documents, or an empty array if no documents were found.
    */
   async updateMany(filter, update, options = {}) {
-    const { docs: items } = this.find(filter);
+    const { docs: items } = await this.find(filter);
 
     if (items.length > 0) {
       // Update data in the collection with modified documents
@@ -192,7 +193,7 @@ class Collection {
    * @param {Array} options.select - The fields to select from the documents.
    * @returns {object|null} The matching document, or null if no document was found.
    */
-  findOne(filter, options = {}) {
+  async findOne(filter, options = {}) {
     const { populate, select } = options;
 
     const index = this.findIndex(filter);
@@ -205,7 +206,7 @@ class Collection {
           if (populate) {
             for (const field of populate) {
               const relatedCollection = this.database.useCollection(field);
-              const relatedItem = relatedCollection.findOne({
+              const relatedItem = await relatedCollection.findOne({
                 _id: item[field],
               });
 
@@ -224,7 +225,7 @@ class Collection {
             Object.assign(newItem, item);
           }
 
-          return item;
+          return newItem;
         }
       }
     }
@@ -243,7 +244,7 @@ class Collection {
    * @param {number} options.limit - The number of documents per page.
    * @returns {object} The matching documents.
    */
-  find(filter, options = {}) {
+  async find(filter, options = {}) {
     const { populate, select, sort, page = 1, limit } = options;
 
     let results = [];
@@ -256,7 +257,7 @@ class Collection {
         if (populate) {
           for (const field of populate) {
             const relatedCollection = this.database.useCollection(field);
-            const relatedItem = relatedCollection.findOne({
+            const relatedItem = await relatedCollection.findOne({
               [field]: item[field],
             });
 
@@ -378,9 +379,13 @@ class Collection {
    * @returns {boolean} Whether the document matches the filter or not.
    */
   matchesFilter(item, filter) {
+    // Handle empty filter
+    if (!filter) return true;
+
     // Handle custom function
     if (typeof filter === "function" && filter(item)) return true;
 
+    // Handle filters
     for (const key in filter) {
       const keys = key.split("."); // Split nested keys
       const nested = keys.length > 1;
@@ -470,7 +475,7 @@ class Collection {
     const filePath = path.join(dirPath, `${name || this.name}.${format}`);
 
     try {
-      dirCheck(dirPath);
+      checkDir(dirPath);
 
       const filteredData = this.data.filter((item) =>
         this.matchesFilter(item, filter)
