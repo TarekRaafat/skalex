@@ -99,30 +99,7 @@ class Collection {
     const item = await this.findOne(filter);
 
     if (item) {
-      // Update fields based on the update object
-      for (const field in update) {
-        const updateValue = update[field];
-        const itemValue = item[field];
-
-        for (const key in updateValue) {
-          if (key.startsWith("$")) {
-            // Handle $inc operator (Increment field value)
-            if (key === "$inc" && typeof item[field] === "number") {
-              item[field] = itemValue + updateValue[key];
-            }
-            // Handle $push operator (Add element to an array)
-            if (key === "$push" && Array.isArray(itemValue)) {
-              item[field].push(updateValue[key]);
-            }
-          } else {
-            // For other fields, update the value
-            item[field] = updateValue;
-          }
-        }
-      }
-
-      // Update the "updatedAt" field
-      item.updatedAt = new Date();
+      this.applyUpdate(item, update);
 
       if (options.save) {
         this.database.saveData(this.name);
@@ -146,34 +123,7 @@ class Collection {
     const { docs: items } = await this.find(filter);
 
     if (items.length > 0) {
-      // Update data in the collection with modified documents
-      for (let item of this.data) {
-        if (this.matchesFilter(item, filter)) {
-          for (const field in update) {
-            const updateValue = update[field];
-            const itemValue = item[field];
-
-            for (const key in updateValue) {
-              if (key.startsWith("$")) {
-                // Handle $inc operator (Increment field value)
-                if (key === "$inc" && typeof item[field] === "number") {
-                  item[field] = itemValue + updateValue[key];
-                }
-                // Handle $push operator (Add element to an array)
-                if (key === "$push" && Array.isArray(itemValue)) {
-                  item[field].push(updateValue[key]);
-                }
-              } else {
-                // For other fields, update the value
-                item[field] = updateValue;
-              }
-            }
-          }
-
-          // Update the "updatedAt" field
-          item.updatedAt = new Date();
-        }
-      }
+      items.forEach((item) => this.applyUpdate(item, update));
 
       if (options.save) {
         this.database.saveData(this.name);
@@ -183,6 +133,50 @@ class Collection {
     }
 
     return [];
+  }
+
+  /**
+   * Applies the update to a document.
+   * @param {object} item - The document to update.
+   * @param {object} update - The update to apply.
+   * @returns {object} The updated document.
+   */
+  applyUpdate(item, update) {
+    // Update fields based on the update object
+    for (const field in update) {
+      const updateValue = update[field];
+      let itemValue = item[field];
+
+      if (typeof updateValue === "object") {
+        for (const key in updateValue) {
+          if (key.startsWith("$")) {
+            // Handle $inc operator (Increment field value)
+            if (key === "$inc" && typeof itemValue === "number") {
+              itemValue += updateValue[key];
+            }
+            // Handle $push operator (Add element to an array)
+            if (key === "$push" && Array.isArray(itemValue)) {
+              itemValue.push(updateValue[key]);
+            }
+          } else {
+            // For other fields, update the value
+            item[field] = updateValue;
+          }
+        }
+      } else {
+        item[field] = updateValue;
+      }
+
+      // Update the "updatedAt" field
+      item.updatedAt = new Date();
+
+      // Update the "collection" data
+      Object.assign(item, item);
+      // Update the "index" data
+      this.index.set(item._id, item);
+    }
+
+    return item;
   }
 
   /**
@@ -225,7 +219,7 @@ class Collection {
             Object.assign(newItem, item);
           }
 
-          return newItem;
+          return item;
         }
       }
     }

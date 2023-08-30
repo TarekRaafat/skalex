@@ -36,7 +36,14 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v3.2.0 ✨
+### v3.2.1 ✨
+
+- 🔧 Fixed: `updateOne` & `updateMany` methods issue
+- 🎛️ Updated: `update` methods for optimizations
+
+---
+
+### v3.2.0
 
 - ➕ Added: Complete isolated and improved `fs` module
 - 🎛️ Updated: `loadData` & `saveData` methods
