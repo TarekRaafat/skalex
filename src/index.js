@@ -1,4 +1,4 @@
-const Collection = require("./Collections");
+const Collection = require("./collection");
 const { logger } = require("./utils");
 const fs = require("./filesys");
 

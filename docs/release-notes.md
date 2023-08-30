@@ -36,7 +36,13 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v3.2.1 ✨
+### v3.2.2 ✨
+
+- 🔧 Fixed: `Collection` reference
+
+---
+
+### v3.2.1
 
 - 🔧 Fixed: `updateOne` & `updateMany` methods issue
 - 🎛️ Updated: `update` methods for optimizations
