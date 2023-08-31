@@ -36,7 +36,13 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v3.2.2 ✨
+### v3.2.3 ✨
+
+- 🔧 Fixed: Empty filter object handling
+
+---
+
+### v3.2.2
 
 - 🔧 Fixed: `Collection` reference
 

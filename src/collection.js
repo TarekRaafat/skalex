@@ -374,7 +374,7 @@ class Collection {
    */
   matchesFilter(item, filter) {
     // Handle empty filter
-    if (!filter) return true;
+    if (filter instanceof Object && Object.keys(filter).length > 0) return true;
 
     // Handle custom function
     if (typeof filter === "function" && filter(item)) return true;
