@@ -62,7 +62,7 @@ class fs {
     let data = await f.promises.readFile(filePath);
 
     if (fileFormat === "gz") {
-      data = decompressData(data, fileFormat);
+      data = this.decompressData(data, fileFormat);
     }
 
     return data.toString("utf8");
@@ -89,10 +89,11 @@ class fs {
    * @returns A promise that resolves to undefined.
    */
   async writeFile(filePath, data, fileFormat) {
+    data = JSON.stringify(data);
     const fileEncoding = fileFormat === "gz" ? "binary" : "utf8";
 
     if (fileEncoding === "binary") {
-      data = compressData(data);
+      data = this.compressData(data);
     }
 
     return await f.promises.writeFile(filePath, data, fileEncoding);

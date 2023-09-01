@@ -36,7 +36,13 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v3.2.4 ✨
+### v3.2.5 ✨
+
+- 🔧 Fixed: Files `Read/Write` compression handling
+
+---
+
+### v3.2.4
 
 - 🔧 Fixed: Empty filter object handling
 
