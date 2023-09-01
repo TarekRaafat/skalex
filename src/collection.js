@@ -39,7 +39,7 @@ class Collection {
   /**
    * Inserts a single document into the collection.
    * @param {object} item - The document to insert.
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the insert operation.
    * @param {boolean} options.save - The save criteria for the operation.
    * @returns {object} An object containing the inserted document.
    */
@@ -63,7 +63,7 @@ class Collection {
   /**
    * Inserts multiple documents into the collection.
    * @param {Array} items - The documents to insert.
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the insert operation.
    * @param {boolean} options.save - The save criteria for the operation.
    * @returns {object} An object containing the inserted documents.
    */
@@ -91,7 +91,7 @@ class Collection {
    * Updates a single document in the collection.
    * @param {object} filter - The filter to find the document to update.
    * @param {object} update - The update to apply to the document.
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the update operation.
    * @param {boolean} options.save - The save criteria for the operation.
    * @returns {object|null} An object containing the updated document, or null if no document was found.
    */
@@ -115,7 +115,7 @@ class Collection {
    * Updates multiple documents in the collection.
    * @param {object} filter - The filter to find the documents to update.
    * @param {object} update - The update to apply to the documents.
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the update operation.
    * @param {boolean} options.save - The save criteria for the operation.
    * @returns {object|Array} An object containing the updated documents, or an empty array if no documents were found.
    */
@@ -316,7 +316,7 @@ class Collection {
   /**
    * Deletes a single document from the collection.
    * @param {object} filter - The filter to find the document to delete.
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the delete operation.
    * @param {boolean} options.save - The save criteria for the operation.
    * @returns {object|null} An object containing the deleted document, or null if no document was found.
    */
@@ -340,7 +340,7 @@ class Collection {
   /**
    * Deletes multiple documents from the collection.
    * @param {object} filter - The filter to find the documents to delete.
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the delete operation.
    * @param {boolean} options.save - The save criteria for the operation.
    * @returns {Array} An array containing the deleted documents.
    */
@@ -455,7 +455,7 @@ class Collection {
   /**
    * Exports the filtered collection data to a CSV file in the dataDirectory.
    * @param {object} filter - The filter to match the documents to export (default: {}).
-   * @param {object} options - The options for the find operation.
+   * @param {object} options - The options for the export operation.
    * @param {string} options.dir - The directory path of exports.
    * @param {string} options.name - The export file name.
    * @param {string} options.format - The export file format.
