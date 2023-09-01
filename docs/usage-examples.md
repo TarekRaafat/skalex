@@ -19,7 +19,7 @@ await db.connect();
 const collection = db.useCollection("users");
 
 // Insert a document into the collection
-const insertedDocument = collection.insertOne({
+const insertedDocument = await collection.insertOne({
   name: "John Doe",
   age: 30,
 });
@@ -27,17 +27,20 @@ const insertedDocument = collection.insertOne({
 console.log("Inserted document:", insertedDocument);
 
 // Update a document in the collection
-const updatedDocument = collection.updateOne({ name: "John Doe" }, { age: 31 });
+const updatedDocument = await collection.updateOne(
+  { name: "John Doe" },
+  { age: 31 }
+);
 
 console.log("Updated document:", updatedDocument);
 
 // Find documents in the collection
-const filteredDocuments = collection.find({ age: { $gte: 30 } });
+const filteredDocuments = await collection.find({ age: { $gte: 30 } });
 
 console.log("Filtered documents:", filteredDocuments.docs);
 
 // Delete a document from the collection
-const deletedDocument = collection.deleteOne({ name: "John Doe" });
+const deletedDocument = await collection.deleteOne({ name: "John Doe" });
 
 console.log("Deleted document:", deletedDocument);
 
@@ -65,7 +68,7 @@ const users = db.useCollection("users");
 const posts = db.useCollection("posts");
 
 // Insert a document into the users collection
-const insertedUser = users.insertOne({
+const insertedUser = await users.insertOne({
   name: "John Doe",
   age: 30,
 });
@@ -73,7 +76,7 @@ const insertedUser = users.insertOne({
 console.log("Inserted user:", insertedUser);
 
 // Insert documents into the posts collection
-const insertedPosts = posts.insertMany([
+const insertedPosts = await posts.insertMany([
   { title: "Post 1", users: insertedUser._id },
   { title: "Post 2", users: insertedUser._id },
 ]);
@@ -81,7 +84,7 @@ const insertedPosts = posts.insertMany([
 console.log("Inserted posts:", insertedPosts.docs);
 
 // Find user's posts with populated user information
-const userPosts = posts.find(
+const userPosts = await posts.find(
   { users: insertedUser.data._id },
   { populate: ["users"], select: ["title"] }
 );
@@ -89,7 +92,7 @@ const userPosts = posts.find(
 console.log("User's posts:", userPosts.docs);
 
 // Find user's posts with projection (selecting specific fields)
-const userPostsProjection = posts.find(
+const userPostsProjection = await posts.find(
   { users: insertedUser.data._id },
   { select: ["title"] }
 );
