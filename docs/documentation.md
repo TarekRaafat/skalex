@@ -12,16 +12,18 @@ const Skalex = require("skalex");
 
 The `skalex` class represents the main database instance. It provides methods for connecting to and disconnecting from the database, as well as creating and accessing collections.
 
-### Constructor: Skalex(dataDirectory)
+### Constructor: Skalex(config)
 
-- `dataDirectory` (string): The directory where the database files will be stored.
+- `config` (object): The database configurations.
+  - `path` (string): The directory path of the database.
+  - `format` (string): The database files format.
 
 Creates a new instance of the `Skalex` database.
 
 #### Example
 
 ```javascript
-const db = new Skalex("./db");
+const db = new Skalex({ path: "./db", format: "json" });
 ```
 
 ### Methods
@@ -46,7 +48,9 @@ Retrieves the specified collection from the database. If the collection doesn't 
 
 **Returns**: Collection
 
-#### saveData()
+#### saveData(collectionName)
+
+- `collectionName` (string, optional): The name of the collection to save.
 
 Saves the data from memory to the database files.
 
@@ -62,51 +66,55 @@ Creates a new instance of the Collection.
 
 ### Methods
 
-#### insertOne(document)
+#### insertOne(document, options)
 
 - `document` (object): The document to insert.
+- `options` (object, optional): The options for the insert operation.
+  - `save` (string): The save criteria for the operation.
 
 Inserts a single document into the collection.
 
 **Returns**: object
 
 - `data` (object): The inserted document.
-- `save()` (function): Saves the collection data to the database.
 
-#### insertMany(documents)
+#### insertMany(documents, options)
 
 - `documents` (array): An array of documents to insert.
+- `options` (object, optional): The options for the insert operation.
+  - `save` (string): The save criteria for the operation.
 
 Inserts multiple documents into the collection.
 
 **Returns**: object
 
-- `data` (array): The inserted documents.
-- `save()` (function): Saves the collection data to the database.
+- `data` (object): The inserted documents.
 
-#### updateOne(filter, update)
+#### updateOne(filter, update, options)
 
 - `filter` (object): The filter for finding the document to update.
 - `update` (object): The fields and values to update in the document.
+- `options` (object, optional): The options for the update operation.
+  - `save` (string): The save criteria for the operation.
 
 Updates a single document in the collection that matches the filter.
 
 **Returns**: object or null
 
 - `data` (object): The updated document, or null if no document was found.
-- `save()` (function): Saves the collection data to the database.
 
-#### updateMany(filter, update)
+#### updateMany(filter, update, options)
 
 - `filter` (object): The filter for finding the documents to update.
 - `update` (object): The fields and values to update in the documents.
+- `options` (object, optional): The options for the update operation.
+  - `save` (string): The save criteria for the operation.
 
 Updates multiple documents in the collection that match the filter.
 
-**Returns**: object or array
+**Returns**: object
 
-- `data` (object or array): The updated documents, or an empty array if no documents were found.
-- `save()` (function): Saves the collection data to the database.
+- `data` (object): The updated documents, or an empty array if no documents were found.
 
 #### findOne(filter, options)
 
@@ -117,7 +125,7 @@ Updates multiple documents in the collection that match the filter.
 
 Finds and returns a single document from the collection that matches the filter.
 
-**Returns**: object or null
+**Returns**: object
 
 #### find(filter, options)
 
@@ -133,31 +141,37 @@ Finds and returns documents from the collection that match the filter.
 
 **Returns**: object
 
-#### deleteOne(filter)
+#### deleteOne(filter, options)
 
 - `filter` (object): The filter for finding the document to delete.
+- `options` (object, optional): The options for the delete operation.
+  - `save` (string): The save criteria for the operation.
 
 Deletes a single document from the collection that matches the filter.
 
 **Returns**: object or null
 
 - `data` (object): The deleted document, or null if no document was found.
-- `save()` (function): Saves the collection data to the database.
 
-#### deleteMany(filter)
+#### deleteMany(filter, options)
 
 - `filter` (object): The filter for finding the documents to delete.
+- `options` (object, optional): The options for the delete operation.
+  - `save` (string): The save criteria for the operation.
 
 Deletes multiple documents from the collection that match the filter.
 
 **Returns**: object
 
-- `data` (array): The deleted documents.
-- `save()` (function): Saves the collection data to the database.
+- `data` (object): The deleted documents.
 
-#### exportToCSV(filter)
+#### exportToCSV(filter, options)
 
 - `filter` (object, optional): The filter for exporting specific documents to CSV.
+- `options` (object, optional): The options for the export operation.
+  - `dir` (string): The directory path of exports.
+  - `name` (string): The export file name.
+  - `format` (string): The export file format.
 
 Exports the documents from the collection that match the filter to a CSV file.
 
