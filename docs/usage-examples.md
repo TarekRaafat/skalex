@@ -10,7 +10,7 @@ The below are examples showcasing the usage of create, insert, update, delete op
 const Skalex = require("skalex");
 
 // Create a new instance of the Skalex database
-const db = new Skalex("./data");
+const db = new Skalex({ path: "./data", format: "json" });
 
 // Connect to the database and load existing data
 await db.connect();
@@ -24,22 +24,22 @@ const insertedDocument = collection.insertOne({
   age: 30,
 });
 
-console.log("Inserted document:", insertedDocument.data);
+console.log("Inserted document:", insertedDocument);
 
 // Update a document in the collection
 const updatedDocument = collection.updateOne({ name: "John Doe" }, { age: 31 });
 
-console.log("Updated document:", updatedDocument.data);
+console.log("Updated document:", updatedDocument);
 
 // Find documents in the collection
 const filteredDocuments = collection.find({ age: { $gte: 30 } });
 
-console.log("Filtered documents:", filteredDocuments);
+console.log("Filtered documents:", filteredDocuments.docs);
 
 // Delete a document from the collection
 const deletedDocument = collection.deleteOne({ name: "John Doe" });
 
-console.log("Deleted document:", deletedDocument.data);
+console.log("Deleted document:", deletedDocument);
 
 // Disconnect from the database and save data
 await db.disconnect();
@@ -55,7 +55,7 @@ The below are examples showcasing the usage of population and projection options
 const Skalex = require("skalex");
 
 // Create a new instance of the Skalex database
-const db = new Skalex("./data");
+const db = new Skalex({ path: "./data", format: "json" });
 
 // Connect to the database and load existing data
 await db.connect();
@@ -70,15 +70,15 @@ const insertedUser = users.insertOne({
   age: 30,
 });
 
-console.log("Inserted user:", insertedUser.data);
+console.log("Inserted user:", insertedUser);
 
 // Insert documents into the posts collection
 const insertedPosts = posts.insertMany([
-  { title: "Post 1", users: insertedUser.data._id },
-  { title: "Post 2", users: insertedUser.data._id },
+  { title: "Post 1", users: insertedUser._id },
+  { title: "Post 2", users: insertedUser._id },
 ]);
 
-console.log("Inserted posts:", insertedPosts.data);
+console.log("Inserted posts:", insertedPosts.docs);
 
 // Find user's posts with populated user information
 const userPosts = posts.find(
@@ -86,7 +86,7 @@ const userPosts = posts.find(
   { populate: ["users"], select: ["title"] }
 );
 
-console.log("User's posts:", userPosts);
+console.log("User's posts:", userPosts.docs);
 
 // Find user's posts with projection (selecting specific fields)
 const userPostsProjection = posts.find(
@@ -94,7 +94,7 @@ const userPostsProjection = posts.find(
   { select: ["title"] }
 );
 
-console.log("User's posts with projection:", userPostsProjection);
+console.log("User's posts with projection:", userPostsProjection.docs);
 
 // Disconnect from the database and save data
 await db.disconnect();
