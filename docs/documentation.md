@@ -70,7 +70,7 @@ Creates a new instance of the Collection.
 
 - `document` (object): The document to insert.
 - `options` (object, optional): The options for the insert operation.
-  - `save` (string): The save criteria for the operation.
+  - `save` (boolean): The save criteria for the operation.
 
 Inserts a single document into the collection.
 
@@ -82,7 +82,7 @@ Inserts a single document into the collection.
 
 - `documents` (array): An array of documents to insert.
 - `options` (object, optional): The options for the insert operation.
-  - `save` (string): The save criteria for the operation.
+  - `save` (boolean): The save criteria for the operation.
 
 Inserts multiple documents into the collection.
 
@@ -95,7 +95,7 @@ Inserts multiple documents into the collection.
 - `filter` (object): The filter for finding the document to update.
 - `update` (object): The fields and values to update in the document.
 - `options` (object, optional): The options for the update operation.
-  - `save` (string): The save criteria for the operation.
+  - `save` (boolean): The save criteria for the operation.
 
 Updates a single document in the collection that matches the filter.
 
@@ -108,7 +108,7 @@ Updates a single document in the collection that matches the filter.
 - `filter` (object): The filter for finding the documents to update.
 - `update` (object): The fields and values to update in the documents.
 - `options` (object, optional): The options for the update operation.
-  - `save` (string): The save criteria for the operation.
+  - `save` (boolean): The save criteria for the operation.
 
 Updates multiple documents in the collection that match the filter.
 
@@ -145,7 +145,7 @@ Finds and returns documents from the collection that match the filter.
 
 - `filter` (object): The filter for finding the document to delete.
 - `options` (object, optional): The options for the delete operation.
-  - `save` (string): The save criteria for the operation.
+  - `save` (boolean): The save criteria for the operation.
 
 Deletes a single document from the collection that matches the filter.
 
@@ -157,7 +157,7 @@ Deletes a single document from the collection that matches the filter.
 
 - `filter` (object): The filter for finding the documents to delete.
 - `options` (object, optional): The options for the delete operation.
-  - `save` (string): The save criteria for the operation.
+  - `save` (boolean): The save criteria for the operation.
 
 Deletes multiple documents from the collection that match the filter.
 
