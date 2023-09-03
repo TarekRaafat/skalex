@@ -165,7 +165,7 @@ Deletes multiple documents from the collection that match the filter.
 
 - `data` (object): The deleted documents.
 
-#### exportToCSV(filter, options)
+#### export(filter, options)
 
 - `filter` (object, optional): The filter for exporting specific documents to CSV.
 - `options` (object, optional): The options for the export operation.
