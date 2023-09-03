@@ -85,7 +85,7 @@ console.log("Inserted posts:", insertedPosts.docs);
 
 // Find user's posts with populated user information
 const userPosts = await posts.find(
-  { users: insertedUser.data._id },
+  { users: insertedUser._id },
   { populate: ["users"], select: ["title"] }
 );
 
@@ -93,7 +93,7 @@ console.log("User's posts:", userPosts.docs);
 
 // Find user's posts with projection (selecting specific fields)
 const userPostsProjection = await posts.find(
-  { users: insertedUser.data._id },
+  { users: insertedUser._id },
   { select: ["title"] }
 );
 
