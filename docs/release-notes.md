@@ -36,6 +36,41 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
+### v4.0.0 ✨
+
+> Disclaimer!
+>
+> This release has breaking changes. See `MIGRATION.md` for upgrade instructions.
+
+- 🌀 Changed: `insertOne`, `updateOne`, `deleteOne` now return `{ data: document }` instead of the raw document
+- 🌀 Changed: `updateMany` now always returns `{ docs: [] }` instead of bare `[]` when no matches found
+- 🌀 Changed: `engines` minimum Node.js version raised to `>=18.0.0`
+- ➕ Added: `updatedAt` field set on `insertOne` and `insertMany` documents at creation time
+- ➕ Added: `exports` map in `package.json` for ESM/CJS dual-import support
+- ➕ Added: `CHANGELOG.md` at repo root
+- ➕ Added: `AUDIT.md` — Phase 0 audit log documenting all 19 fixes
+- ➕ Added: `MIGRATION.md` — upgrade guide for v3 → v4 breaking changes
+- ➕ Added: Test suite (`tests/`) covering all Phase 0 fixes
+- 🔧 Fixed: `findOne()` was returning raw document instead of projected `newItem` — populate/select were silently discarded
+- 🔧 Fixed: `matchesFilter()` short-circuited on first key — multi-condition AND filters did not work
+- 🔧 Fixed: `$in` and `$nin` operators were semantically inverted and crashed on non-arrays
+- 🔧 Fixed: `$inc` and `$push` in `applyUpdate()` modified a local variable and never wrote back to `item[field]`
+- 🔧 Fixed: `isSaving` was a single database-level flag — concurrent saves of different collections were silently dropped
+- 🔧 Fixed: `writeFile()` double-serialised JSON — files were written as a string-within-a-string
+- 🔧 Fixed: `findOne()` ignored the `_id` Map index — performed O(2n) scan instead of O(1) lookup
+- 🔧 Fixed: Nested key traversal crashed on null/undefined intermediate values
+- 🔧 Fixed: `insertOne` did not set `updatedAt`; `applyUpdate` set `updatedAt` inside the field loop
+- 🔧 Fixed: `export()` and `saveData()` swallowed errors — callers could not detect failure
+- 🔧 Fixed: `loadData()` silently swallowed corrupt file errors with no distinction from missing files
+- 🎛️ Updated: `Collection` internal references renamed `data`/`index` → `_data`/`_index` — encapsulation boundary established
+- 🎛️ Updated: `useCollection()` now caches and returns the same `Collection` instance for a given name
+- 🎛️ Updated: `export()` routes through the storage adapter — no more direct `fs`/`path` imports in `collection.js`
+- 🎛️ Updated: `generateUniqueId()` now uses `crypto.randomBytes` (Node) / `crypto.getRandomValues` (browser)
+- 🧹 Cleaned: `filesys.js` class renamed from `fs` to `FileSystem` to avoid shadowing Node built-in
+- 📝 Rewritten: `src/index.d.ts` — correct constructor signature, accurate return types, no phantom methods
+
+---
+
 ### v3.2.5 ✨
 
 - 🔧 Fixed: Files `Read/Write` compression handling

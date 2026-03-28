@@ -1,6 +1,6 @@
 const Collection = require("./collection");
 const { logger } = require("./utils");
-const fs = require("./filesys");
+const FileSystem = require("./filesys");
 
 /**
  * Skalex is a simple JavaScript code library for managing a database with collections.
@@ -15,7 +15,7 @@ class Skalex {
    *
    */
   constructor({ path = "./.db", format = "gz" }) {
-    this.fs = new fs({ path });
+    this.fs = new FileSystem({ path });
     /**
      * The directory where data files are stored.
      * @type {string}
@@ -36,11 +36,7 @@ class Skalex {
      * @type {boolean}
      */
     this.isConnected = false;
-    /**
-     * Flag to prevent multiple save operations from overlapping.
-     * @type {boolean}
-     */
-    this.isSaving = false;
+    this._collectionInstances = {};
   }
 
   /**
@@ -70,6 +66,7 @@ class Skalex {
       // Save data before disconnecting
       await this.saveData();
       this.collections = {};
+      this._collectionInstances = {};
       this.isConnected = false;
 
       logger(`> - Disconnected from the database (√)`);
@@ -86,13 +83,20 @@ class Skalex {
    * @returns {Collection} The collection object.
    */
   useCollection(collectionName) {
-    if (this.collections[collectionName]) {
-      // Collection already exists, return it
-      return new Collection(this.collections[collectionName], this);
+    // Return cached instance if it exists
+    if (this._collectionInstances[collectionName]) {
+      return this._collectionInstances[collectionName];
     }
 
-    // Create a new collection and return it
-    return this.createCollection(collectionName);
+    // Create underlying data if needed
+    if (!this.collections[collectionName]) {
+      this.createCollection(collectionName);
+    }
+
+    // Instantiate once and cache
+    const instance = new Collection(this.collections[collectionName], this);
+    this._collectionInstances[collectionName] = instance;
+    return instance;
   }
 
   /**
@@ -105,6 +109,7 @@ class Skalex {
       collectionName,
       data: [],
       index: new Map(),
+      isSaving: false,
     };
 
     return new Collection(this.collections[collectionName], this);
@@ -136,10 +141,15 @@ class Skalex {
               collectionName,
               data,
               index: this.buildIndex(data, "_id"),
+              isSaving: false,
             };
           }
         } catch (error) {
-          logger(`Error reading files: ${error}`, "error");
+          if (error.code === 'ENOENT') {
+            // File doesn't exist — normal on first run, skip
+          } else {
+            logger(`WARNING: Could not load collection from "${filename}": ${error.message}. Collection will be empty.`, 'error');
+          }
         }
       });
 
@@ -157,50 +167,45 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async saveData(collectionName) {
-    // If saving is already in progress, skip
-    if (!this.isSaving) {
-      this.isSaving = true;
+    const promises = [];
+
+    const saveCollection = async (name) => {
+      const collectionData = this.collections[name];
+      if (collectionData.isSaving) return;
+      collectionData.isSaving = true;
 
       try {
-        const promises = [];
+        const jsonData = JSON.stringify({
+          collectionName: name,
+          data: collectionData.data,
+        });
 
-        const saveCollection = async (collectionName) => {
-          const collectionData = this.collections[collectionName];
-          const jsonData = JSON.stringify({
-            collectionName,
-            data: collectionData.data,
-          });
+        const tempFileName = `${name}_${Date.now()}.tmp.${this.dataFormat}`;
+        const tempFilePath = this.fs.join(this.dataDirectory, tempFileName);
+        const finalFilePath = this.fs.join(
+          this.dataDirectory,
+          `${name}.${this.dataFormat}`
+        );
 
-          const tempFileName = `${collectionName}_${Date.now()}.tmp.${
-            this.dataFormat
-          }`;
-          const tempFilePath = this.fs.join(this.dataDirectory, tempFileName);
-          const finalFilePath = this.fs.join(
-            this.dataDirectory,
-            `${collectionName}.${this.dataFormat}`
-          );
-
-          await this.fs.writeFile(tempFilePath, jsonData, this.dataFormat);
-          await this.fs.renameFile(tempFilePath, finalFilePath);
-        };
-
-        if (!collectionName) {
-          for (const collectionName in this.collections) {
-            promises.push(saveCollection(collectionName));
-          }
-        } else {
-          promises.push(saveCollection(collectionName));
-        }
-
-        await Promise.all(promises);
-
-        this.isSaving = false;
+        await this.fs.writeFile(tempFilePath, jsonData, this.dataFormat);
+        await this.fs.renameFile(tempFilePath, finalFilePath);
       } catch (error) {
-        this.isSaving = false;
-
-        logger(`Error saving data: ${error}`, "error");
+        logger(`Error saving "${name}": ${error.message}`, "error");
+        throw error;
+      } finally {
+        collectionData.isSaving = false;
       }
+    };
+
+    if (!collectionName) {
+      for (const name in this.collections) {
+        promises.push(saveCollection(name));
+      }
+    } else {
+      promises.push(saveCollection(collectionName));
     }
+
+    await Promise.all(promises);
   }
 
   /**

@@ -1,7 +1,4 @@
-const fs = require("fs");
-const path = require("path");
 const { generateUniqueId, logger } = require("./utils");
-const { checkDir } = require("./filesys");
 
 /**
  * Collection represents a collection of documents in the database.
@@ -14,27 +11,14 @@ class Collection {
    * @param {Skalex} database - The Skalex database instance.
    */
   constructor(collectionData, database) {
-    /**
-     * The name of the collection.
-     * @type {string}
-     */
     this.name = collectionData.collectionName;
-    /**
-     * The data stored in the collection.
-     * @type {Array}
-     */
-    this.data = collectionData.data;
-    /**
-     * The index map for quick document lookup.
-     * @type {Map}
-     */
-    this.index = collectionData.index;
-    /**
-     * The Skalex database instance.
-     * @type {Skalex}
-     */
     this.database = database;
+    this._store = collectionData;
   }
+
+  get _data()  { return this._store.data; }
+  set _data(val) { this._store.data = val; }
+  get _index() { return this._store.index; }
 
   /**
    * Inserts a single document into the collection.
@@ -47,17 +31,18 @@ class Collection {
     const newItem = {
       _id: generateUniqueId(),
       createdAt: new Date(),
+      updatedAt: new Date(),
       ...item,
     };
 
-    this.data.push(newItem);
-    this.index.set(newItem._id, newItem);
+    this._data.push(newItem);
+    this._index.set(newItem._id, newItem);
 
     if (options.save) {
       this.database.saveData(this.name);
     }
 
-    return newItem;
+    return { data: newItem };
   }
 
   /**
@@ -71,13 +56,14 @@ class Collection {
     const newItems = items.map((item) => ({
       _id: generateUniqueId(),
       createdAt: new Date(),
+      updatedAt: new Date(),
       ...item,
     }));
 
-    this.data.push(...newItems);
+    this._data.push(...newItems);
 
     for (const newItem of newItems) {
-      this.index.set(newItem._id, newItem);
+      this._index.set(newItem._id, newItem);
     }
 
     if (options.save) {
@@ -96,7 +82,21 @@ class Collection {
    * @returns {object|null} An object containing the updated document, or null if no document was found.
    */
   async updateOne(filter, update, options = {}) {
-    const item = await this.findOne(filter);
+    // Find the raw document directly (not a projected copy)
+    let item = null;
+    if (filter._id) {
+      item = this._index.get(filter._id) || null;
+      if (item && Object.keys(filter).length > 1) {
+        item = this.matchesFilter(item, filter) ? item : null;
+      }
+    } else {
+      for (const doc of this._data) {
+        if (this.matchesFilter(doc, filter)) {
+          item = doc;
+          break;
+        }
+      }
+    }
 
     if (item) {
       this.applyUpdate(item, update);
@@ -105,7 +105,7 @@ class Collection {
         this.database.saveData(this.name);
       }
 
-      return item;
+      return { data: item };
     }
 
     return null;
@@ -120,19 +120,21 @@ class Collection {
    * @returns {object|Array} An object containing the updated documents, or an empty array if no documents were found.
    */
   async updateMany(filter, update, options = {}) {
-    const { docs: items } = await this.find(filter);
-
-    if (items.length > 0) {
-      items.forEach((item) => this.applyUpdate(item, update));
-
-      if (options.save) {
-        this.database.saveData(this.name);
+    // Find raw documents directly (not projected copies)
+    const items = [];
+    for (const doc of this._data) {
+      if (this.matchesFilter(doc, filter)) {
+        items.push(doc);
       }
-
-      return { docs: items };
     }
 
-    return [];
+    items.forEach((item) => this.applyUpdate(item, update));
+
+    if (options.save) {
+      this.database.saveData(this.name);
+    }
+
+    return { docs: items };
   }
 
   /**
@@ -142,39 +144,26 @@ class Collection {
    * @returns {object} The updated document.
    */
   applyUpdate(item, update) {
-    // Update fields based on the update object
     for (const field in update) {
       const updateValue = update[field];
-      let itemValue = item[field];
 
-      if (typeof updateValue === "object") {
+      if (typeof updateValue === 'object' && updateValue !== null) {
         for (const key in updateValue) {
-          if (key.startsWith("$")) {
-            // Handle $inc operator (Increment field value)
-            if (key === "$inc" && typeof itemValue === "number") {
-              itemValue += updateValue[key];
-            }
-            // Handle $push operator (Add element to an array)
-            if (key === "$push" && Array.isArray(itemValue)) {
-              itemValue.push(updateValue[key]);
-            }
-          } else {
-            // For other fields, update the value
+          if (key === '$inc' && typeof item[field] === 'number') {
+            item[field] += updateValue[key];
+          } else if (key === '$push' && Array.isArray(item[field])) {
+            item[field].push(updateValue[key]);
+          } else if (!key.startsWith('$')) {
             item[field] = updateValue;
           }
         }
       } else {
         item[field] = updateValue;
       }
-
-      // Update the "updatedAt" field
-      item.updatedAt = new Date();
-
-      // Update the "collection" data
-      Object.assign(item, item);
-      // Update the "index" data
-      this.index.set(item._id, item);
     }
+
+    item.updatedAt = new Date();
+    this._index.set(item._id, item);
 
     return item;
   }
@@ -190,41 +179,46 @@ class Collection {
   async findOne(filter, options = {}) {
     const { populate, select } = options;
 
-    const index = this.findIndex(filter);
-    if (index !== -1) {
-      for (const item of this.data) {
-        if (this.matchesFilter(item, filter)) {
-          const newItem = {};
+    let item = null;
 
-          // Populate related data if specified
-          if (populate) {
-            for (const field of populate) {
-              const relatedCollection = this.database.useCollection(field);
-              const relatedItem = await relatedCollection.findOne({
-                _id: item[field],
-              });
-
-              if (relatedItem) {
-                newItem[field] = relatedItem;
-              }
-            }
-          }
-
-          // Select specified fields
-          if (select) {
-            for (const field of select) {
-              newItem[field] = item[field];
-            }
-          } else {
-            Object.assign(newItem, item);
-          }
-
-          return item;
+    // Fast path: _id lookup via Map index — O(1)
+    if (filter._id) {
+      item = this._index.get(filter._id) || null;
+      // If filter has additional conditions beyond _id, verify them
+      if (item && Object.keys(filter).length > 1) {
+        item = this.matchesFilter(item, filter) ? item : null;
+      }
+    } else {
+      // General path: linear scan — O(n)
+      for (const doc of this._data) {
+        if (this.matchesFilter(doc, filter)) {
+          item = doc;
+          break;
         }
       }
     }
 
-    return null;
+    if (!item) return null;
+
+    const newItem = {};
+
+    // Populate related data if specified
+    if (populate) {
+      for (const field of populate) {
+        const relatedCollection = this.database.useCollection(field);
+        const relatedItem = await relatedCollection.findOne({ _id: item[field] });
+        if (relatedItem) newItem[field] = relatedItem;
+      }
+    }
+
+    // Select specified fields or copy all
+    if (select) {
+      for (const field of select) newItem[field] = item[field];
+    } else {
+      Object.assign(newItem, item);
+    }
+
+    return newItem;
   }
 
   /**
@@ -243,7 +237,7 @@ class Collection {
 
     let results = [];
 
-    for (const item of this.data) {
+    for (const item of this._data) {
       if (this.matchesFilter(item, filter)) {
         const newItem = {};
 
@@ -324,14 +318,14 @@ class Collection {
     const index = this.findIndex(filter);
 
     if (index !== -1) {
-      const deletedItem = this.data.splice(index, 1)[0];
-      this.index.delete(deletedItem._id);
+      const deletedItem = this._data.splice(index, 1)[0];
+      this._index.delete(deletedItem._id);
 
       if (options.save) {
         this.database.saveData(this.name);
       }
 
-      return deletedItem;
+      return { data: deletedItem };
     }
 
     return null;
@@ -348,16 +342,16 @@ class Collection {
     const deletedItems = [];
     const remainingItems = [];
 
-    for (const item of this.data) {
+    for (const item of this._data) {
       if (this.matchesFilter(item, filter)) {
         deletedItems.push(item);
-        this.index.delete(item._id);
+        this._index.delete(item._id);
       } else {
         remainingItems.push(item);
       }
     }
 
-    this.data = remainingItems;
+    this._data = remainingItems;
 
     if (options.save) {
       this.database.saveData(this.name);
@@ -373,68 +367,49 @@ class Collection {
    * @returns {boolean} Whether the document matches the filter or not.
    */
   matchesFilter(item, filter) {
-    // Handle empty filter
-    if (filter instanceof Object && Object.keys(filter).length === 0)
-      return true;
+    // Empty filter matches everything
+    if (filter instanceof Object && Object.keys(filter).length === 0) return true;
 
-    // Handle custom function
-    if (typeof filter === "function" && filter(item)) return true;
+    // Custom function filter
+    if (typeof filter === 'function') return filter(item);
 
-    // Handle filters
+    // All conditions in filter must pass (AND logic)
     for (const key in filter) {
-      const keys = key.split("."); // Split nested keys
+      const keys = key.split('.');
       const nested = keys.length > 1;
-
       const filterValue = filter[key];
-      let itemValue = nested ? item : item[key];
 
-      if (nested) {
-        for (const nestedKey of keys) {
-          if (itemValue[nestedKey]) {
-            itemValue = itemValue[nestedKey];
-          }
-        }
+      // Traverse nested path safely
+      let itemValue;
+      try {
+        itemValue = nested
+          ? keys.reduce((obj, k) => (obj != null ? obj[k] : undefined), item)
+          : item[key];
+      } catch {
+        return false;
       }
 
-      if (typeof filterValue === "object" && itemValue) {
-        // Handle query operators
-        if ("$eq" in filterValue && itemValue === filterValue.$eq) {
-          return true;
-        }
-        if ("$ne" in filterValue && itemValue !== filterValue.$ne) {
-          return true;
-        }
-        if ("$gt" in filterValue && itemValue > filterValue.$gt) {
-          return true;
-        }
-        if ("$lt" in filterValue && itemValue < filterValue.$lt) {
-          return true;
-        }
-        if ("$gte" in filterValue && itemValue >= filterValue.$gte) {
-          return true;
-        }
-        if ("$lte" in filterValue && itemValue <= filterValue.$lte) {
-          return true;
-        }
-        if ("$in" in filterValue && itemValue.includes(filterValue.$in)) {
-          return true;
-        }
-        if ("$nin" in filterValue && !itemValue.includes(filterValue.$nin)) {
-          return true;
-        }
-        if ("$regex" in filterValue && filterValue.$regex.test(itemValue)) {
-          return true;
-        }
-        if ("$fn" in filterValue) {
-          return filterValue.$fn(itemValue);
-        }
+      if (typeof filterValue === 'object' && filterValue !== null && !(filterValue instanceof RegExp)) {
+        // Query operators — each must pass
+        if ('$eq'    in filterValue && itemValue !== filterValue.$eq)                      return false;
+        if ('$ne'    in filterValue && itemValue === filterValue.$ne)                      return false;
+        if ('$gt'    in filterValue && !(itemValue > filterValue.$gt))                     return false;
+        if ('$lt'    in filterValue && !(itemValue < filterValue.$lt))                     return false;
+        if ('$gte'   in filterValue && !(itemValue >= filterValue.$gte))                   return false;
+        if ('$lte'   in filterValue && !(itemValue <= filterValue.$lte))                   return false;
+        if ('$in'    in filterValue && !filterValue.$in.includes(itemValue))               return false;
+        if ('$nin'   in filterValue && filterValue.$nin.includes(itemValue))               return false;
+        if ('$regex' in filterValue && !filterValue.$regex.test(String(itemValue)))        return false;
+        if ('$fn'    in filterValue && !filterValue.$fn(itemValue))                        return false;
+      } else if (filterValue instanceof RegExp) {
+        if (!filterValue.test(String(itemValue))) return false;
       } else {
-        // Handle exact matching
-        return itemValue === filterValue;
+        // Exact match
+        if (itemValue !== filterValue) return false;
       }
     }
 
-    return false;
+    return true;
   }
 
   /**
@@ -443,8 +418,8 @@ class Collection {
    * @returns {number} The index of the matching document, or -1 if no document was found.
    */
   findIndex(filter) {
-    for (let i = 0; i < this.data.length; i++) {
-      const item = this.data[i];
+    for (let i = 0; i < this._data.length; i++) {
+      const item = this._data[i];
       if (this.matchesFilter(item, filter)) {
         return i;
       }
@@ -462,36 +437,40 @@ class Collection {
    * @throws {Error} If no matching data is found.
    */
   async export(filter = {}, options = {}) {
-    const { dir, name, format = "json" } = options;
-
-    const dirPath = path.resolve(
-      dir || `${this.database.dataDirectory}/exports`
-    );
-    const filePath = path.join(dirPath, `${name || this.name}.${format}`);
+    const { dir, name, format = 'json' } = options;
 
     try {
-      checkDir(dirPath);
-
-      const filteredData = this.data.filter((item) =>
-        this.matchesFilter(item, filter)
-      );
+      const filteredData = this._data.filter(item => this.matchesFilter(item, filter));
 
       if (filteredData.length === 0) {
-        throw new Error("No matching data found");
+        throw new Error(`export(): no documents matched the filter in "${this.name}"`);
       }
 
-      let data;
-      if (format === "json") {
-        data = filteredData;
+      let content;
+      if (format === 'json') {
+        content = JSON.stringify(filteredData, null, 2);
       } else {
-        const header = Object.keys(filteredData[0]).join(",");
-        const rows = filteredData.map((item) => Object.values(item).join(","));
-        data = [header, ...rows].join("\n");
+        const header = Object.keys(filteredData[0]).join(',');
+        const rows = filteredData.map(item =>
+          Object.values(item).map(v =>
+            typeof v === 'string' && v.includes(',') ? `"${v}"` : v
+          ).join(',')
+        );
+        content = [header, ...rows].join('\n');
       }
 
-      fs.writeFileSync(filePath, data, "utf8");
+      const exportDir = dir || `${this.database.dataDirectory}/exports`;
+      const fileName = `${name || this.name}.${format}`;
+
+      await this.database.fs.checkDir(exportDir);
+      await this.database.fs.writeFile(
+        this.database.fs.join(exportDir, fileName),
+        content,
+        'utf8'
+      );
     } catch (error) {
-      logger(`Error exporting "${this.name}" collection: ${error}`, "error");
+      logger(`Error exporting "${this.name}": ${error.message}`, 'error');
+      throw error;
     }
   }
 }

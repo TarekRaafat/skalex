@@ -3,17 +3,19 @@
  * @returns {string} The unique ID.
  */
 function generateUniqueId() {
-  // Get the current timestamp in milliseconds.
-  const timestamp = Date.now();
+  const timestamp = Date.now().toString(16);
 
-  // Generate a random number between 0 and 8999999999.
-  const randomPart = Math.floor(Math.random() * 9000000000);
+  let random;
+  try {
+    const { randomBytes } = require('crypto');
+    random = randomBytes(8).toString('hex');
+  } catch {
+    const arr = new Uint8Array(8);
+    crypto.getRandomValues(arr);
+    random = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
 
-  // Combine the timestamp and random number to form the ObjectId.
-  const objectId = `${timestamp}${randomPart.toString().padStart(12, "0")}`;
-
-  // Return the first 24 characters of the ObjectId.
-  return objectId.substring(0, 24);
+  return `${timestamp}${random}`.substring(0, 24);
 }
 
 /**

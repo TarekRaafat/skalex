@@ -2,7 +2,7 @@ const p = require("path");
 const f = require("fs");
 const zlib = require("zlib");
 
-class fs {
+class FileSystem {
   constructor({ path }) {
     this.dir = p.resolve(path);
 
@@ -89,14 +89,10 @@ class fs {
    * @returns A promise that resolves to undefined.
    */
   async writeFile(filePath, data, fileFormat) {
-    data = JSON.stringify(data);
     const fileEncoding = fileFormat === "gz" ? "binary" : "utf8";
+    let output = fileFormat === "gz" ? this.compressData(data) : data;
 
-    if (fileEncoding === "binary") {
-      data = this.compressData(data);
-    }
-
-    return await f.promises.writeFile(filePath, data, fileEncoding);
+    return await f.promises.writeFile(filePath, output, fileEncoding);
   }
 
   /**
@@ -131,4 +127,4 @@ class fs {
   }
 }
 
-module.exports = fs;
+module.exports = FileSystem;
