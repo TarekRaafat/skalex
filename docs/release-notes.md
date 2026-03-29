@@ -36,23 +36,71 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 
 ---
 
-### v4.0.0 ✨
+### v4.0.0-alpha ✨
 
 > Disclaimer!
 >
 > This release has breaking changes. See `MIGRATION.md` for upgrade instructions.
 
+#### Architecture
+
+- ➕ Added: Dual ESM/CJS build — `dist/skalex.esm.js` + `dist/skalex.cjs.js` + `dist/skalex.d.ts` via Rollup
+- ➕ Added: `StorageAdapter` abstract interface — all backends implement `read/write/delete/list`
+- ➕ Added: `FsAdapter` — Node.js file-system backend with atomic rename writes and gz/json format support
+- ➕ Added: `LocalStorageAdapter` — browser `localStorage` backend with namespaced key prefixing
+- ➕ Added: `adapter` config option — pass a custom `StorageAdapter` to target any environment (browser, edge, Bun)
+- ➕ Added: `rollup.config.js` and `vitest.config.js` — build and test tooling
+
+#### Query Engine
+
+- ➕ Added: `IndexEngine` — secondary field indexes with O(1) `lookup()` via `Map<value, Set<doc>>`
+- ➕ Added: Unique index enforcement — schema `unique: true` throws on duplicate insert/update
+- ➕ Added: `presortFilter()` — evaluates indexed and equality fields before regex/`$fn` for performance
+- ➕ Added: Full query operator support — `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$regex`, `$fn`
+
+#### Schema & Validation
+
+- ➕ Added: `parseSchema()` + `validateDoc()` — zero-dependency schema validation with `type`, `required`, `unique`, `enum`
+- ➕ Added: `inferSchema()` — infer a schema from a sample document
+
+#### TTL & Migrations
+
+- ➕ Added: TTL documents — `insertOne(doc, { ttl: "30m" })` sets `_expiresAt`; expired docs swept on `connect()`
+- ➕ Added: `MigrationEngine` — `addMigration({ version, up })` with `_meta` state tracking; pending migrations run on `connect()`
+- ➕ Added: `db.migrationStatus()` — reports applied vs pending migration versions
+
+#### New Database Methods
+
+- ➕ Added: `db.transaction(fn)` — snapshot + commit/rollback; rolls back all in-memory state on error
+- ➕ Added: `db.seed(fixtures, { reset })` — seed collections from fixtures with optional clear
+- ➕ Added: `db.dump()` — returns a snapshot of all collection data as plain arrays
+- ➕ Added: `db.inspect([name])` — metadata per collection: doc count, schema, index list
+- ➕ Added: `db.namespace(id)` — scoped `Skalex` instance storing data under a sub-directory
+- ➕ Added: `db.import(filePath, format)` — import JSON or CSV from a file path
+
+#### New Collection Methods
+
+- ➕ Added: `collection.upsert(filter, doc)` — update if match found, insert otherwise
+- ➕ Added: `insertOne(doc, { ifNotExists })` — return existing doc instead of inserting duplicate
+- ➕ Added: `insertOne/insertMany(doc, { ttl })` — set document expiry at insert time
+
+#### Config
+
+- ➕ Added: `debug: true` config option — enables connect/disconnect log output
+
+#### Breaking Changes
+
 - 🌀 Changed: `insertOne`, `updateOne`, `deleteOne` now return `{ data: document }` instead of the raw document
 - 🌀 Changed: `updateMany` now always returns `{ docs: [] }` instead of bare `[]` when no matches found
 - 🌀 Changed: `engines` minimum Node.js version raised to `>=18.0.0`
-- ➕ Added: `updatedAt` field set on `insertOne` and `insertMany` documents at creation time
-- ➕ Added: `exports` map in `package.json` for ESM/CJS dual-import support
-- ➕ Added: `CHANGELOG.md` at repo root
-- ➕ Added: `AUDIT.md` — Phase 0 audit log documenting all 19 fixes
-- ➕ Added: `MIGRATION.md` — upgrade guide for v3 → v4 breaking changes
-- ➕ Added: Test suite (`tests/`) covering all Phase 0 fixes
+- 🌀 Changed: `package.json` `main`/`module`/`types`/`exports` now point to `dist/`
+- 🌀 Changed: Sort direction convention updated to MongoDB standard — `1` = ascending, `-1` = descending
+
+#### Bug Fixes
+
 - 🔧 Fixed: `findOne()` was returning raw document instead of projected `newItem` — populate/select were silently discarded
 - 🔧 Fixed: `matchesFilter()` short-circuited on first key — multi-condition AND filters did not work
+- 🔧 Fixed: Function filters evaluated as empty-object match due to `instanceof Object` check ordering
 - 🔧 Fixed: `$in` and `$nin` operators were semantically inverted and crashed on non-arrays
 - 🔧 Fixed: `$inc` and `$push` in `applyUpdate()` modified a local variable and never wrote back to `item[field]`
 - 🔧 Fixed: `isSaving` was a single database-level flag — concurrent saves of different collections were silently dropped
@@ -62,12 +110,24 @@ For more information on semantic versioning, please visit <http://semver.org/>.
 - 🔧 Fixed: `insertOne` did not set `updatedAt`; `applyUpdate` set `updatedAt` inside the field loop
 - 🔧 Fixed: `export()` and `saveData()` swallowed errors — callers could not detect failure
 - 🔧 Fixed: `loadData()` silently swallowed corrupt file errors with no distinction from missing files
+
+#### Updates & Refactors
+
+- 🎛️ Updated: `src/collection.js` and `src/index.js` fully rewritten to wire all new modules
 - 🎛️ Updated: `Collection` internal references renamed `data`/`index` → `_data`/`_index` — encapsulation boundary established
 - 🎛️ Updated: `useCollection()` now caches and returns the same `Collection` instance for a given name
 - 🎛️ Updated: `export()` routes through the storage adapter — no more direct `fs`/`path` imports in `collection.js`
 - 🎛️ Updated: `generateUniqueId()` now uses `crypto.randomBytes` (Node) / `crypto.getRandomValues` (browser)
 - 🧹 Cleaned: `filesys.js` class renamed from `fs` to `FileSystem` to avoid shadowing Node built-in
-- 📝 Rewritten: `src/index.d.ts` — correct constructor signature, accurate return types, no phantom methods
+- 📝 Rewritten: `src/index.d.ts` — full v4 generics, union types, mapped types, all new API surface covered
+
+#### Testing & Tooling
+
+- ➕ Added: Vitest test suite — 123 tests across `tests/unit/` and `tests/integration/`
+- ➕ Added: `MemoryAdapter` test helper — all I/O mocked in CI, no live file system calls
+- ➕ Added: `CHANGELOG.md` at repo root
+- ➕ Added: `AUDIT.md` — Phase 0 audit log documenting all 19 fixes
+- ➕ Added: `MIGRATION.md` — upgrade guide for v3 → v4 breaking changes
 
 ---
 

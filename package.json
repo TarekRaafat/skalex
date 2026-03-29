@@ -1,35 +1,14 @@
 {
   "name": "skalex",
-  "version": "4.0.0",
+  "version": "4.0.0-alpha",
   "license": "Apache-2.0",
-  "description": "Simple & intuitive way to manage collections of data.",
+  "description": "AI-first · Isomorphic · Zero-dependency · Local-first JavaScript database.",
   "keywords": [
-    "skalex",
-    "skalexdb",
-    "skalex-db",
-    "light",
-    "portable",
-    "lightweight",
-    "simple",
-    "intuitive",
-    "fast",
-    "flexible",
-    "local",
-    "file-based",
-    "easy",
-    "database",
-    "collections",
-    "management",
-    "speed",
-    "modern",
-    "versatile",
-    "customizable",
-    "data",
-    "db",
-    "scale",
-    "scalable",
-    "json",
-    "csv"
+    "skalex", "database", "db", "document", "collections",
+    "ai", "ai-first", "vector", "embeddings", "semantic-search",
+    "agent-memory", "mcp", "model-context-protocol",
+    "local-first", "offline", "isomorphic", "browser", "edge",
+    "zero-dependency", "node", "bun", "deno", "json", "file-based"
   ],
   "author": {
     "name": "Tarek Raafat",
@@ -43,27 +22,22 @@
   "bugs": {
     "url": "https://github.com/TarekRaafat/skalex/issues"
   },
-  "main": "./src/index.js",
-  "module": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./dist/skalex.cjs.js",
+  "module": "./dist/skalex.esm.js",
+  "types": "./dist/skalex.d.ts",
   "exports": {
     ".": {
-      "require": "./src/index.js",
-      "import": "./src/index.js",
-      "default": "./src/index.js"
+      "import": "./dist/skalex.esm.js",
+      "require": "./dist/skalex.cjs.js",
+      "types": "./dist/skalex.d.ts"
     }
   },
-  "directories": {
-    "src": "./src",
-    "dist": "./src",
-    "lib": "./src",
-    "doc": "./docs"
-  },
-  "files": [
-    "src"
-  ],
+  "files": ["dist", "src"],
   "scripts": {
-    "test": "jest"
+    "build": "rollup -c && cp src/index.d.ts dist/skalex.d.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -81,6 +55,10 @@
     }
   ],
   "devDependencies": {
-    "jest": "^29.5.0"
+    "@rollup/plugin-commonjs": "^29.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "jest": "^29.5.0",
+    "rollup": "^4.60.0",
+    "vitest": "^4.1.2"
   }
 }

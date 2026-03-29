@@ -1,29 +1,97 @@
+// ─── Skalex v4 TypeScript Definitions ────────────────────────────────────────
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
 export interface SkalexConfig {
+  /** Path to the data directory. Default: './.db' */
   path?: string;
+  /** Storage format. Default: 'gz' */
   format?: 'gz' | 'json';
+  /** Enable debug logging. Default: false */
+  debug?: boolean;
+  /** Custom storage adapter (overrides FsAdapter). */
+  adapter?: StorageAdapter;
+}
+
+// ─── Storage ─────────────────────────────────────────────────────────────────
+
+export declare abstract class StorageAdapter {
+  abstract read(name: string): Promise<string | null>;
+  abstract write(name: string, data: string): Promise<void>;
+  abstract delete(name: string): Promise<void>;
+  abstract list(): Promise<string[]>;
+}
+
+// ─── Schema ──────────────────────────────────────────────────────────────────
+
+export type FieldType = 'string' | 'number' | 'boolean' | 'object' | 'array' | 'date' | 'any';
+
+export interface FieldDefinition {
+  type?: FieldType;
+  required?: boolean;
+  unique?: boolean;
+  enum?: unknown[];
+}
+
+export type SchemaDefinition = Record<string, FieldType | FieldDefinition>;
+
+export interface CollectionOptions {
+  schema?: SchemaDefinition;
+  /** Fields to build secondary (non-unique) indexes on. */
+  indexes?: string[];
+}
+
+// ─── Query operators ─────────────────────────────────────────────────────────
+
+export interface QueryOperators<T = unknown> {
+  $eq?: T;
+  $ne?: T;
+  $gt?: T;
+  $gte?: T;
+  $lt?: T;
+  $lte?: T;
+  $in?: T[];
+  $nin?: T[];
+  $regex?: RegExp;
+  $fn?: (value: T) => boolean;
+}
+
+export type FilterValue<T = unknown> = T | RegExp | QueryOperators<T>;
+export type Filter<T = Record<string, unknown>> =
+  | { [K in keyof T]?: FilterValue<T[K]> }
+  | ((doc: T) => boolean)
+  | Record<string, FilterValue>;
+
+// ─── Operation options ────────────────────────────────────────────────────────
+
+export interface InsertOneOptions {
+  save?: boolean;
+  /** Return the existing document instead of inserting if a match is found. */
+  ifNotExists?: boolean;
+  /** Set a TTL: number (seconds), '30m', '24h', '7d', etc. */
+  ttl?: number | string;
+}
+
+export interface InsertManyOptions {
+  save?: boolean;
+  ttl?: number | string;
+}
+
+export interface UpdateOptions {
+  save?: boolean;
+}
+
+export interface DeleteOptions {
+  save?: boolean;
 }
 
 export interface FindOptions {
   populate?: string[];
   select?: string[];
-  sort?: { [field: string]: 1 | -1 };
+  /** Sort descriptor: 1 = ascending, -1 = descending. */
+  sort?: Record<string, 1 | -1>;
   page?: number;
   limit?: number;
-}
-
-export interface FindResult<T = Record<string, unknown>> {
-  docs: T[];
-  page?: number;
-  totalDocs?: number;
-  totalPages?: number;
-}
-
-export interface SingleResult<T = Record<string, unknown>> {
-  data: T;
-}
-
-export interface ManyResult<T = Record<string, unknown>> {
-  docs: T[];
 }
 
 export interface ExportOptions {
@@ -32,34 +100,126 @@ export interface ExportOptions {
   format?: 'json' | 'csv';
 }
 
+// ─── Return shapes ────────────────────────────────────────────────────────────
+
+export interface Document {
+  _id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  _expiresAt?: Date;
+  [key: string]: unknown;
+}
+
+export type DocOf<T> = T & Document;
+
+export interface SingleResult<T = Document> {
+  data: T;
+}
+
+export interface ManyResult<T = Document> {
+  docs: T[];
+}
+
+export interface FindResult<T = Document> {
+  docs: T[];
+  page?: number;
+  totalDocs?: number;
+  totalPages?: number;
+}
+
+// ─── Migration ───────────────────────────────────────────────────────────────
+
+export interface Migration {
+  version: number;
+  description?: string;
+  up: (collection: Collection) => Promise<void>;
+}
+
+export interface MigrationStatus {
+  current: number;
+  applied: number[];
+  pending: number[];
+}
+
+// ─── Collection ───────────────────────────────────────────────────────────────
+
 export declare class Collection<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly name: string;
 
-  insertOne(item: Partial<T>, options?: { save?: boolean }): Promise<SingleResult<T>>;
-  insertMany(items: Partial<T>[], options?: { save?: boolean }): Promise<ManyResult<T>>;
+  // Insert
+  insertOne(item: Partial<T>, options?: InsertOneOptions): Promise<SingleResult<DocOf<T>>>;
+  insertMany(items: Partial<T>[], options?: InsertManyOptions): Promise<ManyResult<DocOf<T>>>;
 
-  findOne(filter: Partial<T> | Record<string, unknown>, options?: FindOptions): Promise<T | null>;
-  find(filter: Partial<T> | Record<string, unknown>, options?: FindOptions): Promise<FindResult<T>>;
+  // Find
+  findOne(filter: Filter<T>, options?: FindOptions): Promise<DocOf<T> | null>;
+  find(filter: Filter<T>, options?: FindOptions): Promise<FindResult<DocOf<T>>>;
 
-  updateOne(filter: Partial<T> | Record<string, unknown>, update: Record<string, unknown>, options?: { save?: boolean }): Promise<SingleResult<T> | null>;
-  updateMany(filter: Partial<T> | Record<string, unknown>, update: Record<string, unknown>, options?: { save?: boolean }): Promise<ManyResult<T>>;
+  // Update
+  updateOne(filter: Filter<T>, update: Record<string, unknown>, options?: UpdateOptions): Promise<SingleResult<DocOf<T>> | null>;
+  updateMany(filter: Filter<T>, update: Record<string, unknown>, options?: UpdateOptions): Promise<ManyResult<DocOf<T>>>;
 
-  deleteOne(filter: Partial<T> | Record<string, unknown>, options?: { save?: boolean }): Promise<SingleResult<T> | null>;
-  deleteMany(filter: Partial<T> | Record<string, unknown>, options?: { save?: boolean }): Promise<ManyResult<T>>;
+  // Upsert
+  upsert(filter: Filter<T>, doc: Partial<T>, options?: UpdateOptions): Promise<SingleResult<DocOf<T>>>;
 
-  export(filter?: Partial<T> | Record<string, unknown>, options?: ExportOptions): Promise<void>;
+  // Delete
+  deleteOne(filter: Filter<T>, options?: DeleteOptions): Promise<SingleResult<DocOf<T>> | null>;
+  deleteMany(filter: Filter<T>, options?: DeleteOptions): Promise<ManyResult<DocOf<T>>>;
+
+  // I/O
+  export(filter?: Filter<T>, options?: ExportOptions): Promise<void>;
 }
+
+// ─── CollectionInfo ───────────────────────────────────────────────────────────
+
+export interface CollectionInfo {
+  name: string;
+  count: number;
+  schema: Record<string, unknown> | null;
+  indexes: string[];
+}
+
+// ─── Skalex ───────────────────────────────────────────────────────────────────
 
 export declare class Skalex {
   constructor(config?: SkalexConfig);
 
   readonly dataDirectory: string;
+  readonly dataFormat: string;
   readonly isConnected: boolean;
+  readonly debug: boolean;
 
+  // Connection
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+
+  // Collections
   useCollection<T extends Record<string, unknown> = Record<string, unknown>>(name: string): Collection<T>;
+  createCollection<T extends Record<string, unknown> = Record<string, unknown>>(name: string, options?: CollectionOptions): Collection<T>;
+
+  // Persistence
   saveData(collectionName?: string): Promise<void>;
+  loadData(): Promise<void>;
+
+  // Migrations
+  addMigration(migration: Migration): void;
+  migrationStatus(): MigrationStatus;
+
+  // Namespace
+  namespace(id: string): Skalex;
+
+  // Transaction
+  transaction<R = unknown>(fn: (db: Skalex) => Promise<R>): Promise<R>;
+
+  // Seeding
+  seed(fixtures: Record<string, Record<string, unknown>[]>, options?: { reset?: boolean }): Promise<void>;
+
+  // Introspection
+  dump(): Record<string, Document[]>;
+  inspect(collectionName: string): CollectionInfo | null;
+  inspect(): Record<string, CollectionInfo>;
+
+  // Import
+  import(filePath: string, format?: 'json' | 'csv'): Promise<ManyResult>;
 }
 
 export default Skalex;

@@ -1,228 +1,444 @@
 const Collection = require("./collection");
 const { logger } = require("./utils");
-const FileSystem = require("./filesys");
+const FsAdapter = require("./adapters/storage/fs");
+const MigrationEngine = require("./migrations");
+const IndexEngine = require("./indexes");
+const { parseSchema } = require("./validator");
+const { sweep } = require("./ttl");
 
 /**
- * Skalex is a simple JavaScript code library for managing a database with collections.
- * @class
+ * Skalex — an in-process document database with file-system persistence.
+ *
+ * @example
+ * const db = new Skalex({ path: "./.db" });
+ * await db.connect();
+ * const users = db.useCollection("users");
+ * await users.insertOne({ name: "Alice" });
  */
 class Skalex {
   /**
-   * Creates an instance of Skalex.
-   * @param {object} config - The database configurations.
-   * @param {string} config.path - The directory path of the database.
-   * @param {string} config.format - The database files format.
-   *
+   * @param {object} [config]
+   * @param {string}  [config.path="./.db"]  - Data directory path.
+   * @param {string}  [config.format="gz"]   - "gz" (compressed) or "json".
+   * @param {boolean} [config.debug=false]   - Log debug output.
+   * @param {object}  [config.adapter]       - Custom StorageAdapter instance.
    */
-  constructor({ path = "./.db", format = "gz" }) {
-    this.fs = new FileSystem({ path });
-    /**
-     * The directory where data files are stored.
-     * @type {string}
-     */
-    this.dataDirectory = this.fs.dir;
-    /**
-     * The format in which the data files will be stored in the database.
-     * @type {string}
-     */
+  constructor({ path = "./.db", format = "gz", debug = false, adapter } = {}) {
+    this.dataDirectory = path;
     this.dataFormat = format;
-    /**
-     * The collections in the database.
-     * @type {object}
-     */
+    this.debug = debug;
+
+    this.fs = adapter || new FsAdapter({ dir: path, format });
+
     this.collections = {};
-    /**
-     * Indicates whether the database is connected or not.
-     * @type {boolean}
-     */
-    this.isConnected = false;
     this._collectionInstances = {};
+    this._migrations = new MigrationEngine();
+    this._autoConnectPromise = null;
+    this.isConnected = false;
   }
 
+  // ─── Connection ──────────────────────────────────────────────────────────
+
   /**
-   * Connects to the database and loads existing data.
+   * Connect to the database: load data, run pending migrations, sweep TTL docs.
    * @returns {Promise<void>}
    */
   async connect() {
     try {
-      // Load existing data
       await this.loadData();
-      this.isConnected = true;
 
-      logger(`> - Connected to the database (√)`);
+      // Run pending migrations
+      if (this._migrations._migrations.length > 0) {
+        const meta = this._getMeta();
+        const applied = meta.appliedVersions || [];
+        const newApplied = await this._migrations.run(
+          (version) => this.useCollection(`_migration_${version}`),
+          applied
+        );
+        this._saveMeta({ appliedVersions: newApplied });
+      }
+
+      // Sweep expired TTL documents
+      for (const name in this.collections) {
+        const col = this.collections[name];
+        const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
+        if (removed > 0) this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+      }
+
+      this.isConnected = true;
+      this._log("> - Connected to the database (√)");
     } catch (error) {
       logger(`Error connecting to the database: ${error}`, "error");
-
       throw error;
     }
   }
 
   /**
-   * Disconnects from the database and saves data.
+   * Disconnect: flush all unsaved data, clear in-memory state.
    * @returns {Promise<void>}
    */
   async disconnect() {
     try {
-      // Save data before disconnecting
       await this.saveData();
       this.collections = {};
       this._collectionInstances = {};
+      this._autoConnectPromise = null;
       this.isConnected = false;
-
-      logger(`> - Disconnected from the database (√)`);
+      this._log("> - Disconnected from the database (√)");
     } catch (error) {
       logger(`Error disconnecting from the database: ${error}`, "error");
-
       throw error;
     }
   }
 
   /**
-   * Retrieves an existing collection or creates a new one.
-   * @param {string} collectionName - The name of the collection.
-   * @returns {Collection} The collection object.
+   * Ensure connect() has been called before proceeding.
+   * Triggers auto-connect on the first operation if not already connected.
+   * @returns {Promise<void>}
+   */
+  async _ensureConnected() {
+    if (this.isConnected) return;
+    if (!this._autoConnectPromise) {
+      this._autoConnectPromise = this.connect();
+    }
+    return this._autoConnectPromise;
+  }
+
+  // ─── Collections ─────────────────────────────────────────────────────────
+
+  /**
+   * Get (or lazily create) a Collection instance by name.
+   * @param {string} collectionName
+   * @returns {Collection}
    */
   useCollection(collectionName) {
-    // Return cached instance if it exists
     if (this._collectionInstances[collectionName]) {
       return this._collectionInstances[collectionName];
     }
-
-    // Create underlying data if needed
     if (!this.collections[collectionName]) {
-      this.createCollection(collectionName);
+      this._createCollectionStore(collectionName);
     }
-
-    // Instantiate once and cache
     const instance = new Collection(this.collections[collectionName], this);
     this._collectionInstances[collectionName] = instance;
     return instance;
   }
 
   /**
-   * Creates a new collection.
-   * @param {string} collectionName - The name of the collection.
-   * @returns {Collection} The new collection object.
+   * Define a collection with optional schema and secondary indexes.
+   * Must be called before connect() so schema is available when loading data.
+   * @param {string} collectionName
+   * @param {{ schema?: object, indexes?: string[] }} [options]
+   * @returns {Collection}
    */
-  createCollection(collectionName) {
+  createCollection(collectionName, options = {}) {
+    this._createCollectionStore(collectionName, options);
+    const instance = new Collection(this.collections[collectionName], this);
+    this._collectionInstances[collectionName] = instance;
+    return instance;
+  }
+
+  _createCollectionStore(collectionName, { schema, indexes = [] } = {}) {
+    let parsedSchema = null;
+    let fieldIndex = null;
+
+    if (schema) {
+      parsedSchema = parseSchema(schema);
+      const uniqueFields = parsedSchema.uniqueFields;
+      if (indexes.length || uniqueFields.length) {
+        fieldIndex = new IndexEngine(indexes, uniqueFields);
+      }
+    } else if (indexes.length) {
+      fieldIndex = new IndexEngine(indexes, []);
+    }
+
     this.collections[collectionName] = {
       collectionName,
       data: [],
       index: new Map(),
       isSaving: false,
+      schema: parsedSchema,
+      fieldIndex,
     };
-
-    return new Collection(this.collections[collectionName], this);
   }
 
+  // ─── Persistence ─────────────────────────────────────────────────────────
+
   /**
-   * Loads data from JSON files in the data directory.
+   * Load all collections from the storage adapter.
    * @returns {Promise<void>}
    */
   async loadData() {
     try {
-      const filenames = await this.fs.readDir(this.dataDirectory);
+      const names = await this.fs.list();
 
-      const loadCollection = filenames.map(async (filename) => {
-        const filePath = this.fs.join(this.dataDirectory, filename);
-
+      await Promise.all(names.map(async (name) => {
         try {
-          const docCheck = await this.fs.getStat(filePath);
+          const raw = await this.fs.read(name);
+          if (!raw) return;
 
-          if (docCheck.isFile()) {
-            const collectionData = await this.fs.readFile(
-              filePath,
-              this.dataFormat
-            );
+          const parsed = JSON.parse(raw);
+          const { collectionName, data } = parsed;
+          if (!collectionName) return;
 
-            const { collectionName, data } = JSON.parse(collectionData);
+          // Preserve schema/index config from createCollection, if any
+          const existing = this.collections[collectionName];
+          const parsedSchema = existing ? existing.schema : null;
+          let fieldIndex = existing ? existing.fieldIndex : null;
 
-            this.collections[collectionName] = {
-              collectionName,
-              data,
-              index: this.buildIndex(data, "_id"),
-              isSaving: false,
-            };
-          }
+          const idIndex = this.buildIndex(data, "_id");
+          if (fieldIndex) fieldIndex.buildFromData(data);
+
+          this.collections[collectionName] = {
+            collectionName,
+            data,
+            index: idIndex,
+            isSaving: false,
+            schema: parsedSchema,
+            fieldIndex,
+          };
         } catch (error) {
-          if (error.code === 'ENOENT') {
-            // File doesn't exist — normal on first run, skip
-          } else {
-            logger(`WARNING: Could not load collection from "${filename}": ${error.message}. Collection will be empty.`, 'error');
+          if (error.code !== "ENOENT") {
+            logger(`WARNING: Could not load collection "${name}": ${error.message}. Collection will be empty.`, "error");
           }
         }
-      });
-
-      await Promise.all(loadCollection);
+      }));
     } catch (error) {
-      logger(`Error loading data: ${error}`, "error");
-
-      throw error;
+      if (error.code !== "ENOENT") {
+        logger(`Error loading data: ${error}`, "error");
+        throw error;
+      }
     }
   }
 
   /**
-   * Saves data to JSON files in the data directory.
-   * @param {string} collectionName - The name of the collection to be saved.
+   * Persist one or all collections via the storage adapter.
+   * @param {string} [collectionName] - If omitted, saves all collections.
    * @returns {Promise<void>}
    */
   async saveData(collectionName) {
-    const promises = [];
-
-    const saveCollection = async (name) => {
-      const collectionData = this.collections[name];
-      if (collectionData.isSaving) return;
-      collectionData.isSaving = true;
-
+    const saveOne = async (name) => {
+      const col = this.collections[name];
+      if (!col || col.isSaving) return;
+      col.isSaving = true;
       try {
-        const jsonData = JSON.stringify({
-          collectionName: name,
-          data: collectionData.data,
-        });
-
-        const tempFileName = `${name}_${Date.now()}.tmp.${this.dataFormat}`;
-        const tempFilePath = this.fs.join(this.dataDirectory, tempFileName);
-        const finalFilePath = this.fs.join(
-          this.dataDirectory,
-          `${name}.${this.dataFormat}`
-        );
-
-        await this.fs.writeFile(tempFilePath, jsonData, this.dataFormat);
-        await this.fs.renameFile(tempFilePath, finalFilePath);
+        await this.fs.write(name, JSON.stringify({ collectionName: name, data: col.data }));
       } catch (error) {
         logger(`Error saving "${name}": ${error.message}`, "error");
         throw error;
       } finally {
-        collectionData.isSaving = false;
+        col.isSaving = false;
       }
     };
 
-    if (!collectionName) {
-      for (const name in this.collections) {
-        promises.push(saveCollection(name));
-      }
+    if (collectionName) {
+      await saveOne(collectionName);
     } else {
-      promises.push(saveCollection(collectionName));
+      await Promise.all(Object.keys(this.collections).map(saveOne));
     }
-
-    await Promise.all(promises);
   }
 
   /**
-   * Builds an index for quick document lookup.
-   * @param {Array} data - The data to build the index from.
-   * @param {string} keyField - The field to use as the index key.
-   * @returns {Map} The index map.
+   * Build a Map index from an array of documents.
+   * @param {object[]} data
+   * @param {string} keyField
+   * @returns {Map}
    */
   buildIndex(data, keyField) {
     const index = new Map();
+    for (const item of data) index.set(item[keyField], item);
+    return index;
+  }
 
-    for (const item of data) {
-      const itemId = item[keyField];
-      index.set(itemId, item);
+  // ─── Migrations ──────────────────────────────────────────────────────────
+
+  /**
+   * Register a migration to run on next connect().
+   * @param {{ version: number, description?: string, up: Function }} migration
+   */
+  addMigration(migration) {
+    this._migrations.add(migration);
+  }
+
+  /**
+   * Report which migrations are applied vs pending.
+   * @returns {{ current: number, applied: number[], pending: number[] }}
+   */
+  migrationStatus() {
+    const meta = this._getMeta();
+    return this._migrations.status(meta.appliedVersions || []);
+  }
+
+  // ─── Namespace ───────────────────────────────────────────────────────────
+
+  /**
+   * Create a scoped Skalex instance that stores data under a sub-directory.
+   * @param {string} id
+   * @returns {Skalex}
+   */
+  namespace(id) {
+    return new Skalex({
+      path: `${this.dataDirectory}/${id}`,
+      format: this.dataFormat,
+      debug: this.debug,
+    });
+  }
+
+  // ─── Transaction ─────────────────────────────────────────────────────────
+
+  /**
+   * Run a callback inside a transaction.
+   * All writes are buffered; if the callback throws, all changes are rolled back.
+   * @param {(db: Skalex) => Promise<any>} fn
+   * @returns {Promise<any>} The return value of fn.
+   */
+  async transaction(fn) {
+    // Deep-copy snapshot before transaction
+    const snapshot = {};
+    for (const name in this.collections) {
+      snapshot[name] = {
+        data: JSON.parse(JSON.stringify(this.collections[name].data)),
+        index: new Map(this.collections[name].index),
+      };
     }
 
-    return index;
+    try {
+      const result = await fn(this);
+      await this.saveData();
+      return result;
+    } catch (error) {
+      // Rollback
+      for (const name in snapshot) {
+        if (!this.collections[name]) continue;
+        this.collections[name].data = snapshot[name].data;
+        this.collections[name].index = snapshot[name].index;
+        if (this.collections[name].fieldIndex) {
+          this.collections[name].fieldIndex.buildFromData(snapshot[name].data);
+        }
+      }
+      throw error;
+    }
+  }
+
+  // ─── Seed ────────────────────────────────────────────────────────────────
+
+  /**
+   * Seed collections with fixture data.
+   * @param {object} fixtures - Map of collectionName → docs[].
+   * @param {{ reset?: boolean }} [options] - If reset=true, clear before seeding.
+   * @returns {Promise<void>}
+   */
+  async seed(fixtures, { reset = false } = {}) {
+    for (const [name, docs] of Object.entries(fixtures)) {
+      const col = this.useCollection(name);
+      if (reset) {
+        this.collections[name].data = [];
+        this.collections[name].index = new Map();
+        if (this.collections[name].fieldIndex) {
+          this.collections[name].fieldIndex.buildFromData([]);
+        }
+        // Evict cached instance so it sees the reset store
+        delete this._collectionInstances[name];
+      }
+      await this.useCollection(name).insertMany(docs);
+    }
+    await this.saveData();
+  }
+
+  // ─── Dump ────────────────────────────────────────────────────────────────
+
+  /**
+   * Return a snapshot of all collection data.
+   * @returns {object} Map of collectionName → docs[].
+   */
+  dump() {
+    const result = {};
+    for (const name in this.collections) {
+      result[name] = [...this.collections[name].data];
+    }
+    return result;
+  }
+
+  // ─── Inspect ─────────────────────────────────────────────────────────────
+
+  /**
+   * Return metadata about one or all collections.
+   * @param {string} [collectionName]
+   * @returns {object|null}
+   */
+  inspect(collectionName) {
+    if (collectionName) {
+      const col = this.collections[collectionName];
+      if (!col) return null;
+      return {
+        name: collectionName,
+        count: col.data.length,
+        schema: col.schema ? Object.fromEntries(col.schema.fields) : null,
+        indexes: col.fieldIndex ? [...col.fieldIndex.indexedFields] : [],
+      };
+    }
+    const result = {};
+    for (const name in this.collections) {
+      result[name] = this.inspect(name);
+    }
+    return result;
+  }
+
+  // ─── Import ──────────────────────────────────────────────────────────────
+
+  /**
+   * Import documents from a JSON or CSV file into a collection.
+   * The collection name is derived from the file name (without extension).
+   * @param {string} filePath - Absolute or relative path to the file.
+   * @param {"json"|"csv"} [format="json"]
+   * @returns {Promise<{ docs: object[] }>}
+   */
+  async import(filePath, format = "json") {
+    const content = await this.fs.readRaw(filePath);
+    let docs;
+
+    if (format === "json") {
+      docs = JSON.parse(content);
+    } else {
+      const lines = content.trim().split("\n");
+      const headers = lines[0].split(",");
+      docs = lines.slice(1).map(line => {
+        const values = line.split(",");
+        const doc = {};
+        headers.forEach((h, i) => { doc[h.trim()] = values[i] ? values[i].trim() : ""; });
+        return doc;
+      });
+    }
+
+    const name = filePath.split("/").pop().replace(/\.[^.]+$/, "");
+    const col = this.useCollection(name);
+    return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
+  }
+
+  // ─── Private ─────────────────────────────────────────────────────────────
+
+  _getMeta() {
+    const metaCol = this.collections["_meta"];
+    if (!metaCol) return {};
+    return metaCol.index.get("migrations") || {};
+  }
+
+  _saveMeta(data) {
+    if (!this.collections["_meta"]) {
+      this._createCollectionStore("_meta");
+    }
+    const col = this.collections["_meta"];
+    const existing = col.index.get("migrations");
+    if (existing) {
+      Object.assign(existing, data);
+    } else {
+      const doc = { _id: "migrations", ...data };
+      col.data.push(doc);
+      col.index.set("migrations", doc);
+    }
+  }
+
+  _log(msg) {
+    if (this.debug) logger(msg);
   }
 }
 

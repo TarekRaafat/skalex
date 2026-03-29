@@ -7,12 +7,12 @@ function generateUniqueId() {
 
   let random;
   try {
-    const { randomBytes } = require('crypto');
-    random = randomBytes(8).toString('hex');
+    const { randomBytes } = require("crypto");
+    random = randomBytes(8).toString("hex");
   } catch {
     const arr = new Uint8Array(8);
     crypto.getRandomValues(arr);
-    random = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    random = Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
   }
 
   return `${timestamp}${random}`.substring(0, 24);
