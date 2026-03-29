@@ -6,6 +6,7 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
+import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
 
 function makeDb(opts = {}) {
   const adapter = new MemoryAdapter();
@@ -748,5 +749,275 @@ describe("architectural constraints", () => {
     expect(c._index).toBeDefined();
     expect(c.index).toBeUndefined();
     await db.disconnect();
+  });
+});
+
+// ─── Vector search ───────────────────────────────────────────────────────────
+
+function makeVectorDb(responses = {}) {
+  const adapter = new MemoryAdapter();
+  const embeddingAdapter = new MockEmbeddingAdapter(responses);
+  const db = new Skalex({ adapter });
+  db._embeddingAdapter = embeddingAdapter; // inject mock
+  return { db, embeddingAdapter };
+}
+
+describe("insertOne / insertMany with { embed }", () => {
+  test("insertOne stores _vector on the internal document", async () => {
+    const { db } = makeVectorDb({ "hello world": [1, 0, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "hello world" }, { embed: "text" });
+
+    // _vector is on the raw store document, not visible via insertOne result
+    const raw = docs._data[0];
+    expect(raw._vector).toEqual([1, 0, 0, 0]);
+    await db.disconnect();
+  });
+
+  test("insertOne result does not expose _vector", async () => {
+    const { db } = makeVectorDb({ "hello": [0.5, 0.5, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { data } = await docs.insertOne({ text: "hello" }, { embed: "text" });
+    expect(data._vector).toBeUndefined();
+    await db.disconnect();
+  });
+
+  test("insertOne supports embed as a function", async () => {
+    const { db } = makeVectorDb({ "ALICE": [1, 0, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ name: "Alice" }, { embed: doc => doc.name.toUpperCase() });
+    expect(docs._data[0]._vector).toEqual([1, 0, 0, 0]);
+    await db.disconnect();
+  });
+
+  test("insertMany embeds each document", async () => {
+    const { db, embeddingAdapter } = makeVectorDb();
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertMany(
+      [{ text: "apple" }, { text: "banana" }, { text: "cherry" }],
+      { embed: "text" }
+    );
+    expect(embeddingAdapter.calls).toEqual(["apple", "banana", "cherry"]);
+    expect(docs._data.every(d => d._vector)).toBe(true);
+    await db.disconnect();
+  });
+
+  test("insertMany result does not expose _vector", async () => {
+    const { db } = makeVectorDb();
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { docs: inserted } = await docs.insertMany(
+      [{ text: "foo" }, { text: "bar" }],
+      { embed: "text" }
+    );
+    expect(inserted.every(d => d._vector === undefined)).toBe(true);
+    await db.disconnect();
+  });
+});
+
+describe("find / findOne strip _vector", () => {
+  test("findOne does not return _vector", async () => {
+    const { db } = makeVectorDb({ "test": [0.1, 0.2, 0.3, 0.4] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "test" }, { embed: "text" });
+    const doc = await docs.findOne({ text: "test" });
+    expect(doc._vector).toBeUndefined();
+    await db.disconnect();
+  });
+
+  test("find does not return _vector on any doc", async () => {
+    const { db } = makeVectorDb();
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertMany([{ text: "a" }, { text: "b" }], { embed: "text" });
+    const { docs: results } = await docs.find({});
+    expect(results.every(d => d._vector === undefined)).toBe(true);
+    await db.disconnect();
+  });
+});
+
+describe("collection.search()", () => {
+  test("returns docs ranked by cosine similarity", async () => {
+    const { db } = makeVectorDb({
+      "cat":  [1, 0, 0, 0],
+      "dog":  [0, 1, 0, 0],
+      "kitten": [0.9, 0.1, 0, 0],
+      "query": [1, 0, 0, 0], // identical to "cat"
+    });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "cat" },    { embed: "text" });
+    await docs.insertOne({ text: "dog" },    { embed: "text" });
+    await docs.insertOne({ text: "kitten" }, { embed: "text" });
+
+    const { docs: results, scores } = await docs.search("query", { limit: 3 });
+
+    expect(results[0].text).toBe("cat");    // score ≈ 1.0
+    expect(results[1].text).toBe("kitten"); // score ≈ 0.99
+    expect(results[2].text).toBe("dog");    // score = 0.0
+    expect(scores[0]).toBeCloseTo(1.0);
+    expect(scores.length).toBe(3);
+    await db.disconnect();
+  });
+
+  test("respects limit option", async () => {
+    const { db } = makeVectorDb({ "q": [1, 0, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertMany(
+      [{ t: "a" }, { t: "b" }, { t: "c" }, { t: "d" }],
+      { embed: "t" }
+    );
+    const { docs: results } = await docs.search("q", { limit: 2 });
+    expect(results).toHaveLength(2);
+    await db.disconnect();
+  });
+
+  test("respects minScore option — filters low-similarity docs", async () => {
+    const { db } = makeVectorDb({
+      "close": [1, 0, 0, 0],
+      "far":   [0, 1, 0, 0],
+      "q":     [1, 0, 0, 0],
+    });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "close" }, { embed: "text" });
+    await docs.insertOne({ text: "far" },   { embed: "text" });
+
+    const { docs: results } = await docs.search("q", { minScore: 0.5 });
+    expect(results).toHaveLength(1);
+    expect(results[0].text).toBe("close");
+    await db.disconnect();
+  });
+
+  test("hybrid search — filter + vector ranking", async () => {
+    const { db } = makeVectorDb({
+      "apple": [1, 0, 0, 0],
+      "apricot": [0.95, 0.05, 0, 0],
+      "banana": [0, 1, 0, 0],
+      "q": [1, 0, 0, 0],
+    });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "apple",   category: "fruit-a" }, { embed: "text" });
+    await docs.insertOne({ text: "apricot", category: "fruit-a" }, { embed: "text" });
+    await docs.insertOne({ text: "banana",  category: "fruit-b" }, { embed: "text" });
+
+    const { docs: results } = await docs.search("q", {
+      filter: { category: "fruit-a" },
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(2);
+    expect(results.map(d => d.text)).not.toContain("banana");
+    expect(results[0].text).toBe("apple");
+    await db.disconnect();
+  });
+
+  test("docs without _vector are skipped", async () => {
+    const { db } = makeVectorDb({ "q": [1, 0, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "no vector" }); // no embed option
+    await docs.insertOne({ text: "has vector" }, { embed: "text" });
+
+    const { docs: results } = await docs.search("q");
+    expect(results).toHaveLength(1);
+    expect(results[0].text).toBe("has vector");
+    await db.disconnect();
+  });
+
+  test("search results do not expose _vector", async () => {
+    const { db } = makeVectorDb({ "q": [1, 0, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    await docs.insertOne({ text: "q" }, { embed: "text" });
+    const { docs: results } = await docs.search("q");
+    expect(results[0]._vector).toBeUndefined();
+    await db.disconnect();
+  });
+});
+
+describe("collection.similar()", () => {
+  test("returns nearest neighbours by vector", async () => {
+    const { db } = makeVectorDb({
+      "cat":    [1, 0, 0, 0],
+      "kitten": [0.9, 0.1, 0, 0],
+      "dog":    [0, 1, 0, 0],
+    });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { data: cat } = await docs.insertOne({ text: "cat" },    { embed: "text" });
+    await docs.insertOne({ text: "kitten" }, { embed: "text" });
+    await docs.insertOne({ text: "dog" },    { embed: "text" });
+
+    const { docs: results, scores } = await docs.similar(cat._id, { limit: 2 });
+
+    expect(results[0].text).toBe("kitten"); // most similar to cat
+    expect(results[1].text).toBe("dog");
+    expect(scores[0]).toBeGreaterThan(scores[1]);
+    await db.disconnect();
+  });
+
+  test("excludes the source document from results", async () => {
+    const { db } = makeVectorDb({ "a": [1, 0, 0, 0], "b": [0.8, 0.2, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { data: docA } = await docs.insertOne({ text: "a" }, { embed: "text" });
+    await docs.insertOne({ text: "b" }, { embed: "text" });
+
+    const { docs: results } = await docs.similar(docA._id);
+    expect(results.every(d => d._id !== docA._id)).toBe(true);
+    await db.disconnect();
+  });
+
+  test("returns empty when id not found", async () => {
+    const { db } = makeVectorDb();
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { docs: results, scores } = await docs.similar("nonexistent");
+    expect(results).toHaveLength(0);
+    expect(scores).toHaveLength(0);
+    await db.disconnect();
+  });
+
+  test("returns empty when source doc has no _vector", async () => {
+    const { db } = makeVectorDb();
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { data } = await docs.insertOne({ text: "no vector" });
+    const { docs: results } = await docs.similar(data._id);
+    expect(results).toHaveLength(0);
+    await db.disconnect();
+  });
+
+  test("similar results do not expose _vector", async () => {
+    const { db } = makeVectorDb({ "a": [1, 0, 0, 0], "b": [0.9, 0.1, 0, 0] });
+    await db.connect();
+    const docs = db.useCollection("docs");
+    const { data: docA } = await docs.insertOne({ text: "a" }, { embed: "text" });
+    await docs.insertOne({ text: "b" }, { embed: "text" });
+    const { docs: results } = await docs.similar(docA._id);
+    expect(results[0]._vector).toBeUndefined();
+    await db.disconnect();
+  });
+});
+
+describe("db.embed()", () => {
+  test("delegates to the embedding adapter", async () => {
+    const { db, embeddingAdapter } = makeVectorDb({ "hello": [0.1, 0.2, 0.3, 0.4] });
+    const vector = await db.embed("hello");
+    expect(vector).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(embeddingAdapter.calls).toContain("hello");
+  });
+
+  test("throws when no AI adapter is configured", async () => {
+    const { db } = makeDb();
+    await expect(db.embed("test")).rejects.toThrow("requires an AI adapter");
   });
 });

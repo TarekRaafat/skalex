@@ -18,9 +18,22 @@ new Skalex(config?)
 | `format` | `"gz" \| "json"` | `"gz"` | Storage format. `"gz"` = compressed, `"json"` = plain |
 | `debug` | `boolean` | `false` | Log connect/disconnect output |
 | `adapter` | `StorageAdapter` | `FsAdapter` | Custom storage backend |
+| `ai` | `object` | `undefined` | AI / embedding config — see [Embedding Adapters](#embedding-adapters) |
 
 ```javascript
 const db = new Skalex({ path: "./data", format: "json" });
+```
+
+```javascript
+// With AI (enables vector search)
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "openai",
+    apiKey: process.env.OPENAI_KEY,
+    // model: "text-embedding-3-small" (default)
+  },
+});
 ```
 
 ---
@@ -152,6 +165,18 @@ Returns a new `Skalex` instance scoped to a sub-directory of the current data pa
 
 **Returns:** `Skalex`
 
+#### `embed(text)`
+
+Embeds a text string using the configured AI adapter.
+
+**Returns:** `Promise<number[]>`
+
+Throws if no `ai` config was provided to the constructor.
+
+```javascript
+const vector = await db.embed("zero-dependency JS database");
+```
+
 #### `import(filePath, format?)`
 
 Imports documents from a JSON or CSV file. The collection name is derived from the file name.
@@ -175,6 +200,7 @@ Represents a collection of documents. Obtained via `db.useCollection()` or `db.c
 | `save` | `boolean` | Immediately persist after insert |
 | `ifNotExists` | `boolean` | Return the existing doc if a match is found — no duplicate inserted |
 | `ttl` | `number \| string` | Set expiry: number = seconds, or `"30m"`, `"24h"`, `"7d"` |
+| `embed` | `string \| Function` | Field name (or selector fn) whose value is embedded and stored as `_vector` |
 
 **Returns:** `Promise<{ data: Document }>`
 
@@ -188,6 +214,7 @@ const { data } = await users.insertOne({ name: "Alice" }, { ttl: "24h" });
 |--------|------|-------------|
 | `save` | `boolean` | Immediately persist after insert |
 | `ttl` | `number \| string` | Set expiry on all inserted documents |
+| `embed` | `string \| Function` | Field name (or selector fn) whose value is embedded and stored as `_vector` |
 
 **Returns:** `Promise<{ docs: Document[] }>`
 
@@ -270,6 +297,47 @@ Exports matched documents to JSON or CSV via the storage adapter.
 | `format` | `"json" \| "csv"` | Output format (default: `"json"`) |
 
 **Throws:** `Error` if no documents match the filter.
+
+---
+
+### Vector Search
+
+#### `search(query, options?)`
+
+Embeds `query` using the configured AI adapter and ranks all documents that have a `_vector` field by cosine similarity. The `_vector` field is never returned in results.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `filter` | `object` | `undefined` | Structured pre-filter applied before scoring (hybrid search) |
+| `limit` | `number` | `10` | Maximum number of results |
+| `minScore` | `number` | `0` | Minimum cosine similarity score — range [-1, 1] |
+
+**Returns:** `Promise<{ docs: Document[], scores: number[] }>`
+
+Requires `ai` config on the `Skalex` constructor.
+
+```javascript
+const { docs, scores } = await articles.search("how to set up a database", { limit: 5 });
+console.log(docs[0].title); // most semantically relevant article
+console.log(scores[0]);     // e.g. 0.94
+```
+
+#### `similar(id, options?)`
+
+Finds the nearest neighbours to an existing document by its `_vector`. The source document is excluded from results.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `limit` | `number` | `10` | Maximum number of results |
+| `minScore` | `number` | `0` | Minimum cosine similarity score |
+
+**Returns:** `Promise<{ docs: Document[], scores: number[] }>`
+
+```javascript
+const { docs } = await articles.similar(article._id, { limit: 3 });
+```
+
+Returns `{ docs: [], scores: [] }` if the document is not found or has no `_vector`.
 
 ---
 
@@ -370,6 +438,57 @@ class MyAdapter {
   async delete(name)      { /* remove the collection */ }
   async list()            { /* return string[] of collection names */ }
 }
+```
+
+---
+
+## Embedding Adapters
+
+Enable vector search by passing an `ai` config to the constructor. Skalex ships two built-in adapters.
+
+### OpenAI
+
+```javascript
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "openai",
+    apiKey: process.env.OPENAI_KEY,
+    model: "text-embedding-3-small", // default — 1536 dimensions
+  },
+});
+```
+
+### Ollama (local, zero cost)
+
+```javascript
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "ollama",
+    model: "nomic-embed-text",        // default — 768 dimensions
+    host: "http://localhost:11434",   // default
+  },
+});
+```
+
+Run locally: `ollama pull nomic-embed-text`
+
+### Custom Adapter
+
+```javascript
+import { EmbeddingAdapter } from "skalex";
+
+class MyEmbeddingAdapter extends EmbeddingAdapter {
+  async embed(text) {
+    // call your embedding API
+    return [0.1, 0.2, ...]; // number[]
+  }
+}
+
+// Inject directly
+const db = new Skalex({ path: "./data" });
+db._embeddingAdapter = new MyEmbeddingAdapter();
 ```
 
 ---

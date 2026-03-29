@@ -323,3 +323,75 @@ await notes.insertOne({ text: "Hello from the browser!" });
 
 await db.disconnect();
 ```
+
+---
+
+### 13. Semantic Search
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "openai",
+    apiKey: process.env.OPENAI_KEY,
+  },
+});
+await db.connect();
+
+const articles = db.useCollection("articles");
+
+// Insert documents — embed the "content" field automatically
+await articles.insertMany([
+  { title: "Getting started with Skalex", content: "Skalex is a zero-dependency JS database..." },
+  { title: "Vector search explained",     content: "Cosine similarity measures the angle between two vectors..." },
+  { title: "Using Ollama locally",         content: "Ollama lets you run embedding models on your own machine..." },
+], { embed: "content" });
+
+// Search by meaning — returns docs ranked by cosine similarity
+const { docs, scores } = await articles.search("how do I set up a local database?", { limit: 2 });
+
+console.log(docs[0].title); // most relevant article
+console.log(scores[0]);     // e.g. 0.91
+
+await db.disconnect();
+```
+
+---
+
+### 14. Hybrid Search & Nearest Neighbours
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  ai: { provider: "ollama", model: "nomic-embed-text" },
+});
+await db.connect();
+
+const docs = db.useCollection("docs");
+
+await docs.insertMany([
+  { text: "JavaScript async patterns",  category: "js" },
+  { text: "TypeScript generics guide",  category: "ts" },
+  { text: "Python async with asyncio",  category: "py" },
+  { text: "Node.js streams tutorial",   category: "js" },
+], { embed: "text" });
+
+// Hybrid: vector similarity filtered to a specific category
+const { docs: results } = await docs.search("async programming", {
+  filter: { category: "js" },
+  limit: 5,
+  minScore: 0.5,
+});
+
+// Find documents similar to an existing one
+const source = await docs.findOne({ text: "JavaScript async patterns" });
+const { docs: similar, scores } = await docs.similar(source._id, { limit: 2 });
+
+console.log(similar[0].text); // "Node.js streams tutorial"
+
+await db.disconnect();
+```

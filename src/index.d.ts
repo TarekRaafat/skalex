@@ -2,6 +2,17 @@
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+export interface AIConfig {
+  /** Embedding provider. */
+  provider: 'openai' | 'ollama';
+  /** API key (required for OpenAI). */
+  apiKey?: string;
+  /** Embedding model override. */
+  model?: string;
+  /** Ollama server URL. Default: 'http://localhost:11434'. */
+  host?: string;
+}
+
 export interface SkalexConfig {
   /** Path to the data directory. Default: './.db' */
   path?: string;
@@ -11,6 +22,14 @@ export interface SkalexConfig {
   debug?: boolean;
   /** Custom storage adapter (overrides FsAdapter). */
   adapter?: StorageAdapter;
+  /** AI / embedding configuration. Required for vector search. */
+  ai?: AIConfig;
+}
+
+// ─── Embedding ───────────────────────────────────────────────────────────────
+
+export declare abstract class EmbeddingAdapter {
+  abstract embed(text: string): Promise<number[]>;
 }
 
 // ─── Storage ─────────────────────────────────────────────────────────────────
@@ -70,11 +89,15 @@ export interface InsertOneOptions {
   ifNotExists?: boolean;
   /** Set a TTL: number (seconds), '30m', '24h', '7d', etc. */
   ttl?: number | string;
+  /** Field name (or selector function) whose value is embedded and stored as _vector. */
+  embed?: string | ((doc: Record<string, unknown>) => string);
 }
 
 export interface InsertManyOptions {
   save?: boolean;
   ttl?: number | string;
+  /** Field name (or selector function) whose value is embedded and stored as _vector. */
+  embed?: string | ((doc: Record<string, unknown>) => string);
 }
 
 export interface UpdateOptions {
@@ -127,6 +150,21 @@ export interface FindResult<T = Document> {
   totalPages?: number;
 }
 
+export interface SearchOptions<T = Record<string, unknown>> {
+  /** Structured pre-filter applied before scoring (hybrid search). */
+  filter?: Filter<T>;
+  /** Maximum number of results. Default: 10. */
+  limit?: number;
+  /** Minimum cosine similarity score [0, 1]. Default: 0. */
+  minScore?: number;
+}
+
+export interface SearchResult<T = Document> {
+  docs: T[];
+  /** Cosine similarity scores, parallel to docs[]. */
+  scores: number[];
+}
+
 // ─── Migration ───────────────────────────────────────────────────────────────
 
 export interface Migration {
@@ -164,6 +202,10 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   // Delete
   deleteOne(filter: Filter<T>, options?: DeleteOptions): Promise<SingleResult<DocOf<T>> | null>;
   deleteMany(filter: Filter<T>, options?: DeleteOptions): Promise<ManyResult<DocOf<T>>>;
+
+  // Vector search
+  search(query: string, options?: SearchOptions<T>): Promise<SearchResult<DocOf<T>>>;
+  similar(id: string, options?: { limit?: number; minScore?: number }): Promise<SearchResult<DocOf<T>>>;
 
   // I/O
   export(filter?: Filter<T>, options?: ExportOptions): Promise<void>;
@@ -220,6 +262,9 @@ export declare class Skalex {
 
   // Import
   import(filePath: string, format?: 'json' | 'csv'): Promise<ManyResult>;
+
+  // Embedding
+  embed(text: string): Promise<number[]>;
 }
 
 export default Skalex;

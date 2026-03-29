@@ -12,32 +12,118 @@
 [![npm](https://img.shields.io/npm/dm/skalex?label=npm)](https://www.npmjs.com/package/skalex)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/TarekRaafat/skalex)
 
-## Introduction
+**AI-first · Isomorphic · Zero-dependency · Local-first**
 
-The `Skalex` DB provides a simple and intuitive way to manage collections of data in a database-like manner in pure vanilla JavaScript. It allows you to create collections, insert and retrieve data, update and delete documents, and perform queries on the data in a simple yet highly flexible way to scale any application quickly and easily, while customizing your data according to your specific needs.
-
-<!-- * * * -->
+> The only JavaScript database with native vector search, schema validation, TTL, migrations, and transactions — all in one zero-dependency package that runs everywhere.
 
 ---
 
-## Documentation:
+## Features
 
-- For usage & configuration details check out **Skalex** <a href="https://tarekraafat.github.io/skalex/">**docs** :notebook_with_decorative_cover:</a>
+**Core**
+- **Zero dependencies** — no install footprint beyond the package itself
+- **Dual ESM / CJS build** — `import` or `require`, TypeScript definitions included
+- **Runs everywhere** — Node.js ≥18, Bun, Deno, browser, edge runtimes
+- **Pluggable storage** — `FsAdapter` (Node), `LocalStorageAdapter` (browser), or bring your own
+
+**Query**
+- Full operator set: `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$fn`
+- Dot-notation nested field queries
+- Secondary field indexes — O(1) lookups via `IndexEngine`
+- Unique constraints, filter pre-sorter for performance
+
+**Schema & Integrity**
+- Zero-dependency schema validation — `type`, `required`, `unique`, `enum`
+- Versioned migrations — `addMigration({ version, up })`, auto-run on `connect()`
+- TTL documents — `insertOne(doc, { ttl: "30m" })`, swept on connect
+- Transactions — snapshot + commit / rollback
+
+**Vector Search (Phase 2)**
+- `insertOne / insertMany` with `{ embed: "field" }` — auto-embed on insert
+- `collection.search(query, { filter, limit, minScore })` — cosine similarity + hybrid
+- `collection.similar(id)` — nearest-neighbour lookup
+- `db.embed(text)` — direct embedding access
+- Built-in adapters: **OpenAI** (`text-embedding-3-small`) and **Ollama** (local, zero cost)
+
+**Developer Experience**
+- `db.transaction(fn)` — atomic multi-collection writes
+- `db.seed(fixtures)` — idempotent fixture seeding
+- `db.dump()` / `db.inspect()` — snapshot and metadata
+- `db.namespace(id)` — isolated sub-instances per tenant / user
+- `db.import(path)` — JSON / CSV import
+- `collection.upsert()`, `insertOne({ ifNotExists })` — safe idempotent writes
+- `debug: true` — query logging
+
+---
+
+## Installation
+
+```bash
+npm install skalex
+```
+
+Requires **Node.js ≥ 18**.
+
+---
+
+## Quick Start
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data", format: "json" });
+await db.connect();
+
+const users = db.useCollection("users");
+
+const { data: alice } = await users.insertOne({ name: "Alice", role: "admin" });
+const { docs }        = await users.find({ role: "admin" });
+await users.updateOne({ name: "Alice" }, { score: { $inc: 10 } });
+await users.deleteOne({ name: "Alice" });
+
+await db.disconnect();
+```
+
+### With Vector Search
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  ai: { provider: "openai", apiKey: process.env.OPENAI_KEY },
+});
+await db.connect();
+
+const articles = db.useCollection("articles");
+
+await articles.insertMany([
+  { title: "Intro to Skalex", content: "A zero-dependency JS database..." },
+  { title: "Vector search 101", content: "Cosine similarity measures angle between vectors..." },
+], { embed: "content" });
+
+const { docs, scores } = await articles.search("how do I set up a JS database?", { limit: 2 });
+console.log(docs[0].title); // most relevant result
+
+await db.disconnect();
+```
+
+---
+
+## Documentation
+
+Full API reference, examples, and guides:
+
+**[tarekraafat.github.io/skalex](https://tarekraafat.github.io/skalex/)** :notebook_with_decorative_cover:
 
 ---
 
 ## Support
 
-Technical questions and support, please post your question on Stack Overflow using the below tag
-
-- Stack Overflow [skalex][stackOverflow]
-
-General questions or new ideas for `Skalex` please start a discussion on Github using the below link
-
-- Github [Discussions]
+- Stack Overflow: [stackoverflow.com/questions/tagged/skalex][stackOverflow]
+- GitHub Discussions: [github.com/TarekRaafat/skalex/discussions][Discussions]
 
 <!-- section links -->
-
 [Discussions]: https://github.com/TarekRaafat/skalex/discussions
 [stackoverflow]: https://stackoverflow.com/questions/tagged/skalex
 

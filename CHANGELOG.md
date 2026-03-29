@@ -59,12 +59,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **`insertOne(doc, { ifNotExists })`** — return existing doc instead of inserting duplicate
 - **`updatedAt`** field set at creation time by `insertOne` and `insertMany`
 
+#### Vector Search
+- **`EmbeddingAdapter` interface** — abstract base (`embed(text) → number[]`) for all embedding backends
+- **`OpenAIEmbeddingAdapter`** — OpenAI embeddings via `fetch`; default model `text-embedding-3-small`
+- **`OllamaEmbeddingAdapter`** — local embeddings via Ollama; default model `nomic-embed-text`
+- **`ai` constructor option** — `{ provider, apiKey, model, host }` wires the embedding adapter
+- **`db.embed(text)`** — direct access to the configured embedding adapter
+- **`insertOne` / `insertMany` `embed` option** — field name or function selector; auto-embeds on insert, stores as `_vector`
+- **`collection.search(query, opts)`** — cosine similarity search over all documents with a `_vector` field; supports `filter` (hybrid), `limit`, `minScore`
+- **`collection.similar(id, opts)`** — nearest-neighbour lookup for an existing document; supports `limit`, `minScore`
+- **`src/vector.js`** — `cosineSimilarity(a, b)` and `stripVector(doc)` utilities
+- **`_vector` field** stripped from all `find`, `findOne`, `search`, `similar`, `insertOne`, and `insertMany` results — never exposed to callers
+- **`namespace()` inherits `ai` config** — namespaced instances share the same embedding adapter
+
 #### Docs & Testing
-- **Vitest test suite** — 123 tests across `tests/unit/` + `tests/integration/`; all I/O mocked via `MemoryAdapter`
+- **Vitest test suite** — 155 tests across `tests/unit/` + `tests/integration/`; all I/O mocked via `MemoryAdapter`
 - **Full v4 TypeScript definitions** — `src/index.d.ts` rewritten with generics, union types, and all new API surface
 - **`CHANGELOG.md`** (this file)
 - **`AUDIT.md`** — Phase 0 audit log documenting all 19 fixes with before/after line references
 - **`MIGRATION.md`** — upgrade guide for v3 → v4 breaking changes
+- **`ARCHITECTURE.md`** — internal design reference covering all v4 + Phase 2 decisions
+- **`MockEmbeddingAdapter`** test helper — deterministic 4-dim vectors, call log for assertions
 
 ### Fixed
 - `findOne()` returned the raw document instead of the projected `newItem` — populate and select options were silently discarded

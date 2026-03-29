@@ -6,8 +6,6 @@ Future features & enhancements
 
 #### Todo
 
-- [ ] Vector embeddings & semantic search
-- [ ] Agent memory primitives (MCP-ready)
 - [ ] Data aggregation (`$group`, `$sum`, `$avg`)
 - [ ] Automated backup & restore
 - [ ] Plugins system for extending functionality
@@ -17,6 +15,13 @@ Future features & enhancements
 - [ ] Compound indexes (multi-field)
 - [ ] Change streams / event hooks (`on("insert", ...)`)
 - [ ] Query explain / execution plan debug tool
+
+#### In Progress
+
+- [ ] Agent memory primitives (`useMemory`, `remember`, `recall`, `context`) — Phase 3
+- [ ] Natural language queries (`db.ask()`) — Phase 3
+- [ ] Encryption at rest (AES-256, Web Crypto) — Phase 3
+- [ ] Change log & point-in-time restore — Phase 3
 
 #### Done
 
@@ -40,6 +45,9 @@ Future features & enhancements
 - [x] `insertOne({ ifNotExists })` — safe conditional insert
 - [x] `debug` config option
 - [x] Custom `adapter` config option
+- [x] `EmbeddingAdapter` interface — pluggable embedding backends
+- [x] `OpenAIEmbeddingAdapter` — OpenAI `text-embedding-3-small` (and any model override)
+- [x] `OllamaEmbeddingAdapter` — local embeddings via Ollama
 - [x] Filter pre-sorter — indexes evaluated before regex/`$fn`
 - [x] Full query operator support (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$regex`, `$fn`)
 - [x] Dot-notation nested field queries

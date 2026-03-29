@@ -2,6 +2,7 @@ const { generateUniqueId, logger } = require("./utils");
 const { matchesFilter, presortFilter } = require("./query");
 const { validateDoc } = require("./validator");
 const { computeExpiry } = require("./ttl");
+const { cosineSimilarity, stripVector } = require("./vector");
 
 /**
  * Collection represents a collection of documents in the database.
@@ -32,11 +33,11 @@ class Collection {
   /**
    * Insert a single document.
    * @param {object} item
-   * @param {{ save?: boolean, ifNotExists?: boolean, ttl?: number|string }} [options]
+   * @param {{ save?: boolean, ifNotExists?: boolean, ttl?: number|string, embed?: string|Function }} [options]
    * @returns {Promise<{ data: object }>}
    */
   async insertOne(item, options = {}) {
-    const { save, ifNotExists, ttl } = options;
+    const { save, ifNotExists, ttl, embed } = options;
 
     if (ifNotExists) {
       const existing = this._findRaw(item);
@@ -57,6 +58,11 @@ class Collection {
 
     if (ttl) newItem._expiresAt = computeExpiry(ttl);
 
+    if (embed) {
+      const text = typeof embed === "function" ? embed(newItem) : newItem[embed];
+      newItem._vector = await this.database.embed(String(text));
+    }
+
     if (this._fieldIndex) this._fieldIndex.add(newItem);
 
     this._data.push(newItem);
@@ -64,19 +70,20 @@ class Collection {
 
     if (save) await this.database.saveData(this.name);
 
-    return { data: newItem };
+    return { data: stripVector(newItem) };
   }
 
   /**
    * Insert multiple documents.
    * @param {object[]} items
-   * @param {{ save?: boolean, ttl?: number|string }} [options]
+   * @param {{ save?: boolean, ttl?: number|string, embed?: string|Function }} [options]
    * @returns {Promise<{ docs: object[] }>}
    */
   async insertMany(items, options = {}) {
-    const { save, ttl } = options;
+    const { save, ttl, embed } = options;
 
-    const newItems = items.map(item => {
+    const newItems = [];
+    for (const item of items) {
       if (this._schema) {
         const errors = validateDoc(item, this._schema);
         if (errors.length) throw new Error(`Validation failed: ${errors.join("; ")}`);
@@ -88,9 +95,16 @@ class Collection {
         updatedAt: new Date(),
         ...item,
       };
+
       if (ttl) newItem._expiresAt = computeExpiry(ttl);
-      return newItem;
-    });
+
+      if (embed) {
+        const text = typeof embed === "function" ? embed(newItem) : newItem[embed];
+        newItem._vector = await this.database.embed(String(text));
+      }
+
+      newItems.push(newItem);
+    }
 
     if (this._fieldIndex) {
       for (const newItem of newItems) this._fieldIndex.add(newItem);
@@ -101,7 +115,7 @@ class Collection {
 
     if (save) await this.database.saveData(this.name);
 
-    return { docs: newItems };
+    return { docs: newItems.map(stripVector) };
   }
 
   // ─── Update ──────────────────────────────────────────────────────────────
@@ -223,6 +237,7 @@ class Collection {
       for (const field of select) newItem[field] = item[field];
     } else {
       Object.assign(newItem, item);
+      delete newItem._vector;
     }
 
     return newItem;
@@ -262,6 +277,7 @@ class Collection {
         for (const field of select) newItem[field] = item[field];
       } else {
         Object.assign(newItem, item);
+        delete newItem._vector;
       }
 
       results.push(newItem);
@@ -288,6 +304,64 @@ class Collection {
     }
 
     return { docs: results };
+  }
+
+  // ─── Vector Search ───────────────────────────────────────────────────────
+
+  /**
+   * Semantic similarity search — embed a query string and rank all documents
+   * with a `_vector` field by cosine similarity.
+   *
+   * @param {string} query
+   * @param {{ filter?: object, limit?: number, minScore?: number }} [options]
+   * @returns {Promise<{ docs: object[], scores: number[] }>}
+   */
+  async search(query, { filter, limit = 10, minScore = 0 } = {}) {
+    const queryVector = await this.database.embed(query);
+
+    const candidates = filter ? this._findAllRaw(filter) : this._data;
+
+    const scored = [];
+    for (const doc of candidates) {
+      if (!doc._vector) continue;
+      const score = cosineSimilarity(queryVector, doc._vector);
+      if (score >= minScore) scored.push({ doc, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, limit);
+
+    return {
+      docs: top.map(r => stripVector(r.doc)),
+      scores: top.map(r => r.score),
+    };
+  }
+
+  /**
+   * Find the nearest neighbours to an existing document by `_id`.
+   *
+   * @param {string} id
+   * @param {{ limit?: number, minScore?: number }} [options]
+   * @returns {Promise<{ docs: object[], scores: number[] }>}
+   */
+  async similar(id, { limit = 10, minScore = 0 } = {}) {
+    const source = this._index.get(id);
+    if (!source || !source._vector) return { docs: [], scores: [] };
+
+    const scored = [];
+    for (const doc of this._data) {
+      if (doc._id === id || !doc._vector) continue;
+      const score = cosineSimilarity(source._vector, doc._vector);
+      if (score >= minScore) scored.push({ doc, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, limit);
+
+    return {
+      docs: top.map(r => stripVector(r.doc)),
+      scores: top.map(r => r.score),
+    };
   }
 
   // ─── Delete ──────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ const MigrationEngine = require("./migrations");
 const IndexEngine = require("./indexes");
 const { parseSchema } = require("./validator");
 const { sweep } = require("./ttl");
+const OpenAIEmbeddingAdapter = require("./adapters/embedding/openai");
+const OllamaEmbeddingAdapter = require("./adapters/embedding/ollama");
 
 /**
  * Skalex — an in-process document database with file-system persistence.
@@ -22,8 +24,13 @@ class Skalex {
    * @param {string}  [config.format="gz"]   - "gz" (compressed) or "json".
    * @param {boolean} [config.debug=false]   - Log debug output.
    * @param {object}  [config.adapter]       - Custom StorageAdapter instance.
+   * @param {object}  [config.ai]            - AI / embedding config.
+   * @param {string}  [config.ai.provider]   - "openai" | "ollama"
+   * @param {string}  [config.ai.apiKey]     - API key (OpenAI).
+   * @param {string}  [config.ai.model]      - Embedding model override.
+   * @param {string}  [config.ai.host]       - Ollama server URL override.
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter } = {}) {
+  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai } = {}) {
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
@@ -35,6 +42,9 @@ class Skalex {
     this._migrations = new MigrationEngine();
     this._autoConnectPromise = null;
     this.isConnected = false;
+
+    this._aiConfig = ai || null;
+    this._embeddingAdapter = ai ? this._createEmbeddingAdapter(ai) : null;
   }
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -280,6 +290,7 @@ class Skalex {
       path: `${this.dataDirectory}/${id}`,
       format: this.dataFormat,
       debug: this.debug,
+      ai: this._aiConfig || undefined,
     });
   }
 
@@ -414,6 +425,22 @@ class Skalex {
     return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
   }
 
+  // ─── Embedding ───────────────────────────────────────────────────────────
+
+  /**
+   * Embed a text string using the configured AI adapter.
+   * @param {string} text
+   * @returns {Promise<number[]>}
+   */
+  async embed(text) {
+    if (!this._embeddingAdapter) {
+      throw new Error(
+        "db.embed() requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor."
+      );
+    }
+    return this._embeddingAdapter.embed(text);
+  }
+
   // ─── Private ─────────────────────────────────────────────────────────────
 
   _getMeta() {
@@ -434,6 +461,19 @@ class Skalex {
       const doc = { _id: "migrations", ...data };
       col.data.push(doc);
       col.index.set("migrations", doc);
+    }
+  }
+
+  _createEmbeddingAdapter({ provider, apiKey, model, host }) {
+    switch (provider) {
+      case "openai":
+        return new OpenAIEmbeddingAdapter({ apiKey, model });
+      case "ollama":
+        return new OllamaEmbeddingAdapter({ model, host });
+      default:
+        throw new Error(
+          `Unknown AI provider: "${provider}". Supported: "openai", "ollama".`
+        );
     }
   }
 
