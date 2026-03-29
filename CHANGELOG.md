@@ -148,9 +148,29 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **`server.connect(transport)`** — accepts custom transports for embedding / testing
 - **`MockTransport`** test helper — in-memory transport for unit testing MCP servers
 
+#### Plugin System
+- **`PluginEngine`** — pre/post hooks on all collection operations (`src/plugins.js`)
+- **`db.use(plugin)`** — register a plugin; hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
+- **`plugins` constructor option** — pre-register plugins at construction time
+- All hooks are awaited in registration order; errors propagate to the caller
+
+#### Session Stats
+- **`SessionStats`** class — per-session read/write/lastActive tracking keyed by session ID (`src/session-stats.js`)
+- **`db.sessionStats(sessionId?)`** — return stats for one session or all sessions
+- **`session` option extended to `find()` and `search()`** — read operations now recorded per session
+- `insertMany`, `updateMany`, `deleteMany` all record writes against the provided session ID
+
+#### Edge & SQLite Adapters
+- **`D1Adapter`** (`src/adapters/storage/d1.js`) — Cloudflare D1 / Workers SQLite; pass a D1Database binding
+- **`BunSQLiteAdapter`** (`src/adapters/storage/bun-sqlite.js`) — Bun-native `bun:sqlite`; zero extra deps; `:memory:` or file path
+- **`LibSQLAdapter`** (`src/adapters/storage/libsql.js`) — LibSQL / Turso; pass any `@libsql/client`-compatible client
+
+#### Adapter Conformance Suite
+- **`tests/conformance/adapter.test.js`** — shared read/write/delete/list contract tests run against MemoryAdapter, FsAdapter (json), FsAdapter (gz), and EncryptedAdapter(MemoryAdapter)
+
 #### Docs & Testing (Phase 4)
-- **Vitest test suite** — 308 tests (14 test files); 69 new tests across events, aggregation, MCP
-- **`src/index.d.ts`** updated with `MutationEvent`, `CollectionStats`, `SlowQueryEntry`, `SkalexMCPServer`, `MCPOptions`, `MCPScopes`, `SlowQueryLogConfig`, aggregation/watch/stats/mcp methods, `session` option on all mutating operations
+- **Vitest test suite** — 347 tests (18 test files); new tests: session-stats (22), plugins (20), adapter conformance (44)
+- **`src/index.d.ts`** updated with `MutationEvent`, `CollectionStats`, `SlowQueryEntry`, `SkalexMCPServer`, `MCPOptions`, `MCPScopes`, `SlowQueryLogConfig`, `Plugin`, `SessionEntry`, `D1Adapter`, `BunSQLiteAdapter`, `LibSQLAdapter`, aggregation/watch/stats/mcp/plugins/sessionStats methods, `session` option on find/search
 
 ### Fixed
 - `findOne()` returned the raw document instead of the projected `newItem` — populate and select options were silently discarded

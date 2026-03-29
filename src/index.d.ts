@@ -57,6 +57,38 @@ export interface SkalexConfig {
   encrypt?: EncryptConfig;
   /** Enable slow query logging. */
   slowQueryLog?: SlowQueryLogConfig;
+  /** Pre-register plugins on construction. */
+  plugins?: Plugin[];
+}
+
+// ─── Plugin ───────────────────────────────────────────────────────────────────
+
+export interface PluginInsertContext { collection: string; doc: Record<string, unknown>; }
+export interface PluginUpdateContext { collection: string; filter: object; update: object; result?: Record<string, unknown> | Record<string, unknown>[]; }
+export interface PluginDeleteContext { collection: string; filter: object; result?: Record<string, unknown> | Record<string, unknown>[]; }
+export interface PluginFindContext   { collection: string; filter: object; options: object; docs?: Record<string, unknown>[]; }
+export interface PluginSearchContext { collection: string; query: string; options: object; docs?: Record<string, unknown>[]; scores?: number[]; }
+
+export interface Plugin {
+  beforeInsert?(ctx: PluginInsertContext): void | Promise<void>;
+  afterInsert?(ctx: PluginInsertContext): void | Promise<void>;
+  beforeUpdate?(ctx: PluginUpdateContext): void | Promise<void>;
+  afterUpdate?(ctx: PluginUpdateContext): void | Promise<void>;
+  beforeDelete?(ctx: PluginDeleteContext): void | Promise<void>;
+  afterDelete?(ctx: PluginDeleteContext): void | Promise<void>;
+  beforeFind?(ctx: PluginFindContext): void | Promise<void>;
+  afterFind?(ctx: PluginFindContext): void | Promise<void>;
+  beforeSearch?(ctx: PluginSearchContext): void | Promise<void>;
+  afterSearch?(ctx: PluginSearchContext): void | Promise<void>;
+}
+
+// ─── Session Stats ────────────────────────────────────────────────────────────
+
+export interface SessionEntry {
+  sessionId: string;
+  reads: number;
+  writes: number;
+  lastActive: Date | null;
 }
 
 // ─── Adapters ────────────────────────────────────────────────────────────────
@@ -180,6 +212,8 @@ export interface FindOptions {
   sort?: Record<string, 1 | -1>;
   page?: number;
   limit?: number;
+  /** Session identifier for per-session stats tracking. */
+  session?: string;
 }
 
 export interface ExportOptions {
@@ -222,6 +256,8 @@ export interface SearchOptions<T = Record<string, unknown>> {
   limit?: number;
   /** Minimum cosine similarity score [0, 1]. Default: 0. */
   minScore?: number;
+  /** Session identifier for per-session stats tracking. */
+  session?: string;
 }
 
 export interface SearchResult<T = Document> {
@@ -436,6 +472,43 @@ export declare class Skalex {
 
   // MCP Server
   mcp(options?: MCPOptions): SkalexMCPServer;
+
+  // Plugins
+  use(plugin: Plugin): void;
+
+  // Session Stats
+  sessionStats(sessionId: string): SessionEntry | null;
+  sessionStats(): SessionEntry[];
+}
+
+// ─── Edge / SQLite Adapters ───────────────────────────────────────────────────
+
+export declare class D1Adapter extends StorageAdapter {
+  /** @param d1 - The D1Database binding from your Cloudflare Worker environment. */
+  constructor(d1: object);
+  read(name: string): Promise<string | null>;
+  write(name: string, data: string): Promise<void>;
+  delete(name: string): Promise<void>;
+  list(): Promise<string[]>;
+}
+
+export declare class BunSQLiteAdapter extends StorageAdapter {
+  /** @param path - Path to the SQLite file, or ":memory:" (default). */
+  constructor(path?: string);
+  read(name: string): Promise<string | null>;
+  write(name: string, data: string): Promise<void>;
+  delete(name: string): Promise<void>;
+  list(): Promise<string[]>;
+  close(): void;
+}
+
+export declare class LibSQLAdapter extends StorageAdapter {
+  /** @param client - A @libsql/client Client instance. */
+  constructor(client: object);
+  read(name: string): Promise<string | null>;
+  write(name: string, data: string): Promise<void>;
+  delete(name: string): Promise<void>;
+  list(): Promise<string[]>;
 }
 
 export default Skalex;

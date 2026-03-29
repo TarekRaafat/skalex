@@ -21,6 +21,7 @@ new Skalex(config?)
 | `ai` | `object` | `undefined` | AI / embedding config — see [Embedding Adapters](#embedding-adapters) and [Language Model Adapters](#language-model-adapters) |
 | `encrypt` | `object` | `undefined` | At-rest encryption — see [Encryption](#encryption) |
 | `slowQueryLog` | `object` | `undefined` | Slow query recording — see [Slow Query Log](#slow-query-log) |
+| `plugins` | `Plugin[]` | `undefined` | Pre-register plugins — see [Plugin System](#plugin-system) |
 
 ```javascript
 const db = new Skalex({ path: "./data", format: "json" });
@@ -52,6 +53,14 @@ const db = new Skalex({
 const db = new Skalex({
   path: "./data",
   slowQueryLog: { threshold: 50, maxEntries: 1000 },
+});
+```
+
+```javascript
+// With pre-registered plugins
+const db = new Skalex({
+  path: "./data",
+  plugins: [myAuditPlugin],
 });
 ```
 
@@ -1049,6 +1058,142 @@ for (const entry of slow) {
 ```
 
 Instrumented on `find()` and `search()`.
+
+---
+
+## Plugin System
+
+Plugins intercept database operations via pre/post hooks. Register with `db.use(plugin)` or pass `plugins` to the constructor.
+
+```javascript
+const auditPlugin = {
+  async afterInsert({ collection, doc }) {
+    await auditLog.write("insert", collection, doc._id);
+  },
+  async afterDelete({ collection, filter, result }) {
+    await auditLog.write("delete", collection, result?._id);
+  },
+};
+
+db.use(auditPlugin);
+```
+
+### Available Hooks
+
+| Hook | Context properties |
+|------|--------------------|
+| `beforeInsert(ctx)` | `collection`, `doc` |
+| `afterInsert(ctx)` | `collection`, `doc` (fully inserted, `_id` set) |
+| `beforeUpdate(ctx)` | `collection`, `filter`, `update` |
+| `afterUpdate(ctx)` | `collection`, `filter`, `update`, `result` |
+| `beforeDelete(ctx)` | `collection`, `filter` |
+| `afterDelete(ctx)` | `collection`, `filter`, `result` |
+| `beforeFind(ctx)` | `collection`, `filter`, `options` |
+| `afterFind(ctx)` | `collection`, `filter`, `options`, `docs` |
+| `beforeSearch(ctx)` | `collection`, `query`, `options` |
+| `afterSearch(ctx)` | `collection`, `query`, `options`, `docs`, `scores` |
+
+All hooks are awaited in registration order. A hook that throws will propagate the error to the caller.
+
+### Multiple plugins
+
+```javascript
+db.use(validationPlugin);
+db.use(auditPlugin);
+db.use(cacheInvalidationPlugin);
+// all three fire in order for every operation
+```
+
+---
+
+## Session Stats
+
+Track reads and writes per session ID. Pass `session` on any operation; stats accumulate automatically.
+
+```javascript
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const col = db.useCollection("orders");
+
+// Tag writes
+await col.insertOne({ item: "Widget" }, { session: "user-123" });
+await col.updateOne({ item: "Widget" }, { qty: 2 }, { session: "user-123" });
+
+// Tag reads
+await col.find({}, { session: "user-123" });
+
+// Retrieve stats
+const s = db.sessionStats("user-123");
+console.log(s.reads);      // 1
+console.log(s.writes);     // 2
+console.log(s.lastActive); // Date
+
+// All sessions
+const all = db.sessionStats();
+// [{ sessionId: "user-123", reads: 1, writes: 2, lastActive: Date }]
+```
+
+The `session` option is supported on `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`, `find`, and `search`.
+
+---
+
+## Edge & SQLite Adapters
+
+### D1Adapter (Cloudflare Workers)
+
+Stores all collections in a Cloudflare D1 SQLite table. Pass the D1 binding from your Worker environment.
+
+```javascript
+import Skalex from "skalex";
+import D1Adapter from "skalex/src/adapters/storage/d1";
+
+export default {
+  async fetch(request, env) {
+    const db = new Skalex({ adapter: new D1Adapter(env.DB) });
+    await db.connect();
+    const users = db.useCollection("users");
+    const { docs } = await users.find({});
+    return Response.json(docs);
+  },
+};
+```
+
+### BunSQLiteAdapter (Bun runtime)
+
+Uses Bun's built-in `bun:sqlite` — zero extra dependencies.
+
+```javascript
+import Skalex from "skalex";
+import BunSQLiteAdapter from "skalex/src/adapters/storage/bun-sqlite";
+
+const db = new Skalex({ adapter: new BunSQLiteAdapter("./data.db") });
+await db.connect();
+```
+
+Pass `":memory:"` for an ephemeral in-memory database.
+
+### LibSQLAdapter (Turso / LibSQL)
+
+Works with any `@libsql/client`-compatible client.
+
+```javascript
+import { createClient } from "@libsql/client";
+import Skalex from "skalex";
+import LibSQLAdapter from "skalex/src/adapters/storage/libsql";
+
+// Remote Turso database
+const client = createClient({
+  url: "libsql://your-db.turso.io",
+  authToken: process.env.TURSO_TOKEN,
+});
+
+// Or local file
+// const client = createClient({ url: "file:./data.db" });
+
+const db = new Skalex({ adapter: new LibSQLAdapter(client) });
+await db.connect();
+```
 
 ---
 

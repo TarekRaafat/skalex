@@ -7,12 +7,8 @@ Future features & enhancements
 #### Todo
 
 - [ ] Automated backup & restore
-- [ ] Plugins system for extending functionality
 - [ ] Additional export formats (NDJSON, Parquet)
 - [ ] IndexedDB adapter (browser persistent storage)
-- [ ] D1 / Cloudflare Workers adapter
-- [ ] Bun SQLite adapter
-- [ ] LibSQL / Turso adapter
 - [ ] Compound indexes (multi-field)
 - [ ] Query explain / execution plan debug tool
 
@@ -42,6 +38,12 @@ Future features & enhancements
 - [x] `db.stats()` — count, estimated size, average doc size per collection
 - [x] `db.slowQueries()` — slow query log with configurable threshold and ring buffer
 - [x] `db.mcp()` — MCP server (stdio + HTTP/SSE) for Claude Desktop, Cursor, and any MCP client
+- [x] Plugin system — `db.use(plugin)` pre/post hooks on all operations
+- [x] Per-session stats — `db.sessionStats()` reads/writes/lastActive keyed by session ID
+- [x] Adapter conformance test suite — same tests against MemoryAdapter, FsAdapter (json/gz), EncryptedAdapter
+- [x] `D1Adapter` — Cloudflare D1 / Workers edge SQLite
+- [x] `BunSQLiteAdapter` — Bun native `bun:sqlite` storage
+- [x] `LibSQLAdapter` — LibSQL / Turso client adapter
 - [x] `collection.upsert()` — update-or-insert
 - [x] `insertOne({ ifNotExists })` — safe conditional insert
 - [x] `collection.count / sum / avg / groupBy` — aggregation with filter + dot-notation

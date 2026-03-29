@@ -16,6 +16,8 @@ const ChangeLog = require("./changelog");
 const { QueryCache, processLLMFilter, validateLLMFilter } = require("./ask");
 const EventBus = require("./events");
 const QueryLog = require("./query-log");
+const SessionStats = require("./session-stats");
+const PluginEngine = require("./plugins");
 const SkalexMCPServer = require("./mcp/index");
 
 /**
@@ -46,7 +48,7 @@ class Skalex {
    * @param {number}  [config.slowQueryLog.threshold] - Duration threshold in ms. Default: 100.
    * @param {number}  [config.slowQueryLog.maxEntries] - Max entries to keep. Default: 500.
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog } = {}) {
+  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, plugins } = {}) {
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
@@ -69,6 +71,12 @@ class Skalex {
     this._queryCache = new QueryCache();
     this._eventBus = new EventBus();
     this._queryLog = slowQueryLog ? new QueryLog(slowQueryLog) : null;
+    this._sessionStats = new SessionStats();
+    this._plugins = new PluginEngine();
+    // Pre-register any plugins passed to the constructor
+    if (Array.isArray(plugins)) {
+      for (const p of plugins) this._plugins.register(p);
+    }
   }
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -322,6 +330,33 @@ class Skalex {
       encrypt: this._encryptConfig || undefined,
       slowQueryLog: this._queryLog ? { threshold: this._queryLog._threshold, maxEntries: this._queryLog._maxEntries } : undefined,
     });
+  }
+
+  // ─── Plugins ──────────────────────────────────────────────────────────────
+
+  /**
+   * Register a plugin. Plugins are plain objects with optional async hook
+   * methods: beforeInsert, afterInsert, beforeUpdate, afterUpdate,
+   * beforeDelete, afterDelete, beforeFind, afterFind, beforeSearch, afterSearch.
+   *
+   * @param {object} plugin
+   */
+  use(plugin) {
+    this._plugins.register(plugin);
+  }
+
+  // ─── Session Stats ────────────────────────────────────────────────────────
+
+  /**
+   * Return per-session read/write stats.
+   * Pass a sessionId to get stats for one session, or omit to get all.
+   *
+   * @param {string} [sessionId]
+   * @returns {{ sessionId: string, reads: number, writes: number, lastActive: Date } | Array | null}
+   */
+  sessionStats(sessionId) {
+    if (sessionId !== undefined) return this._sessionStats.get(sessionId);
+    return this._sessionStats.all();
   }
 
   // ─── Transaction ─────────────────────────────────────────────────────────

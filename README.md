@@ -68,6 +68,20 @@
 - Tools: `find`, `insert`, `update`, `delete`, `search`, `ask`, `schema`, `collections`
 - Access control: `scopes` map per collection — `read` / `write` / `admin`
 
+**Plugin System**
+- `db.use(plugin)` — register pre/post hooks on all operations
+- Hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
+- All hooks awaited in order; errors propagate to the caller
+
+**Session Stats**
+- `db.sessionStats(sessionId?)` — reads, writes, lastActive per session
+- `session` option on all reads and writes — automatic accumulation
+
+**Edge & SQLite Adapters**
+- `D1Adapter` — Cloudflare D1 / Workers edge SQLite
+- `BunSQLiteAdapter` — Bun-native `bun:sqlite`; `:memory:` or file path
+- `LibSQLAdapter` — LibSQL / Turso client adapter
+
 **Developer Experience**
 - `db.transaction(fn)` — atomic multi-collection writes
 - `db.seed(fixtures)` — idempotent fixture seeding
@@ -76,7 +90,7 @@
 - `db.import(path)` — JSON / CSV import
 - `collection.upsert()`, `insertOne({ ifNotExists })` — safe idempotent writes
 - `encrypt: { key }` — AES-256-GCM at-rest encryption, transparent to all callers
-- `session` option on all writes — audit trail via changelog
+- `session` option on all reads and writes — audit trail + session stats
 - `debug: true` — connect/disconnect logging
 
 ---

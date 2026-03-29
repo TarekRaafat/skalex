@@ -53,6 +53,8 @@ class Collection {
       if (errors.length) throw new Error(`Validation failed: ${errors.join("; ")}`);
     }
 
+    await this.database._plugins.run("beforeInsert", { collection: this.name, doc: item });
+
     const newItem = {
       _id: generateUniqueId(),
       createdAt: new Date(),
@@ -78,9 +80,12 @@ class Collection {
       await this.database._changeLog.log("insert", this.name, newItem, null, session || null);
     }
 
+    this.database._sessionStats.recordWrite(session);
     this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
 
-    return { data: stripVector(newItem) };
+    const result = { data: stripVector(newItem) };
+    await this.database._plugins.run("afterInsert", { collection: this.name, doc: result.data });
+    return result;
   }
 
   /**
@@ -98,6 +103,8 @@ class Collection {
         const errors = validateDoc(item, this._schema);
         if (errors.length) throw new Error(`Validation failed: ${errors.join("; ")}`);
       }
+
+      await this.database._plugins.run("beforeInsert", { collection: this.name, doc: item });
 
       const newItem = {
         _id: generateUniqueId(),
@@ -131,8 +138,11 @@ class Collection {
       }
     }
 
+    this.database._sessionStats.recordWrite(session);
     for (const newItem of newItems) {
-      this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
+      const stripped = stripVector(newItem);
+      this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripped });
+      await this.database._plugins.run("afterInsert", { collection: this.name, doc: stripped });
     }
 
     return { docs: newItems.map(stripVector) };
@@ -148,6 +158,8 @@ class Collection {
    * @returns {Promise<{ data: object }|null>}
    */
   async updateOne(filter, update, options = {}) {
+    await this.database._plugins.run("beforeUpdate", { collection: this.name, filter, update });
+
     const item = this._findRaw(filter);
     if (!item) return null;
 
@@ -163,9 +175,12 @@ class Collection {
       await this.database._changeLog.log("update", this.name, item, prev, options.session || null);
     }
 
+    this.database._sessionStats.recordWrite(options.session);
     this.database._eventBus.emit(this.name, { op: "update", collection: this.name, doc: item, prev });
 
-    return { data: item };
+    const result = { data: item };
+    await this.database._plugins.run("afterUpdate", { collection: this.name, filter, update, result: item });
+    return result;
   }
 
   /**
@@ -176,6 +191,8 @@ class Collection {
    * @returns {Promise<{ docs: object[] }>}
    */
   async updateMany(filter, update, options = {}) {
+    await this.database._plugins.run("beforeUpdate", { collection: this.name, filter, update });
+
     const items = this._findAllRaw(filter);
     const prevs = this._changelogEnabled ? items.map(d => ({ ...d })) : null;
 
@@ -193,10 +210,12 @@ class Collection {
       }
     }
 
+    this.database._sessionStats.recordWrite(options.session);
     for (const item of items) {
       this.database._eventBus.emit(this.name, { op: "update", collection: this.name, doc: item });
     }
 
+    await this.database._plugins.run("afterUpdate", { collection: this.name, filter, update, result: items });
     return { docs: items };
   }
 
@@ -398,7 +417,9 @@ class Collection {
    */
   async find(filter, options = {}) {
     const _t0 = Date.now();
-    const { populate, select, sort, page = 1, limit } = options;
+    const { populate, select, sort, page = 1, limit, session } = options;
+
+    await this.database._plugins.run("beforeFind", { collection: this.name, filter, options });
 
     const candidates = this._getCandidates(filter);
     const sortedFilter = presortFilter(
@@ -449,10 +470,14 @@ class Collection {
       const startIndex = (page - 1) * limit;
       results = results.slice(startIndex, startIndex + limit);
       this.database._queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
+      this.database._sessionStats.recordRead(session);
+      await this.database._plugins.run("afterFind", { collection: this.name, filter, options, docs: results });
       return { docs: results, page, totalDocs, totalPages };
     }
 
     this.database._queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
+    this.database._sessionStats.recordRead(session);
+    await this.database._plugins.run("afterFind", { collection: this.name, filter, options, docs: results });
     return { docs: results };
   }
 
@@ -466,8 +491,9 @@ class Collection {
    * @param {{ filter?: object, limit?: number, minScore?: number }} [options]
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
-  async search(query, { filter, limit = 10, minScore = 0 } = {}) {
+  async search(query, { filter, limit = 10, minScore = 0, session } = {}) {
     const _t0 = Date.now();
+    await this.database._plugins.run("beforeSearch", { collection: this.name, query, options: { filter, limit, minScore } });
     const queryVector = await this.database.embed(query);
 
     const candidates = filter ? this._findAllRaw(filter) : this._data;
@@ -483,11 +509,13 @@ class Collection {
     const top = scored.slice(0, limit);
 
     this.database._queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: top.length });
+    this.database._sessionStats.recordRead(session);
 
-    return {
-      docs: top.map(r => stripVector(r.doc)),
-      scores: top.map(r => r.score),
-    };
+    const docs = top.map(r => stripVector(r.doc));
+    const scores = top.map(r => r.score);
+    await this.database._plugins.run("afterSearch", { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
+
+    return { docs, scores };
   }
 
   /**
@@ -526,6 +554,8 @@ class Collection {
    * @returns {Promise<{ data: object }|null>}
    */
   async deleteOne(filter, options = {}) {
+    await this.database._plugins.run("beforeDelete", { collection: this.name, filter });
+
     const index = this._findIndex(filter);
     if (index === -1) return null;
 
@@ -539,8 +569,10 @@ class Collection {
       await this.database._changeLog.log("delete", this.name, deletedItem, null, options.session || null);
     }
 
+    this.database._sessionStats.recordWrite(options.session);
     this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: deletedItem });
 
+    await this.database._plugins.run("afterDelete", { collection: this.name, filter, result: deletedItem });
     return { data: deletedItem };
   }
 
@@ -551,6 +583,8 @@ class Collection {
    * @returns {Promise<{ docs: object[] }>}
    */
   async deleteMany(filter, options = {}) {
+    await this.database._plugins.run("beforeDelete", { collection: this.name, filter });
+
     const deletedItems = [];
     const remainingItems = [];
 
@@ -574,10 +608,12 @@ class Collection {
       }
     }
 
+    this.database._sessionStats.recordWrite(options.session);
     for (const deletedItem of deletedItems) {
       this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: deletedItem });
     }
 
+    await this.database._plugins.run("afterDelete", { collection: this.name, filter, result: deletedItems });
     return { docs: deletedItems };
   }
 
