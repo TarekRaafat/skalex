@@ -54,6 +54,26 @@
       "import": "./dist/skalex.esm.min.js",
       "require": "./dist/skalex.cjs.min.js",
       "types": "./dist/skalex.d.ts"
+    },
+    "./adapters/encrypted": {
+      "require": "./src/adapters/storage/encrypted.js",
+      "default": "./src/adapters/storage/encrypted.js"
+    },
+    "./adapters/local": {
+      "require": "./src/adapters/storage/local.js",
+      "default": "./src/adapters/storage/local.js"
+    },
+    "./adapters/d1": {
+      "require": "./src/adapters/storage/d1.js",
+      "default": "./src/adapters/storage/d1.js"
+    },
+    "./adapters/bun-sqlite": {
+      "require": "./src/adapters/storage/bun-sqlite.js",
+      "default": "./src/adapters/storage/bun-sqlite.js"
+    },
+    "./adapters/libsql": {
+      "require": "./src/adapters/storage/libsql.js",
+      "default": "./src/adapters/storage/libsql.js"
     }
   },
   "files": [

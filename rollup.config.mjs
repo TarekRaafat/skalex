@@ -4,7 +4,7 @@ import terser from "@rollup/plugin-terser";
 
 const input = "src/index.js";
 
-const external = ["fs", "path", "zlib", "crypto", "os"];
+const external = ["fs", "path", "zlib", "crypto", "os", "http"];
 
 const plugins = [
   resolve({ preferBuiltins: true }),
