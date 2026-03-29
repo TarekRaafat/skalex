@@ -14,6 +14,9 @@ const EncryptedAdapter = require("./adapters/storage/encrypted");
 const Memory = require("./memory");
 const ChangeLog = require("./changelog");
 const { QueryCache, processLLMFilter, validateLLMFilter } = require("./ask");
+const EventBus = require("./events");
+const QueryLog = require("./query-log");
+const SkalexMCPServer = require("./mcp/index");
 
 /**
  * Skalex — an in-process document database with file-system persistence.
@@ -37,10 +40,13 @@ class Skalex {
    * @param {string}  [config.ai.embedModel]   - Embedding model override (falls back to model).
    * @param {string}  [config.ai.model]        - Language model override.
    * @param {string}  [config.ai.host]         - Ollama server URL override.
-   * @param {object}  [config.encrypt]         - Encryption configuration.
-   * @param {string}  [config.encrypt.key]     - AES-256 key (64-char hex or 32-byte Uint8Array).
+   * @param {object}  [config.encrypt]             - Encryption configuration.
+   * @param {string}  [config.encrypt.key]         - AES-256 key (64-char hex or 32-byte Uint8Array).
+   * @param {object}  [config.slowQueryLog]        - Slow query log options.
+   * @param {number}  [config.slowQueryLog.threshold] - Duration threshold in ms. Default: 100.
+   * @param {number}  [config.slowQueryLog.maxEntries] - Max entries to keep. Default: 500.
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt } = {}) {
+  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog } = {}) {
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
@@ -61,6 +67,8 @@ class Skalex {
     this._aiAdapter = ai ? this._createAIAdapter(ai) : null;
     this._changeLog = new ChangeLog(this);
     this._queryCache = new QueryCache();
+    this._eventBus = new EventBus();
+    this._queryLog = slowQueryLog ? new QueryLog(slowQueryLog) : null;
   }
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -312,6 +320,7 @@ class Skalex {
       debug: this.debug,
       ai: this._aiConfig || undefined,
       encrypt: this._encryptConfig || undefined,
+      slowQueryLog: this._queryLog ? { threshold: this._queryLog._threshold, maxEntries: this._queryLog._maxEntries } : undefined,
     });
   }
 
@@ -558,6 +567,62 @@ class Skalex {
    */
   async restore(collectionName, timestamp, opts = {}) {
     return this._changeLog.restore(collectionName, timestamp, opts);
+  }
+
+  // ─── Stats ────────────────────────────────────────────────────────────────
+
+  /**
+   * Return size statistics for one or all collections.
+   * @param {string} [collectionName]
+   * @returns {object|object[]}
+   */
+  stats(collectionName) {
+    const calc = (name) => {
+      const col = this.collections[name];
+      if (!col) return null;
+      const count = col.data.length;
+      let estimatedSize = 0;
+      for (const doc of col.data) {
+        try { estimatedSize += JSON.stringify(doc).length; } catch (_) {}
+      }
+      return {
+        collection:    name,
+        count,
+        estimatedSize,
+        avgDocSize:    count > 0 ? Math.round(estimatedSize / count) : 0,
+      };
+    };
+
+    if (collectionName) return calc(collectionName);
+    return Object.keys(this.collections).map(calc);
+  }
+
+  // ─── Slow Query Log ───────────────────────────────────────────────────────
+
+  /**
+   * Return recorded slow queries (requires slowQueryLog config).
+   * @param {{ limit?: number, minDuration?: number, collection?: string }} [opts]
+   * @returns {object[]}
+   */
+  slowQueries(opts = {}) {
+    if (!this._queryLog) return [];
+    return this._queryLog.entries(opts);
+  }
+
+  // ─── MCP Server ───────────────────────────────────────────────────────────
+
+  /**
+   * Create a Skalex MCP server that exposes this database as MCP tools.
+   *
+   * @param {object} [opts]
+   * @param {"stdio"|"http"} [opts.transport]  - Transport type. Default: "stdio".
+   * @param {number}  [opts.port]              - HTTP port. Default: 3000.
+   * @param {string}  [opts.host]              - HTTP host. Default: "127.0.0.1".
+   * @param {object}  [opts.scopes]            - Access control map. Default: { "*": ["read", "write"] }.
+   * @returns {SkalexMCPServer}
+   */
+  mcp(opts = {}) {
+    return new SkalexMCPServer(this, opts);
   }
 
   // ─── Private ─────────────────────────────────────────────────────────────

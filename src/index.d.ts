@@ -20,6 +20,28 @@ export interface EncryptConfig {
   key: string | Uint8Array;
 }
 
+export interface SlowQueryLogConfig {
+  /** Duration threshold in ms. Queries longer than this are recorded. Default: 100. */
+  threshold?: number;
+  /** Maximum number of entries to keep in the ring buffer. Default: 500. */
+  maxEntries?: number;
+}
+
+export interface MCPScopes {
+  [collection: string]: Array<'read' | 'write' | 'admin'>;
+}
+
+export interface MCPOptions {
+  /** Transport type. Default: 'stdio'. */
+  transport?: 'stdio' | 'http';
+  /** HTTP port (http transport only). Default: 3000. */
+  port?: number;
+  /** HTTP host (http transport only). Default: '127.0.0.1'. */
+  host?: string;
+  /** Access control map. Default: { '*': ['read', 'write'] }. */
+  scopes?: MCPScopes;
+}
+
 export interface SkalexConfig {
   /** Path to the data directory. Default: './.db' */
   path?: string;
@@ -33,6 +55,8 @@ export interface SkalexConfig {
   ai?: AIConfig;
   /** At-rest encryption configuration. Wraps the storage adapter with AES-256-GCM. */
   encrypt?: EncryptConfig;
+  /** Enable slow query logging. */
+  slowQueryLog?: SlowQueryLogConfig;
 }
 
 // ─── Adapters ────────────────────────────────────────────────────────────────
@@ -84,6 +108,15 @@ export interface CollectionOptions {
   changelog?: boolean;
 }
 
+// ─── Mutation event ───────────────────────────────────────────────────────────
+
+export interface MutationEvent<T = Document> {
+  op: 'insert' | 'update' | 'delete';
+  collection: string;
+  doc: T;
+  prev?: T;
+}
+
 // ─── Query operators ─────────────────────────────────────────────────────────
 
 export interface QueryOperators<T = unknown> {
@@ -115,6 +148,8 @@ export interface InsertOneOptions {
   ttl?: number | string;
   /** Field name (or selector function) whose value is embedded and stored as _vector. */
   embed?: string | ((doc: Record<string, unknown>) => string);
+  /** Session identifier for audit trail (passed to changelog). */
+  session?: string;
 }
 
 export interface InsertManyOptions {
@@ -122,14 +157,20 @@ export interface InsertManyOptions {
   ttl?: number | string;
   /** Field name (or selector function) whose value is embedded and stored as _vector. */
   embed?: string | ((doc: Record<string, unknown>) => string);
+  /** Session identifier for audit trail (passed to changelog). */
+  session?: string;
 }
 
 export interface UpdateOptions {
   save?: boolean;
+  /** Session identifier for audit trail (passed to changelog). */
+  session?: string;
 }
 
 export interface DeleteOptions {
   save?: boolean;
+  /** Session identifier for audit trail (passed to changelog). */
+  session?: string;
 }
 
 export interface FindOptions {
@@ -205,6 +246,23 @@ export interface MigrationStatus {
 
 // ─── Collection ───────────────────────────────────────────────────────────────
 
+export interface CollectionStats {
+  collection: string;
+  count: number;
+  estimatedSize: number;
+  avgDocSize: number;
+}
+
+export interface SlowQueryEntry {
+  collection: string;
+  op: string;
+  filter?: object;
+  query?: string;
+  duration: number;
+  resultCount: number;
+  timestamp: Date;
+}
+
 export declare class Collection<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly name: string;
 
@@ -230,6 +288,17 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   // Vector search
   search(query: string, options?: SearchOptions<T>): Promise<SearchResult<DocOf<T>>>;
   similar(id: string, options?: { limit?: number; minScore?: number }): Promise<SearchResult<DocOf<T>>>;
+
+  // Aggregation
+  count(filter?: Filter<T>): Promise<number>;
+  sum(field: string, filter?: Filter<T>): Promise<number>;
+  avg(field: string, filter?: Filter<T>): Promise<number | null>;
+  groupBy(field: string, filter?: Filter<T>): Promise<Record<string, DocOf<T>[]>>;
+
+  // Watch
+  watch(callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
+  watch(filter: Filter<T>, callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
+  watch(filter?: Filter<T>): AsyncIterableIterator<MutationEvent<DocOf<T>>>;
 
   // I/O
   export(filter?: Filter<T>, options?: ExportOptions): Promise<void>;
@@ -274,6 +343,20 @@ export declare class ChangeLog {
   log(op: 'insert' | 'update' | 'delete', collection: string, doc: Document, prev?: Document | null, session?: string | null): Promise<void>;
   query(collection: string, options?: ChangeLogQueryOptions): Promise<ChangeLogEntry[]>;
   restore(collection: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
+}
+
+// ─── MCP Server ───────────────────────────────────────────────────────────────
+
+export declare class SkalexMCPServer {
+  constructor(db: Skalex, options?: MCPOptions);
+  readonly transport: 'stdio' | 'http';
+  readonly url: string | undefined;
+  /** Start listening on the configured transport. */
+  listen(): Promise<void>;
+  /** Connect a custom transport (for testing). */
+  connect(transport: object): Promise<void>;
+  /** Stop the server. */
+  close(): Promise<void>;
 }
 
 // ─── CollectionInfo ───────────────────────────────────────────────────────────
@@ -343,6 +426,16 @@ export declare class Skalex {
   // ChangeLog
   changelog(): ChangeLog;
   restore(collectionName: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
+
+  // Aggregation & Stats
+  stats(collectionName: string): CollectionStats | null;
+  stats(): CollectionStats[];
+
+  // Slow query log
+  slowQueries(options?: { limit?: number; minDuration?: number; collection?: string }): SlowQueryEntry[];
+
+  // MCP Server
+  mcp(options?: MCPOptions): SkalexMCPServer;
 }
 
 export default Skalex;

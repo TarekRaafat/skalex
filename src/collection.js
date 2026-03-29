@@ -3,6 +3,7 @@ const { matchesFilter, presortFilter } = require("./query");
 const { validateDoc } = require("./validator");
 const { computeExpiry } = require("./ttl");
 const { cosineSimilarity, stripVector } = require("./vector");
+const { count: aggCount, sum: aggSum, avg: aggAvg, groupBy: aggGroupBy } = require("./aggregation");
 
 /**
  * Collection represents a collection of documents in the database.
@@ -36,11 +37,11 @@ class Collection {
   /**
    * Insert a single document.
    * @param {object} item
-   * @param {{ save?: boolean, ifNotExists?: boolean, ttl?: number|string, embed?: string|Function }} [options]
+   * @param {{ save?: boolean, ifNotExists?: boolean, ttl?: number|string, embed?: string|Function, session?: string }} [options]
    * @returns {Promise<{ data: object }>}
    */
   async insertOne(item, options = {}) {
-    const { save, ifNotExists, ttl, embed } = options;
+    const { save, ifNotExists, ttl, embed, session } = options;
 
     if (ifNotExists) {
       const existing = this._findRaw(item);
@@ -74,8 +75,10 @@ class Collection {
     if (save) await this.database.saveData(this.name);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("insert", this.name, newItem);
+      await this.database._changeLog.log("insert", this.name, newItem, null, session || null);
     }
+
+    this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
 
     return { data: stripVector(newItem) };
   }
@@ -83,11 +86,11 @@ class Collection {
   /**
    * Insert multiple documents.
    * @param {object[]} items
-   * @param {{ save?: boolean, ttl?: number|string, embed?: string|Function }} [options]
+   * @param {{ save?: boolean, ttl?: number|string, embed?: string|Function, session?: string }} [options]
    * @returns {Promise<{ docs: object[] }>}
    */
   async insertMany(items, options = {}) {
-    const { save, ttl, embed } = options;
+    const { save, ttl, embed, session } = options;
 
     const newItems = [];
     for (const item of items) {
@@ -124,8 +127,12 @@ class Collection {
 
     if (this._changelogEnabled) {
       for (const newItem of newItems) {
-        await this.database._changeLog.log("insert", this.name, newItem);
+        await this.database._changeLog.log("insert", this.name, newItem, null, session || null);
       }
+    }
+
+    for (const newItem of newItems) {
+      this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
     }
 
     return { docs: newItems.map(stripVector) };
@@ -137,7 +144,7 @@ class Collection {
    * Update the first matching document.
    * @param {object} filter
    * @param {object} update
-   * @param {{ save?: boolean }} [options]
+   * @param {{ save?: boolean, session?: string }} [options]
    * @returns {Promise<{ data: object }|null>}
    */
   async updateOne(filter, update, options = {}) {
@@ -153,8 +160,10 @@ class Collection {
     if (options.save) await this.database.saveData(this.name);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("update", this.name, item, prev);
+      await this.database._changeLog.log("update", this.name, item, prev, options.session || null);
     }
+
+    this.database._eventBus.emit(this.name, { op: "update", collection: this.name, doc: item, prev });
 
     return { data: item };
   }
@@ -163,7 +172,7 @@ class Collection {
    * Update all matching documents.
    * @param {object} filter
    * @param {object} update
-   * @param {{ save?: boolean }} [options]
+   * @param {{ save?: boolean, session?: string }} [options]
    * @returns {Promise<{ docs: object[] }>}
    */
   async updateMany(filter, update, options = {}) {
@@ -180,8 +189,12 @@ class Collection {
 
     if (this._changelogEnabled) {
       for (let i = 0; i < items.length; i++) {
-        await this.database._changeLog.log("update", this.name, items[i], prevs[i]);
+        await this.database._changeLog.log("update", this.name, items[i], prevs[i], options.session || null);
       }
+    }
+
+    for (const item of items) {
+      this.database._eventBus.emit(this.name, { op: "update", collection: this.name, doc: item });
     }
 
     return { docs: items };
@@ -238,6 +251,114 @@ class Collection {
 
   // ─── Find ─────────────────────────────────────────────────────────────────
 
+  // ─── Watch ───────────────────────────────────────────────────────────────
+
+  /**
+   * Watch for mutation events on this collection.
+   *
+   * Callback form — returns an unsubscribe function:
+   *   const unsub = col.watch({ status: "active" }, event => console.log(event));
+   *   unsub(); // stop watching
+   *
+   * AsyncIterator form — no callback:
+   *   for await (const event of col.watch({ status: "active" })) { ... }
+   *
+   * Event shape: { op: "insert"|"update"|"delete", collection, doc, prev? }
+   *
+   * @param {object|Function} [filter]
+   * @param {Function} [callback]
+   * @returns {(() => void)|AsyncIterableIterator}
+   */
+  watch(filter, callback) {
+    // watch(callback) shorthand — no filter
+    if (typeof filter === "function") { callback = filter; filter = null; }
+
+    if (callback) {
+      // Callback-based API — returns unsub fn
+      return this.database._eventBus.on(this.name, event => {
+        if (!filter || matchesFilter(event.doc, filter)) callback(event);
+      });
+    }
+
+    // AsyncIterator API
+    return this._watchIterator(filter);
+  }
+
+  _watchIterator(filter) {
+    const queue   = [];
+    let   resolve = null;
+    let   done    = false;
+
+    const unsub = this.database._eventBus.on(this.name, event => {
+      if (filter && !matchesFilter(event.doc, filter)) return;
+      if (resolve) {
+        const r = resolve; resolve = null;
+        r({ value: event, done: false });
+      } else {
+        queue.push(event);
+      }
+    });
+
+    return {
+      [Symbol.asyncIterator]() { return this; },
+      next() {
+        if (queue.length > 0) return Promise.resolve({ value: queue.shift(), done: false });
+        if (done)             return Promise.resolve({ value: undefined, done: true });
+        return new Promise(res => { resolve = res; });
+      },
+      return() {
+        done = true; unsub();
+        if (resolve) { const r = resolve; resolve = null; r({ value: undefined, done: true }); }
+        return Promise.resolve({ value: undefined, done: true });
+      },
+    };
+  }
+
+  // ─── Aggregation ─────────────────────────────────────────────────────────
+
+  /**
+   * Count documents matching a filter.
+   * @param {object} [filter={}]
+   * @returns {Promise<number>}
+   */
+  async count(filter = {}) {
+    return aggCount(this._findAllRaw(filter));
+  }
+
+  /**
+   * Sum a numeric field across matching documents.
+   * @param {string} field
+   * @param {object} [filter={}]
+   * @returns {Promise<number>}
+   */
+  async sum(field, filter = {}) {
+    return aggSum(this._findAllRaw(filter), field);
+  }
+
+  /**
+   * Average a numeric field across matching documents.
+   * Returns null when no matching numeric values exist.
+   * @param {string} field
+   * @param {object} [filter={}]
+   * @returns {Promise<number|null>}
+   */
+  async avg(field, filter = {}) {
+    return aggAvg(this._findAllRaw(filter), field);
+  }
+
+  /**
+   * Group matching documents by a field value.
+   * Returns `{ [value]: docs[] }`.
+   * @param {string} field
+   * @param {object} [filter={}]
+   * @returns {Promise<Record<string, object[]>>}
+   */
+  async groupBy(field, filter = {}) {
+    return aggGroupBy(this._findAllRaw(filter), field);
+  }
+
+  // ─── Find ─────────────────────────────────────────────────────────────────
+
   /**
    * Find the first matching document (returns a shallow copy with projection).
    * @param {object} filter
@@ -276,6 +397,7 @@ class Collection {
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
   async find(filter, options = {}) {
+    const _t0 = Date.now();
     const { populate, select, sort, page = 1, limit } = options;
 
     const candidates = this._getCandidates(filter);
@@ -326,9 +448,11 @@ class Collection {
       const totalPages = Math.ceil(totalDocs / limit);
       const startIndex = (page - 1) * limit;
       results = results.slice(startIndex, startIndex + limit);
+      this.database._queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
       return { docs: results, page, totalDocs, totalPages };
     }
 
+    this.database._queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
     return { docs: results };
   }
 
@@ -343,6 +467,7 @@ class Collection {
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
   async search(query, { filter, limit = 10, minScore = 0 } = {}) {
+    const _t0 = Date.now();
     const queryVector = await this.database.embed(query);
 
     const candidates = filter ? this._findAllRaw(filter) : this._data;
@@ -356,6 +481,8 @@ class Collection {
 
     scored.sort((a, b) => b.score - a.score);
     const top = scored.slice(0, limit);
+
+    this.database._queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: top.length });
 
     return {
       docs: top.map(r => stripVector(r.doc)),
@@ -395,7 +522,7 @@ class Collection {
   /**
    * Delete the first matching document.
    * @param {object} filter
-   * @param {{ save?: boolean }} [options]
+   * @param {{ save?: boolean, session?: string }} [options]
    * @returns {Promise<{ data: object }|null>}
    */
   async deleteOne(filter, options = {}) {
@@ -409,8 +536,10 @@ class Collection {
     if (options.save) await this.database.saveData(this.name);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("delete", this.name, deletedItem);
+      await this.database._changeLog.log("delete", this.name, deletedItem, null, options.session || null);
     }
+
+    this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: deletedItem });
 
     return { data: deletedItem };
   }
@@ -418,7 +547,7 @@ class Collection {
   /**
    * Delete all matching documents.
    * @param {object} filter
-   * @param {{ save?: boolean }} [options]
+   * @param {{ save?: boolean, session?: string }} [options]
    * @returns {Promise<{ docs: object[] }>}
    */
   async deleteMany(filter, options = {}) {
@@ -441,8 +570,12 @@ class Collection {
 
     if (this._changelogEnabled) {
       for (const deletedItem of deletedItems) {
-        await this.database._changeLog.log("delete", this.name, deletedItem);
+        await this.database._changeLog.log("delete", this.name, deletedItem, null, options.session || null);
       }
+    }
+
+    for (const deletedItem of deletedItems) {
+      this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: deletedItem });
     }
 
     return { docs: deletedItems };

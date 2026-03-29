@@ -367,7 +367,7 @@ import Skalex from "skalex";
 
 const db = new Skalex({
   path: "./data",
-  ai: { provider: "ollama", model: "nomic-embed-text" },
+  ai: { provider: "ollama", embedModel: "nomic-embed-text" },
 });
 await db.connect();
 
@@ -394,4 +394,250 @@ const { docs: similar, scores } = await docs.similar(source._id, { limit: 2 });
 console.log(similar[0].text); // "Node.js streams tutorial"
 
 await db.disconnect();
+```
+
+---
+
+### 15. Encryption at Rest
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  encrypt: { key: process.env.DB_KEY }, // 64-char hex or 32-byte Uint8Array
+});
+await db.connect();
+
+const secrets = db.useCollection("secrets");
+await secrets.insertOne({ apiKey: "sk-...", service: "openai" });
+
+// Files on disk are AES-256-GCM encrypted — unreadable without the key
+await db.disconnect();
+```
+
+---
+
+### 16. Natural Language Queries (`db.ask`)
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "openai",
+    apiKey: process.env.OPENAI_KEY,
+    embedModel: "text-embedding-3-small",
+    model: "gpt-4o-mini",
+  },
+});
+await db.connect();
+
+const users = db.useCollection("users");
+await users.insertMany([
+  { name: "Alice", role: "admin", dept: "engineering", age: 32 },
+  { name: "Bob",   role: "user",  dept: "marketing",   age: 27 },
+  { name: "Carol", role: "admin", dept: "engineering",  age: 41 },
+]);
+
+// Translate natural language → structured filter → run find()
+const { docs } = await db.ask("users", "find all admins in engineering over 30");
+
+console.log(docs.map(d => d.name)); // ["Alice", "Carol"]
+
+await db.disconnect();
+```
+
+---
+
+### 17. Agent Memory
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "openai",
+    apiKey: process.env.OPENAI_KEY,
+    embedModel: "text-embedding-3-small",
+    model: "gpt-4o-mini",
+  },
+});
+await db.connect();
+
+const memory = db.useMemory("session-abc");
+
+// Store episodic memories
+await memory.remember("User's name is Alice");
+await memory.remember("User prefers dark mode");
+await memory.remember("User's primary language is JavaScript");
+
+// Semantic recall
+const { docs } = await memory.recall("user display preferences", { limit: 3 });
+console.log(docs[0].text); // "User prefers dark mode"
+
+// LLM-ready context string (capped to token budget)
+const ctx = memory.context({ tokens: 500 });
+// "User's name is Alice\nUser prefers dark mode\n..."
+
+// Compress old memories to save tokens
+await memory.compress({ threshold: 20 });
+
+await db.disconnect();
+```
+
+---
+
+### 18. ChangeLog & Point-in-Time Restore
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+
+// Enable mutation log on the orders collection
+db.createCollection("orders", { changelog: true });
+
+await db.connect();
+
+const orders = db.useCollection("orders");
+
+await orders.insertOne({ item: "Widget", qty: 5 }, { session: "user-123" });
+const snapshot = new Date();
+
+await orders.updateOne({ item: "Widget" }, { qty: 99 });
+
+// Query the audit log
+const log = await db.changelog().query("orders");
+console.log(log[0].op);      // "insert"
+console.log(log[0].session); // "user-123"
+
+// Restore the entire collection to the state at `snapshot`
+await db.restore("orders", snapshot);
+
+const { docs } = await orders.find({});
+console.log(docs[0].qty); // 5 — update rolled back
+
+await db.disconnect();
+```
+
+---
+
+### 19. Aggregation
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const orders = db.useCollection("orders");
+await orders.insertMany([
+  { product: "Widget", amount: 29.99, status: "paid"    },
+  { product: "Gadget", amount: 99.99, status: "pending" },
+  { product: "Widget", amount: 29.99, status: "paid"    },
+  { product: "Doohickey", amount: 9.99, status: "paid"  },
+]);
+
+console.log(await orders.count());                           // 4
+console.log(await orders.count({ status: "paid" }));         // 3
+console.log(await orders.sum("amount"));                     // 169.96
+console.log(await orders.sum("amount", { status: "paid" })); // 69.97
+console.log(await orders.avg("amount"));                     // 42.49
+
+const groups = await orders.groupBy("product");
+console.log(groups.Widget.length); // 2
+
+await db.disconnect();
+```
+
+---
+
+### 20. Reactive Queries (`watch`)
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const tasks = db.useCollection("tasks");
+
+// Callback form — fires on every mutation
+const unsub = tasks.watch((event) => {
+  console.log(`[${event.op}]`, event.doc.title);
+});
+
+await tasks.insertOne({ title: "Buy milk", done: false });
+// logs: [insert] Buy milk
+
+await tasks.updateOne({ title: "Buy milk" }, { done: true });
+// logs: [update] Buy milk
+
+unsub(); // stop listening
+
+// Filtered watch — only fires for incomplete tasks
+const unsub2 = tasks.watch({ done: false }, (event) => {
+  console.log("Incomplete task changed:", event.doc.title);
+});
+
+// AsyncIterator form
+async function streamChanges() {
+  const iter = tasks.watch();
+  for await (const event of iter) {
+    console.log(event.op, event.doc);
+    if (event.doc.title === "STOP") await iter.return();
+  }
+}
+
+await db.disconnect();
+```
+
+---
+
+### 21. MCP Server for AI Agents
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  ai: {
+    provider: "openai",
+    apiKey: process.env.OPENAI_KEY,
+    embedModel: "text-embedding-3-small",
+    model: "gpt-4o-mini",
+  },
+});
+await db.connect();
+
+const products = db.useCollection("products");
+await products.insertMany([
+  { name: "Widget", price: 9.99,  category: "tools" },
+  { name: "Gadget", price: 49.99, category: "electronics" },
+], { embed: "name" });
+
+// stdio transport — for Claude Desktop / Cursor
+const server = db.mcp({
+  scopes: {
+    "products": ["read"],  // AI agents can only read
+    "*":        ["read"],
+  },
+});
+
+await server.listen(); // blocks on stdin
+```
+
+```json
+// claude_desktop_config.json
+{
+  "mcpServers": {
+    "skalex": {
+      "command": "node",
+      "args": ["./mcp-server.js"]
+    }
+  }
+}
 ```

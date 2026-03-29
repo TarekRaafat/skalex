@@ -6,22 +6,15 @@ Future features & enhancements
 
 #### Todo
 
-- [ ] Data aggregation (`$group`, `$sum`, `$avg`)
 - [ ] Automated backup & restore
 - [ ] Plugins system for extending functionality
 - [ ] Additional export formats (NDJSON, Parquet)
 - [ ] IndexedDB adapter (browser persistent storage)
 - [ ] D1 / Cloudflare Workers adapter
+- [ ] Bun SQLite adapter
+- [ ] LibSQL / Turso adapter
 - [ ] Compound indexes (multi-field)
-- [ ] Change streams / event hooks (`on("insert", ...)`)
 - [ ] Query explain / execution plan debug tool
-
-#### In Progress
-
-- [ ] Agent memory primitives (`useMemory`, `remember`, `recall`, `context`) — Phase 3
-- [ ] Natural language queries (`db.ask()`) — Phase 3
-- [ ] Encryption at rest (AES-256, Web Crypto) — Phase 3
-- [ ] Change log & point-in-time restore — Phase 3
 
 #### Done
 
@@ -30,6 +23,7 @@ Future features & enhancements
 - [x] Pluggable `StorageAdapter` interface
 - [x] `FsAdapter` — atomic writes, gz/json format
 - [x] `LocalStorageAdapter` — browser `localStorage` support
+- [x] `EncryptedAdapter` — AES-256-GCM at-rest encryption (Node ≥18, Bun, Deno, browser)
 - [x] Secondary field indexes — O(1) lookups via `IndexEngine`
 - [x] Unique index constraints
 - [x] Schema validation (`type`, `required`, `unique`, `enum`)
@@ -39,15 +33,29 @@ Future features & enhancements
 - [x] `db.seed()` — fixture seeding with optional reset
 - [x] `db.dump()` — full data snapshot
 - [x] `db.inspect()` — collection metadata
-- [x] `db.namespace()` — scoped sub-instances
+- [x] `db.namespace()` — scoped sub-instances (inherits `ai` + `encrypt`)
 - [x] `db.import()` — JSON/CSV file import
+- [x] `db.ask()` — natural language → structured filter via LLM; results cached
+- [x] `db.schema()` — declared or inferred `{ field: type }` schema
+- [x] `db.useMemory()` — episodic agent memory (`remember`, `recall`, `context`, `compress`)
+- [x] `db.changelog()` / `db.restore()` — append-only mutation log + point-in-time restore
+- [x] `db.stats()` — count, estimated size, average doc size per collection
+- [x] `db.slowQueries()` — slow query log with configurable threshold and ring buffer
+- [x] `db.mcp()` — MCP server (stdio + HTTP/SSE) for Claude Desktop, Cursor, and any MCP client
 - [x] `collection.upsert()` — update-or-insert
 - [x] `insertOne({ ifNotExists })` — safe conditional insert
+- [x] `collection.count / sum / avg / groupBy` — aggregation with filter + dot-notation
+- [x] `collection.watch()` — reactive mutation observer (callback + AsyncIterableIterator)
+- [x] `session` option on all mutations — audit trail via changelog
 - [x] `debug` config option
 - [x] Custom `adapter` config option
 - [x] `EmbeddingAdapter` interface — pluggable embedding backends
 - [x] `OpenAIEmbeddingAdapter` — OpenAI `text-embedding-3-small` (and any model override)
 - [x] `OllamaEmbeddingAdapter` — local embeddings via Ollama
+- [x] `AIAdapter` interface — pluggable language model backends
+- [x] `OpenAIAIAdapter` — chat completions, default `gpt-4o-mini`
+- [x] `AnthropicAIAdapter` — messages API, default `claude-haiku-4-5`
+- [x] `OllamaAIAdapter` — local `/api/generate`, default `llama3.2`
 - [x] Filter pre-sorter — indexes evaluated before regex/`$fn`
 - [x] Full query operator support (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$regex`, `$fn`)
 - [x] Dot-notation nested field queries

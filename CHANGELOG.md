@@ -120,6 +120,38 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **`MockEmbeddingAdapter`** test helper — deterministic 4-dim vectors, call log for assertions
 - **`MockAIAdapter`** test helper — configurable `nlQuery → filter` map, `calls[]` + `summarizeCalls[]` logs
 
+#### Events & Reactive Queries
+- **`EventBus`** — lightweight cross-runtime pub/sub (`src/events.js`); zero Node.js dependencies, works in Node/Bun/Deno/browser
+- **`collection.watch(filter?, callback?)`** — observe mutations on a collection; callback form returns unsub fn, no-callback form returns `AsyncIterableIterator`
+- Mutation events shape: `{ op, collection, doc, prev? }` — emitted after every `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`
+
+#### Aggregation
+- **`collection.count(filter?)`** — document count with optional filter
+- **`collection.sum(field, filter?)`** — numeric field sum; skips non-numeric values; dot-notation supported
+- **`collection.avg(field, filter?)`** — numeric field average; returns `null` for empty/no-numeric
+- **`collection.groupBy(field, filter?)`** — group documents by field value → `{ value: docs[] }`
+
+#### Stats & Observability
+- **`db.stats(collection?)`** — returns `{ collection, count, estimatedSize, avgDocSize }` per collection
+- **`slowQueryLog` constructor option** — enables slow query recording with configurable `threshold` (ms) and `maxEntries`
+- **`db.slowQueries(opts?)`** — retrieve recorded slow queries; filters by `collection`, `minDuration`, `limit`; instrumented on `find()` and `search()`
+
+#### Session Tagging
+- **`session` option** on `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany` — passed through to changelog for audit trail
+
+#### MCP Server
+- **`db.mcp(opts?)`** — creates a `SkalexMCPServer` exposing the database as MCP tools
+- **Transports**: `stdio` (default — for Claude Desktop / Cursor) and `http` (HTTP + SSE)
+- **Tools**: `skalex_collections`, `skalex_schema`, `skalex_find`, `skalex_insert`, `skalex_update`, `skalex_delete`, `skalex_search`, `skalex_ask`
+- **Access control**: `scopes` map `{ collection | "*": ["read"] | ["read","write"] | ["admin"] }`; read-only scope hides write tools from `tools/list`
+- **Protocol**: JSON-RPC 2.0; `initialize`, `tools/list`, `tools/call`, `ping`, `notifications/initialized`
+- **`server.connect(transport)`** — accepts custom transports for embedding / testing
+- **`MockTransport`** test helper — in-memory transport for unit testing MCP servers
+
+#### Docs & Testing (Phase 4)
+- **Vitest test suite** — 308 tests (14 test files); 69 new tests across events, aggregation, MCP
+- **`src/index.d.ts`** updated with `MutationEvent`, `CollectionStats`, `SlowQueryEntry`, `SkalexMCPServer`, `MCPOptions`, `MCPScopes`, `SlowQueryLogConfig`, aggregation/watch/stats/mcp methods, `session` option on all mutating operations
+
 ### Fixed
 - `findOne()` returned the raw document instead of the projected `newItem` — populate and select options were silently discarded
 - `matchesFilter()` short-circuited on the first key — multi-condition AND filters never evaluated beyond the first condition

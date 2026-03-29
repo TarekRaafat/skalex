@@ -24,7 +24,7 @@
 - **Zero dependencies** — no install footprint beyond the package itself
 - **Dual ESM / CJS build** — `import` or `require`, TypeScript definitions included
 - **Runs everywhere** — Node.js ≥18, Bun, Deno, browser, edge runtimes
-- **Pluggable storage** — `FsAdapter` (Node), `LocalStorageAdapter` (browser), or bring your own
+- **Pluggable storage** — `FsAdapter` (Node), `LocalStorageAdapter` (browser), `EncryptedAdapter` (AES-256-GCM), or bring your own
 
 **Query**
 - Full operator set: `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$fn`
@@ -37,13 +37,36 @@
 - Versioned migrations — `addMigration({ version, up })`, auto-run on `connect()`
 - TTL documents — `insertOne(doc, { ttl: "30m" })`, swept on connect
 - Transactions — snapshot + commit / rollback
+- Change log — `createCollection(name, { changelog: true })`, point-in-time restore
 
-**Vector Search (Phase 2)**
+**Vector Search**
 - `insertOne / insertMany` with `{ embed: "field" }` — auto-embed on insert
 - `collection.search(query, { filter, limit, minScore })` — cosine similarity + hybrid
 - `collection.similar(id)` — nearest-neighbour lookup
 - `db.embed(text)` — direct embedding access
 - Built-in adapters: **OpenAI** (`text-embedding-3-small`) and **Ollama** (local, zero cost)
+
+**AI-Native**
+- `db.ask(collection, nlQuery)` — translate natural language to a filter via LLM; results cached
+- `db.useMemory(sessionId)` — episodic agent memory with `remember`, `recall`, `context`, `compress`
+- Built-in language model adapters: **OpenAI**, **Anthropic**, **Ollama**
+- `db.schema(collection)` — infer or return declared schema as a plain object
+
+**Aggregation & Observability**
+- `collection.count / sum / avg / groupBy` — aggregation with optional filter and dot-notation
+- `db.stats(collection?)` — count, estimated size, average doc size
+- `slowQueryLog` option + `db.slowQueries()` — capture slow `find` and `search` calls
+
+**Reactive**
+- `collection.watch(filter?, callback?)` — observe mutations; callback or `AsyncIterableIterator`
+- Events: `{ op, collection, doc, prev? }` emitted after every insert, update, delete
+
+**MCP Server**
+- `db.mcp(opts)` — expose the database as MCP tools for AI agents
+- Compatible with **Claude Desktop**, **Cursor**, and any MCP client
+- `stdio` transport (default) and `http + SSE` transport
+- Tools: `find`, `insert`, `update`, `delete`, `search`, `ask`, `schema`, `collections`
+- Access control: `scopes` map per collection — `read` / `write` / `admin`
 
 **Developer Experience**
 - `db.transaction(fn)` — atomic multi-collection writes
@@ -52,7 +75,9 @@
 - `db.namespace(id)` — isolated sub-instances per tenant / user
 - `db.import(path)` — JSON / CSV import
 - `collection.upsert()`, `insertOne({ ifNotExists })` — safe idempotent writes
-- `debug: true` — query logging
+- `encrypt: { key }` — AES-256-GCM at-rest encryption, transparent to all callers
+- `session` option on all writes — audit trail via changelog
+- `debug: true` — connect/disconnect logging
 
 ---
 
