@@ -2,109 +2,324 @@
 
 ---
 
-### 1- Basic operations
-
-The below are examples showcasing the usage of create, insert, update, delete options in the `Skalex` Library:
+### 1. Basic CRUD
 
 ```javascript
-const Skalex = require("skalex");
+import Skalex from "skalex";
 
-// Create a new instance of the Skalex database
 const db = new Skalex({ path: "./data", format: "json" });
-
-// Connect to the database and load existing data
 await db.connect();
 
-// Create a new collection or use an existing one
-const collection = db.useCollection("users");
+const users = db.useCollection("users");
 
-// Insert a document into the collection
-const insertedDocument = await collection.insertOne({
-  name: "John Doe",
-  age: 30,
-});
+// Insert
+const { data: user } = await users.insertOne({ name: "Alice", age: 30 });
+console.log(user._id); // "0196f3a2b4c8d1e..."
 
-console.log("Inserted document:", insertedDocument);
+// Find one
+const doc = await users.findOne({ name: "Alice" });
 
-// Update a document in the collection
-const updatedDocument = await collection.updateOne(
-  { name: "John Doe" },
-  { age: 31 }
-);
+// Find many with operators
+const { docs } = await users.find({ age: { $gte: 18 } });
 
-console.log("Updated document:", updatedDocument);
+// Update
+await users.updateOne({ name: "Alice" }, { age: 31 });
+await users.updateOne({ name: "Alice" }, { score: { $inc: 10 } });
+await users.updateOne({ name: "Alice" }, { tags: { $push: "vip" } });
 
-// Find documents in the collection
-const filteredDocuments = await collection.find({ age: { $gte: 30 } });
+// Delete
+await users.deleteOne({ name: "Alice" });
 
-console.log("Filtered documents:", filteredDocuments.docs);
-
-// Delete a document from the collection
-const deletedDocument = await collection.deleteOne({ name: "John Doe" });
-
-console.log("Deleted document:", deletedDocument);
-
-// Disconnect from the database and save data
 await db.disconnect();
 ```
 
-> Please note that these are just basic examples to illustrate the usage of the `Skalex` library. You can explore and utilize the various methods and options provided by the `Skalex` to suit your specific use case and data management requirements.
+---
 
-### 2- Advanced operations
-
-The below are examples showcasing the usage of population and projection options in the `Skalex` Library:
+### 2. Schema Validation & Unique Constraints
 
 ```javascript
-const Skalex = require("skalex");
+import Skalex from "skalex";
 
-// Create a new instance of the Skalex database
-const db = new Skalex({ path: "./data", format: "json" });
+const db = new Skalex({ path: "./data" });
 
-// Connect to the database and load existing data
+db.createCollection("users", {
+  schema: {
+    email: { type: "string", required: true, unique: true },
+    role:  { type: "string", enum: ["admin", "user"], required: true },
+    age:   "number",
+  },
+  indexes: ["role"],
+});
+
 await db.connect();
 
-// Create a new collection or use an existing one
+const users = db.useCollection("users");
+
+// Valid insert
+await users.insertOne({ email: "alice@example.com", role: "admin" });
+
+// Throws — email already exists
+await users.insertOne({ email: "alice@example.com", role: "user" });
+
+// Throws — role is required
+await users.insertOne({ email: "bob@example.com" });
+
+await db.disconnect();
+```
+
+---
+
+### 3. TTL Documents
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const sessions = db.useCollection("sessions");
+
+// Expires in 30 minutes
+await sessions.insertOne({ userId: "abc123", token: "xyz" }, { ttl: "30m" });
+
+// Expires in 1 day
+await sessions.insertOne({ userId: "def456", token: "abc" }, { ttl: "1d" });
+
+// On next connect(), any expired docs are swept automatically
+await db.disconnect();
+```
+
+---
+
+### 4. Migrations
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+
+db.addMigration({
+  version: 1,
+  description: "Set default role on all users",
+  up: async (col) => {
+    await col.updateMany({}, { role: "user" });
+  },
+});
+
+db.addMigration({
+  version: 2,
+  description: "Add active flag",
+  up: async (col) => {
+    await col.updateMany({}, { active: true });
+  },
+});
+
+// Pending migrations run automatically on connect()
+await db.connect();
+
+console.log(db.migrationStatus());
+// { current: 2, applied: [1, 2], pending: [] }
+
+await db.disconnect();
+```
+
+---
+
+### 5. Transactions
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const accounts = db.useCollection("accounts");
+await accounts.insertMany([
+  { name: "Alice", balance: 500 },
+  { name: "Bob",   balance: 200 },
+]);
+
+// Transfer 100 from Alice to Bob — rolls back if anything throws
+await db.transaction(async (db) => {
+  const accounts = db.useCollection("accounts");
+  await accounts.updateOne({ name: "Alice" }, { balance: { $inc: -100 } });
+  await accounts.updateOne({ name: "Bob" },   { balance: { $inc:  100 } });
+});
+
+await db.disconnect();
+```
+
+---
+
+### 6. Upsert & ifNotExists
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const settings = db.useCollection("settings");
+
+// Insert if no match, update if found
+await settings.upsert({ key: "theme" }, { value: "dark" });
+
+// Insert only if no matching document exists
+await settings.insertOne({ key: "theme", value: "light" }, { ifNotExists: true });
+
+await db.disconnect();
+```
+
+---
+
+### 7. Population & Projection
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
 const users = db.useCollection("users");
 const posts = db.useCollection("posts");
 
-// Insert a document into the users collection
-const insertedUser = await users.insertOne({
-  name: "John Doe",
-  age: 30,
-});
+const { data: user } = await users.insertOne({ name: "Alice" });
 
-console.log("Inserted user:", insertedUser);
-
-// Insert documents into the posts collection
-const insertedPosts = await posts.insertMany([
-  { title: "Post 1", users: insertedUser._id },
-  { title: "Post 2", users: insertedUser._id },
+await posts.insertMany([
+  { title: "Hello World", users: user._id },
+  { title: "Second Post", users: user._id },
 ]);
 
-console.log("Inserted posts:", insertedPosts.docs);
-
-// Find user's posts with populated user information
-const userPosts = await posts.find(
-  { users: insertedUser._id },
-  { populate: ["users"], select: ["title"] }
+// Populate the "users" field with the related user document
+const { docs } = await posts.find(
+  { users: user._id },
+  { populate: ["users"], select: ["title", "users"] }
 );
 
-console.log("User's posts:", userPosts.docs);
+console.log(docs[0].users.name); // "Alice"
 
-// Find user's posts with projection (selecting specific fields)
-const userPostsProjection = await posts.find(
-  { users: insertedUser._id },
-  { select: ["title"] }
-);
-
-console.log("User's posts with projection:", userPostsProjection.docs);
-
-// Disconnect from the database and save data
 await db.disconnect();
 ```
 
-In the above example, we have two collections: "users" and "posts". After inserting a user document into the "users" collection, we insert two post documents into the "posts" collection, associating them with the user through the "users" collection name and user id.
+---
 
-To demonstrate the population feature, we use the `populate` option when finding the user's posts. This option allows us to retrieve related information from the "users" collection and populate the "users" field with the corresponding user document. In this example, we populate the "users" field with the user information.
+### 8. Sorting & Pagination
 
-Additionally, we showcase the usage of the projection feature with the `select` option. By specifying the `select` array, we can choose to retrieve only specific fields from the documents. In the second `find` operation, we select only the "title" field from the user's posts.
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const products = db.useCollection("products");
+await products.insertMany([
+  { name: "Widget", price: 9.99 },
+  { name: "Gadget", price: 24.99 },
+  { name: "Doohickey", price: 4.99 },
+]);
+
+// Sort ascending by price
+const { docs } = await products.find({}, { sort: { price: 1 } });
+
+// Page 1, 2 results per page
+const page1 = await products.find({}, { sort: { price: -1 }, page: 1, limit: 2 });
+console.log(page1.totalDocs);  // 3
+console.log(page1.totalPages); // 2
+
+await db.disconnect();
+```
+
+---
+
+### 9. Export & Import
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data", format: "json" });
+await db.connect();
+
+const users = db.useCollection("users");
+await users.insertMany([{ name: "Alice" }, { name: "Bob" }]);
+
+// Export to JSON
+await users.export({}, { format: "json", dir: "./exports" });
+
+// Export filtered subset to CSV
+await users.export({ name: "Alice" }, { format: "csv", name: "admins" });
+
+// Import from a JSON file (collection name derived from filename)
+await db.import("./exports/users.json");
+
+await db.disconnect();
+```
+
+---
+
+### 10. Seeding & Inspection
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+// Seed with reset
+await db.seed({
+  users: [
+    { name: "Alice", role: "admin" },
+    { name: "Bob",   role: "user" },
+  ],
+  products: [
+    { name: "Widget", price: 9.99 },
+  ],
+}, { reset: true });
+
+// Inspect
+console.log(db.inspect("users"));
+// { name: "users", count: 2, schema: null, indexes: [] }
+
+// Dump all data
+const snapshot = db.dump();
+console.log(snapshot.users.length); // 2
+
+await db.disconnect();
+```
+
+---
+
+### 11. Namespaced Instances
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+
+// Each tenant gets isolated storage under ./data/<tenantId>
+const tenant1 = db.namespace("tenant-001");
+const tenant2 = db.namespace("tenant-002");
+
+await tenant1.connect();
+await tenant1.useCollection("orders").insertOne({ item: "Widget" });
+await tenant1.disconnect();
+```
+
+---
+
+### 12. Custom Storage Adapter (Browser)
+
+```javascript
+import Skalex from "skalex";
+import { LocalStorageAdapter } from "skalex/adapters";
+
+const db = new Skalex({
+  adapter: new LocalStorageAdapter({ namespace: "myapp" }),
+});
+
+await db.connect();
+
+const notes = db.useCollection("notes");
+await notes.insertOne({ text: "Hello from the browser!" });
+
+await db.disconnect();
+```

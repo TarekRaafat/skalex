@@ -24,94 +24,77 @@
 
 # Skalex <!-- {docsify-ignore} -->
 
-> Simple & intuitive way to manage collections of data :rocket:
+> AI-first · Isomorphic · Zero-dependency · Local-first JavaScript database :rocket:
 
-## What it is Skalex? <!-- {docsify-ignore} -->
+## What is Skalex? <!-- {docsify-ignore} -->
 
-`Skalex` is a powerful JavaScript database library that offers a range of features designed to simplify database management and make it easier for developers. <sub><sup>(Made for a better developer experience)</sub></pub>
+`Skalex` is a powerful JavaScript database library designed for modern, local-first applications. It runs in Node.js, browsers, Bun, and edge runtimes with zero external dependencies, delivering a full document-database experience wherever JavaScript runs. <sub><sup>(Made for a better developer experience)</sub></sup>
 
 ## Features <!-- {docsify-ignore} -->
 
-- Pure Vanilla Javascript
-- Zero Dependencies
-- Lightweight & Portable
-- Highly Customizable
-- Well Documented
-- All CRUD operations <sub><sup>(Create, read, update and delete)</sub></pub>
-- Relational Database <sub><sup>(One-to-one & One-to-many)</sub></pub>
+- Pure Vanilla JavaScript — zero runtime dependencies
+- Isomorphic — Node.js, browser, Bun, Deno, edge
+- Dual ESM/CJS build (`dist/skalex.esm.js` + `dist/skalex.cjs.js`)
+- Full TypeScript definitions included
+- All CRUD operations <sub><sup>(Create, Read, Update, Delete)</sub></sup>
+- Secondary field indexes — O(1) lookups
+- Unique index constraints
+- Schema validation with type, required, unique, and enum rules
+- TTL documents — auto-expiry with `_expiresAt`
+- Versioned migrations with `_meta` tracking
+- Atomic transactions — snapshot + commit/rollback
+- Relational collections <sub><sup>(populate: one-to-one & one-to-many)</sub></sup>
+- Pluggable storage adapters — `FsAdapter`, `LocalStorageAdapter`, or bring your own
+- Query operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$regex`, `$fn`
 
 <details>
 <summary>More details</summary>
 
 <br>
 
-1. **Lightweight and Easy to Use:**
-   - Skalex is a lightweight database library that offers a simple and intuitive API. It allows developers to seamlessly integrate database functionality into their JavaScript projects with minimal effort.
-2. **No Setup Required:**
-   - Skalex eliminates the need for complex database setup or configuration. It leverages the file system to store data, making it easy to get started without the need for additional dependencies or external servers.
-3. **Collections and Documents:**
-   - Skalex organizes data into collections and documents, providing a familiar and flexible structure for storing and retrieving information. It offers methods to create, update, and delete documents within collections, allowing developers to efficiently manage their data.
-4. **Quick Data Retrieval:**
-   - Skalex utilizes indexing to provide fast document lookup. It builds an index map that allows for quick and efficient retrieval of documents based on specific fields or filters, ensuring optimal performance even with large datasets.
-5. **Data Persistence:**
-   - Skalex automatically saves and loads data to and from JSON files, ensuring data persistence across sessions. This feature enables developers to easily store and retrieve information, eliminating the need for manual data management.
-6. **Relationships between Collections:**
-   - Skalex supports establishing relationships between collections, enabling developers to link and query related data effortlessly. You can build powerful and interconnected application database structures by leveraging these relationships.
-7. **Customizable Queries:**
-   - Skalex offers a flexible query system that allows developers to specify complex filters and retrieve data based on their requirements. It supports various query operators, including equality, inequality, greater than, less than, and more, providing extensive querying capabilities.
-8. **Export Data to CSV:**
-   - Skalex provides a convenient method to export filtered collection data to CSV files. This feature allows developers to easily generate reports or share data with other systems, enhancing the versatility and usability of the database.
+1. **Isomorphic & Adapter-based Storage:**
+   - Skalex abstracts all I/O behind a `StorageAdapter` interface. The built-in `FsAdapter` targets Node.js with atomic temp-file-then-rename writes. The `LocalStorageAdapter` targets browsers. You can pass any custom adapter to target edge runtimes, Bun, or in-memory environments.
+2. **Zero Setup Required:**
+   - No database server, no configuration files, no migrations to run manually. Connect and start inserting.
+3. **Secondary Indexes & Unique Constraints:**
+   - Declare indexed fields on `createCollection()` for O(1) query performance. Mark fields `unique: true` to enforce no-duplicate constraints automatically on insert and update.
+4. **Schema Validation:**
+   - Define schemas with type checking, required fields, enum constraints, and unique rules. Validation runs at insert/update time with clear error messages.
+5. **TTL Documents:**
+   - Set a `ttl` option on any insert — `'30m'`, `'24h'`, `'7d'`, or a number of seconds. Expired documents are swept automatically on `connect()`.
+6. **Migrations:**
+   - Register versioned migration functions with `db.addMigration({ version, up })`. Pending migrations run automatically on `connect()` and applied versions are tracked in `_meta`.
+7. **Atomic Transactions:**
+   - `db.transaction(fn)` snapshots all in-memory state before running your callback. If the callback throws, every change is rolled back automatically.
+8. **Relational Collections:**
+   - Link collections via `populate` on `find`/`findOne`. Build one-to-one and one-to-many relationships without a query language.
+9. **Rich Query Engine:**
+   - Filter with plain objects, query operators, dot-notation for nested fields, RegExp, or custom `$fn` functions. The filter pre-sorter evaluates indexed fields first for maximum performance.
+10. **Export & Import:**
+    - Export filtered collection data to JSON or CSV via the storage adapter. Import JSON or CSV files back into any collection.
 
 </details>
 
-## Why to use Skalex?
+## Why use Skalex? <!-- {docsify-ignore} -->
 
 <details>
 
-<summary>Reasons to use the SkalexDB over MongoDB, SQL, PostgreSQL, and other popular databases</summary>
+<summary>Reasons to use Skalex over MongoDB, SQL, PostgreSQL, and other databases</summary>
 
 <br>
 
-1. **Lightweight and Easy to Use:**
-   - Skalex is a simple JavaScript code library that is lightweight and easy to understand.
-   - Provides a straightforward API for managing a database with collections, making it suitable for developers who prefer simplicity and ease of use.
-2. **No External Dependencies:**
-   - Skalex does not rely on any external dependencies or additional software installations.
-   - Standalone library that can be used directly in JavaScript projects without the need for setting up and maintaining a separate database system.
-3. **File-based Data Storage:**
-   - Skalex stores data in JSON files on the local file system.
-   - Eliminates the need for a separate database server, making it easy to get started without the need for additional dependencies or external servers.
-4. **No Setup Required:**
-   - Skalex eliminates the need for complex database setup or configuration.
-   - Only requires specifying the data directory where the JSON files will be stored.
-   - Simplicity makes it quick to set up and deploy in development or testing environments.
-5. **JavaScript Integration:**
-   - Skalex is written in JavaScript and seamlessly integrates with JavaScript projects.
-   - It allows developers to work with familiar JavaScript syntax and data structures, eliminating the need to learn and use a separate query language or ORM.
-6. **Built-in Collection Management:**
-   - Skalex provides built-in collection management features.
-   - Create new collections, insert documents, update data, query documents based on filters, and perform basic CRUD (Create, Read, Update, Delete) operations without the need for additional database-specific syntax or libraries.
-   - Establishing relationships between collections, enabling developers to link and query related data effortlessly and build powerful and interconnected application database structures.
-7. **Offline and Portable:**
-   - Skalex uses local file storage, it allows applications to work offline without requiring an internet connection.
-   - It also enables portability, as the data files can be easily moved or shared across different environments or systems.
-8. **No Database Server Maintenance:**
-   - Skalex eliminates the need for managing and maintaining a separate database server.
-   - Developers can focus on application logic and functionality without worrying about database server administration, performance tuning, or security configurations.
-9. **Customization and Extensibility:**
-   - Skalex provides a simple and flexible foundation that can be extended or customized based on specific project requirements.
-   - Developers can modify or enhance the library's functionality to suit their needs, such as adding additional data validation, implementing custom indexing, or integrating with other libraries or frameworks.
-10. **Development and Testing Flexibility:**
-    - Skalex can be particularly useful during development and testing phases, where rapid iteration and data manipulation are common.
-    - Its file-based storage allows developers to easily reset or modify data without affecting other environments or requiring complex rollback mechanisms.
-11. **Educational Purposes:**
-    - Skalex can serve as an educational tool for understanding database concepts and principles. Its simplicity and transparency make it suitable for teaching or learning about data storage, indexing, querying, and basic database operations without the complexities of a full-fledged database system.
+1. **No External Dependencies:** Skalex ships zero runtime dependencies. No driver, no ORM, no server process.
+2. **Runs Everywhere:** The same API works in Node.js, browsers (via `LocalStorageAdapter`), Bun, Deno, and edge runtimes by swapping the storage adapter.
+3. **Local-first & Offline:** Data lives on the local file system or in `localStorage`. No network required. Ideal for desktop apps, CLI tools, AI agents, and edge deployments.
+4. **AI-first Design:** Structured local storage, TTL documents, and versioned migrations make Skalex a natural fit for agent memory, MCP servers, and model context management.
+5. **Instant Setup:** `new Skalex({ path: "./.db" })` + `await db.connect()` is all the setup you need.
+6. **TypeScript Ready:** Full generics, mapped types, and union types ship in the box — no `@types/` package needed.
+7. **Predictable Performance:** Secondary indexes guarantee O(1) field lookups. The filter pre-sorter minimises unnecessary work on every query.
+8. **Safe by Default:** Atomic writes prevent corrupt files on crash. Unique index constraints prevent duplicate data. Schema validation prevents bad data at the boundary.
 
 <br>
 
-Overall, `SkalexDB` offers a lightweight, easy-to-use, and feature-rich JavaScript database library. It simplifies database management, provides efficient data storage and retrieval, supports relationships between collections, and offers powerful querying capabilities. Whether you're building a small-scale application or a larger project, Skalex can streamline your database operations and help you focus on developing great software.
-
-> Disclaimer: While `SkalexDB` offers simplicity and convenience, it may not be currently suitable for large-scale applications or projects that require advanced database features, high-performance requirements, or complex query optimizations. It's important to consider the specific needs of your project and evaluate the trade-offs before choosing a database solution.
+> **Disclaimer:** Skalex is optimised for local-first, single-process workloads. It is not designed for high-concurrency multi-process deployments or distributed systems.
 
 </details>
 

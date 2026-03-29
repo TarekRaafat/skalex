@@ -2,16 +2,57 @@
 
 ---
 
-To use the `Skalex` library, you need to have Node.js installed on your machine. Then, follow these steps:
+## Requirements
 
-1. Create a new directory for your project.
-2. Open a terminal and navigate to the project directory.
-3. Initialize a new Node.js project by running the following command inside the project directory:
-   ```
-   npm init -y
-   ```
-4. Install the `Skalex` library by running the following command:
+- Node.js `>=18.0.0`
 
-   ```
-   npm i skalex
-   ```
+---
+
+## Install
+
+```bash
+npm i skalex
+```
+
+---
+
+## Import
+
+**CommonJS (Node.js)**
+
+```javascript
+const Skalex = require("skalex");
+```
+
+**ESM**
+
+```javascript
+import Skalex from "skalex";
+```
+
+**TypeScript**
+
+```typescript
+import Skalex from "skalex";
+import type { Collection, SkalexConfig } from "skalex";
+```
+
+---
+
+## Quick Start
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./.db" });
+
+await db.connect();
+
+const users = db.useCollection("users");
+
+const { data } = await users.insertOne({ name: "Alice", age: 30 });
+
+console.log(data._id); // "0196f3a2b4c8d1e..."
+
+await db.disconnect();
+```
