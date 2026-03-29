@@ -7,6 +7,7 @@ import { describe, test, expect, beforeEach, vi } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
+import MockAIAdapter from "../helpers/MockAIAdapter.js";
 
 function makeDb(opts = {}) {
   const adapter = new MemoryAdapter();
@@ -1019,5 +1020,109 @@ describe("db.embed()", () => {
   test("throws when no AI adapter is configured", async () => {
     const { db } = makeDb();
     await expect(db.embed("test")).rejects.toThrow("requires an AI adapter");
+  });
+});
+
+// ─── db.ask() ────────────────────────────────────────────────────────────────
+
+function makeAskDbWith(responses) {
+  const adapter = new MemoryAdapter();
+  const db = new Skalex({ adapter });
+  db._aiAdapter = new MockAIAdapter(responses);
+  return db;
+}
+
+describe("db.ask()", () => {
+  test("translates nlQuery to a filter and returns matching docs", async () => {
+    const db = makeAskDbWith({ "users named Alice": { name: "Alice" } });
+    await db.connect();
+    const users = db.useCollection("users");
+    await users.insertOne({ name: "Alice" });
+    await users.insertOne({ name: "Bob" });
+
+    const { docs } = await db.ask("users", "users named Alice");
+    expect(docs).toHaveLength(1);
+    expect(docs[0].name).toBe("Alice");
+    await db.disconnect();
+  });
+
+  test("caches the filter — AI adapter called only once for same query", async () => {
+    const db = makeAskDbWith({ "find admins": { role: "admin" } });
+    await db.connect();
+    const users = db.useCollection("users");
+    await users.insertOne({ role: "admin" });
+
+    await db.ask("users", "find admins");
+    await db.ask("users", "find admins");
+
+    expect(db._aiAdapter.calls).toHaveLength(1);
+    await db.disconnect();
+  });
+
+  test("cache is per-collection — same query on different collections is a cache miss", async () => {
+    const db = makeAskDbWith({ "q": { name: "x" } });
+    await db.connect();
+    db.useCollection("a");
+    db.useCollection("b");
+
+    await db.ask("a", "q");
+    await db.ask("b", "q");
+
+    expect(db._aiAdapter.calls).toHaveLength(2);
+    await db.disconnect();
+  });
+
+  test("respects limit option", async () => {
+    const db = makeAskDbWith({ "all": {} });
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertMany([{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }, { v: 5 }]);
+
+    const { docs } = await db.ask("items", "all", { limit: 3 });
+    expect(docs.length).toBeLessThanOrEqual(3);
+    await db.disconnect();
+  });
+
+  test("throws when no AI adapter is configured", async () => {
+    const { db } = makeDb();
+    await expect(db.ask("users", "find someone")).rejects.toThrow(/language model adapter/);
+  });
+});
+
+// ─── db.schema() ─────────────────────────────────────────────────────────────
+
+describe("db.schema()", () => {
+  test("returns null for unknown collection", () => {
+    const { db } = makeDb();
+    expect(db.schema("nonexistent")).toBeNull();
+  });
+
+  test("returns declared schema as plain field→type map", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("users", { schema: { name: "string", age: "number" } });
+    const s = db.schema("users");
+    expect(s).toEqual({ name: "string", age: "number" });
+    await db.disconnect();
+  });
+
+  test("infers schema from first document when no schema declared", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ label: "hello", count: 5, active: true });
+    const s = db.schema("items");
+    expect(s.label).toBe("string");
+    expect(s.count).toBe("number");
+    expect(s.active).toBe("boolean");
+    await db.disconnect();
+  });
+
+  test("returns null for empty unschemaed collection", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.useCollection("empty");
+    expect(db.schema("empty")).toBeNull();
+    await db.disconnect();
   });
 });

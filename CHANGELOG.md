@@ -63,23 +63,62 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **`EmbeddingAdapter` interface** — abstract base (`embed(text) → number[]`) for all embedding backends
 - **`OpenAIEmbeddingAdapter`** — OpenAI embeddings via `fetch`; default model `text-embedding-3-small`
 - **`OllamaEmbeddingAdapter`** — local embeddings via Ollama; default model `nomic-embed-text`
-- **`ai` constructor option** — `{ provider, apiKey, model, host }` wires the embedding adapter
+- **`ai` constructor option** — `{ provider, apiKey, embedModel, model, host }` wires embedding + language model adapters
 - **`db.embed(text)`** — direct access to the configured embedding adapter
 - **`insertOne` / `insertMany` `embed` option** — field name or function selector; auto-embeds on insert, stores as `_vector`
 - **`collection.search(query, opts)`** — cosine similarity search over all documents with a `_vector` field; supports `filter` (hybrid), `limit`, `minScore`
 - **`collection.similar(id, opts)`** — nearest-neighbour lookup for an existing document; supports `limit`, `minScore`
 - **`src/vector.js`** — `cosineSimilarity(a, b)` and `stripVector(doc)` utilities
 - **`_vector` field** stripped from all `find`, `findOne`, `search`, `similar`, `insertOne`, and `insertMany` results — never exposed to callers
-- **`namespace()` inherits `ai` config** — namespaced instances share the same embedding adapter
+- **`namespace()` inherits `ai` + `encrypt` config** — namespaced instances share the same adapters
+
+#### AI Query Layer
+- **`AIAdapter` interface** — abstract base (`generate(schema, nlQuery)`, `summarize(texts)`) for language model backends
+- **`OpenAIAIAdapter`** — chat completions with `json_object` response format; default model `gpt-4o-mini`
+- **`AnthropicAIAdapter`** — messages API with markdown-fence stripping; default model `claude-haiku-4-5`
+- **`OllamaAIAdapter`** — local `/api/generate` with `format: "json"`; default model `llama3.2`
+- **`db.ask(collection, nlQuery, opts)`** — translate natural language to a filter via the language model; results cached by djb2 hash of `{ collection, schema, query }`
+- **`db.schema(collection)`** — returns declared or inferred `{ field: type }` schema for any collection
+- **`QueryCache`** — `set/get/toJSON/fromJSON`; persisted in `_meta` across connect/disconnect cycles
+- **`processLLMFilter(filter)`** — converts `$regex` strings → `RegExp`, ISO date strings in range operators → `Date`
+- **`validateLLMFilter(filter, schema)`** — warns on unknown fields; non-throwing
+
+#### Agent Memory
+- **`Memory` class** — per-session episodic store backed by `_memory_<sessionId>` collection
+- **`memory.remember(text)`** — stores text with embedding for semantic recall
+- **`memory.recall(query, opts)`** — semantic search over stored memories
+- **`memory.history(opts)`** — chronological listing with optional `since`/`limit`
+- **`memory.forget(id)`** — delete a memory entry by `_id`
+- **`memory.tokenCount()`** — token estimate (chars ÷ 4 heuristic)
+- **`memory.context(opts)`** — LLM-ready string capped to a token budget, newest-first selection
+- **`memory.compress(opts)`** — summarises old memories via `_aiAdapter`; keeps 10 most recent intact
+- **`db.useMemory(sessionId)`** — factory returning a `Memory` instance
+
+#### ChangeLog
+- **`ChangeLog` class** — append-only mutation log stored in `_changelog` collection
+- **`createCollection` `changelog: true` option** — enables per-collection mutation logging
+- **`changelog.log(op, collection, doc, prev, session)`** — records `insert`, `update`, `delete` with timestamp
+- **`changelog.query(collection, opts)`** — query entries with `since`, `limit`, `session` filters
+- **`changelog.restore(collection, timestamp, opts)`** — replays log entries to rebuild state at a point in time; supports single-doc `{ _id }` restore
+- **`db.changelog()`** — returns the shared `ChangeLog` instance
+- **`db.restore(collection, timestamp, opts)`** — convenience wrapper for `changelog.restore()`
+
+#### Encryption
+- **`EncryptedAdapter`** — wraps any `StorageAdapter` with AES-256-GCM; transparent to callers
+- **Algorithm**: AES-256-GCM via `globalThis.crypto.subtle` — Node ≥18, Bun, Deno, and all modern browsers; zero extra dependencies
+- **Wire format**: `base64(iv[12] | ciphertext + authTag[16])` — random IV per write, 128-bit authentication tag
+- **`encrypt: { key }` constructor option** — 64-char hex string or 32-byte `Uint8Array`; wraps `FsAdapter` transparently
+- **`namespace()` inherits `encrypt` config** — all namespaced instances share the same encryption key
 
 #### Docs & Testing
-- **Vitest test suite** — 155 tests across `tests/unit/` + `tests/integration/`; all I/O mocked via `MemoryAdapter`
-- **Full v4 TypeScript definitions** — `src/index.d.ts` rewritten with generics, union types, and all new API surface
+- **Vitest test suite** — 239 tests across `tests/unit/` + `tests/integration/`; all I/O mocked via `MemoryAdapter`
+- **Full v4 TypeScript definitions** — `src/index.d.ts` updated with `AIAdapter`, `EncryptedAdapter`, `Memory`, `ChangeLog`, `EncryptConfig`, `ChangeLogEntry`, and all new API surface
 - **`CHANGELOG.md`** (this file)
 - **`AUDIT.md`** — Phase 0 audit log documenting all 19 fixes with before/after line references
 - **`MIGRATION.md`** — upgrade guide for v3 → v4 breaking changes
-- **`ARCHITECTURE.md`** — internal design reference covering all v4 + Phase 2 decisions
+- **`ARCHITECTURE.md`** — internal design reference covering all v4 + Phase 3 decisions
 - **`MockEmbeddingAdapter`** test helper — deterministic 4-dim vectors, call log for assertions
+- **`MockAIAdapter`** test helper — configurable `nlQuery → filter` map, `calls[]` + `summarizeCalls[]` logs
 
 ### Fixed
 - `findOne()` returned the raw document instead of the projected `newItem` — populate and select options were silently discarded

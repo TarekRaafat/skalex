@@ -28,6 +28,9 @@ class Collection {
   /** @returns {Map<string, object>|null} Parsed schema fields. */
   get _schema() { return this._store.schema ? this._store.schema.fields : null; }
 
+  /** @returns {boolean} Whether changelog is enabled for this collection. */
+  get _changelogEnabled() { return this._store.changelog === true; }
+
   // ─── Insert ──────────────────────────────────────────────────────────────
 
   /**
@@ -69,6 +72,10 @@ class Collection {
     this._index.set(newItem._id, newItem);
 
     if (save) await this.database.saveData(this.name);
+
+    if (this._changelogEnabled) {
+      await this.database._changeLog.log("insert", this.name, newItem);
+    }
 
     return { data: stripVector(newItem) };
   }
@@ -115,6 +122,12 @@ class Collection {
 
     if (save) await this.database.saveData(this.name);
 
+    if (this._changelogEnabled) {
+      for (const newItem of newItems) {
+        await this.database._changeLog.log("insert", this.name, newItem);
+      }
+    }
+
     return { docs: newItems.map(stripVector) };
   }
 
@@ -131,11 +144,17 @@ class Collection {
     const item = this._findRaw(filter);
     if (!item) return null;
 
+    const prev = this._changelogEnabled ? { ...item } : null;
+
     if (this._fieldIndex) this._fieldIndex.remove(item);
     this.applyUpdate(item, update);
     if (this._fieldIndex) this._fieldIndex.add(item);
 
     if (options.save) await this.database.saveData(this.name);
+
+    if (this._changelogEnabled) {
+      await this.database._changeLog.log("update", this.name, item, prev);
+    }
 
     return { data: item };
   }
@@ -149,6 +168,7 @@ class Collection {
    */
   async updateMany(filter, update, options = {}) {
     const items = this._findAllRaw(filter);
+    const prevs = this._changelogEnabled ? items.map(d => ({ ...d })) : null;
 
     for (const item of items) {
       if (this._fieldIndex) this._fieldIndex.remove(item);
@@ -157,6 +177,12 @@ class Collection {
     }
 
     if (options.save) await this.database.saveData(this.name);
+
+    if (this._changelogEnabled) {
+      for (let i = 0; i < items.length; i++) {
+        await this.database._changeLog.log("update", this.name, items[i], prevs[i]);
+      }
+    }
 
     return { docs: items };
   }
@@ -382,6 +408,10 @@ class Collection {
 
     if (options.save) await this.database.saveData(this.name);
 
+    if (this._changelogEnabled) {
+      await this.database._changeLog.log("delete", this.name, deletedItem);
+    }
+
     return { data: deletedItem };
   }
 
@@ -408,6 +438,12 @@ class Collection {
     this._data = remainingItems;
 
     if (options.save) await this.database.saveData(this.name);
+
+    if (this._changelogEnabled) {
+      for (const deletedItem of deletedItems) {
+        await this.database._changeLog.log("delete", this.name, deletedItem);
+      }
+    }
 
     return { docs: deletedItems };
   }

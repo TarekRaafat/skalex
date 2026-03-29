@@ -3,10 +3,17 @@ const { logger } = require("./utils");
 const FsAdapter = require("./adapters/storage/fs");
 const MigrationEngine = require("./migrations");
 const IndexEngine = require("./indexes");
-const { parseSchema } = require("./validator");
+const { parseSchema, inferSchema } = require("./validator");
 const { sweep } = require("./ttl");
 const OpenAIEmbeddingAdapter = require("./adapters/embedding/openai");
 const OllamaEmbeddingAdapter = require("./adapters/embedding/ollama");
+const OpenAIAIAdapter = require("./adapters/ai/openai");
+const AnthropicAIAdapter = require("./adapters/ai/anthropic");
+const OllamaAIAdapter = require("./adapters/ai/ollama");
+const EncryptedAdapter = require("./adapters/storage/encrypted");
+const Memory = require("./memory");
+const ChangeLog = require("./changelog");
+const { QueryCache, processLLMFilter, validateLLMFilter } = require("./ask");
 
 /**
  * Skalex — an in-process document database with file-system persistence.
@@ -24,18 +31,23 @@ class Skalex {
    * @param {string}  [config.format="gz"]   - "gz" (compressed) or "json".
    * @param {boolean} [config.debug=false]   - Log debug output.
    * @param {object}  [config.adapter]       - Custom StorageAdapter instance.
-   * @param {object}  [config.ai]            - AI / embedding config.
-   * @param {string}  [config.ai.provider]   - "openai" | "ollama"
-   * @param {string}  [config.ai.apiKey]     - API key (OpenAI).
-   * @param {string}  [config.ai.model]      - Embedding model override.
-   * @param {string}  [config.ai.host]       - Ollama server URL override.
+   * @param {object}  [config.ai]              - AI configuration (embedding + language model).
+   * @param {string}  [config.ai.provider]     - "openai" | "anthropic" | "ollama"
+   * @param {string}  [config.ai.apiKey]       - API key (OpenAI / Anthropic).
+   * @param {string}  [config.ai.embedModel]   - Embedding model override (falls back to model).
+   * @param {string}  [config.ai.model]        - Language model override.
+   * @param {string}  [config.ai.host]         - Ollama server URL override.
+   * @param {object}  [config.encrypt]         - Encryption configuration.
+   * @param {string}  [config.encrypt.key]     - AES-256 key (64-char hex or 32-byte Uint8Array).
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai } = {}) {
+  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt } = {}) {
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
 
-    this.fs = adapter || new FsAdapter({ dir: path, format });
+    let fs = adapter || new FsAdapter({ dir: path, format });
+    if (encrypt) fs = new EncryptedAdapter(fs, encrypt.key);
+    this.fs = fs;
 
     this.collections = {};
     this._collectionInstances = {};
@@ -44,7 +56,11 @@ class Skalex {
     this.isConnected = false;
 
     this._aiConfig = ai || null;
+    this._encryptConfig = encrypt || null;
     this._embeddingAdapter = ai ? this._createEmbeddingAdapter(ai) : null;
+    this._aiAdapter = ai ? this._createAIAdapter(ai) : null;
+    this._changeLog = new ChangeLog(this);
+    this._queryCache = new QueryCache();
   }
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -57,9 +73,12 @@ class Skalex {
     try {
       await this.loadData();
 
+      // Restore persisted query cache
+      const meta = this._getMeta();
+      if (meta.queryCache) this._queryCache.fromJSON(meta.queryCache);
+
       // Run pending migrations
       if (this._migrations._migrations.length > 0) {
-        const meta = this._getMeta();
         const applied = meta.appliedVersions || [];
         const newApplied = await this._migrations.run(
           (version) => this.useCollection(`_migration_${version}`),
@@ -147,7 +166,7 @@ class Skalex {
     return instance;
   }
 
-  _createCollectionStore(collectionName, { schema, indexes = [] } = {}) {
+  _createCollectionStore(collectionName, { schema, indexes = [], changelog = false } = {}) {
     let parsedSchema = null;
     let fieldIndex = null;
 
@@ -168,6 +187,7 @@ class Skalex {
       isSaving: false,
       schema: parsedSchema,
       fieldIndex,
+      changelog,
     };
   }
 
@@ -291,6 +311,7 @@ class Skalex {
       format: this.dataFormat,
       debug: this.debug,
       ai: this._aiConfig || undefined,
+      encrypt: this._encryptConfig || undefined,
     });
   }
 
@@ -428,7 +449,7 @@ class Skalex {
   // ─── Embedding ───────────────────────────────────────────────────────────
 
   /**
-   * Embed a text string using the configured AI adapter.
+   * Embed a text string using the configured embedding adapter.
    * @param {string} text
    * @returns {Promise<number[]>}
    */
@@ -439,6 +460,104 @@ class Skalex {
       );
     }
     return this._embeddingAdapter.embed(text);
+  }
+
+  // ─── AI Query ─────────────────────────────────────────────────────────────
+
+  /**
+   * Natural-language query: translate `nlQuery` into a filter via the language
+   * model and run it against the collection. Results are cached by query hash.
+   *
+   * @param {string} collectionName
+   * @param {string} nlQuery
+   * @param {{ limit?: number }} [opts]
+   * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
+   */
+  async ask(collectionName, nlQuery, { limit = 20 } = {}) {
+    if (!this._aiAdapter) {
+      throw new Error(
+        'db.ask() requires a language model adapter. Configure { ai: { provider, model: "..." } }.'
+      );
+    }
+
+    const col = this.useCollection(collectionName);
+    const store = this.collections[collectionName];
+
+    // Build a schema descriptor for the LLM
+    let schema = null;
+    if (store && store.schema) {
+      schema = Object.fromEntries(
+        [...store.schema.fields.entries()].map(([k, v]) => [k, v.type])
+      );
+    } else if (store && store.data.length > 0) {
+      schema = inferSchema(store.data[0]);
+    }
+
+    // Cache lookup
+    let filter = this._queryCache.get(collectionName, schema, nlQuery);
+    if (!filter) {
+      filter = await this._aiAdapter.generate(schema, nlQuery);
+      const warnings = validateLLMFilter(filter, schema);
+      if (warnings.length) warnings.forEach(w => this._log(`[ask] ${w}`));
+      this._queryCache.set(collectionName, schema, nlQuery, filter);
+      this._saveMeta({ queryCache: this._queryCache.toJSON() });
+    }
+
+    return col.find(processLLMFilter(filter), { limit });
+  }
+
+  // ─── Schema ──────────────────────────────────────────────────────────────
+
+  /**
+   * Return the schema for a collection as a plain `{ field: type }` object.
+   * If no schema was declared, one is inferred from the first document.
+   * Returns null if the collection is empty or unknown.
+   *
+   * @param {string} collectionName
+   * @returns {object|null}
+   */
+  schema(collectionName) {
+    const store = this.collections[collectionName];
+    if (!store) return null;
+    if (store.schema) {
+      return Object.fromEntries(
+        [...store.schema.fields.entries()].map(([k, v]) => [k, v.type])
+      );
+    }
+    if (store.data.length > 0) return inferSchema(store.data[0]);
+    return null;
+  }
+
+  // ─── Agent Memory ─────────────────────────────────────────────────────────
+
+  /**
+   * Get (or create) an episodic Memory store for a session.
+   * @param {string} sessionId
+   * @returns {Memory}
+   */
+  useMemory(sessionId) {
+    return new Memory(sessionId, this);
+  }
+
+  // ─── ChangeLog ────────────────────────────────────────────────────────────
+
+  /**
+   * Return the shared ChangeLog instance.
+   * @returns {ChangeLog}
+   */
+  changelog() {
+    return this._changeLog;
+  }
+
+  /**
+   * Restore a collection (or a single document) to its state at `timestamp`.
+   * @param {string} collectionName
+   * @param {string|Date} timestamp
+   * @param {{ _id?: string }} [opts]
+   * @returns {Promise<void>}
+   */
+  async restore(collectionName, timestamp, opts = {}) {
+    return this._changeLog.restore(collectionName, timestamp, opts);
   }
 
   // ─── Private ─────────────────────────────────────────────────────────────
@@ -464,16 +583,31 @@ class Skalex {
     }
   }
 
-  _createEmbeddingAdapter({ provider, apiKey, model, host }) {
+  _createEmbeddingAdapter({ provider, apiKey, embedModel, model, host }) {
+    const resolvedModel = embedModel || model;
     switch (provider) {
       case "openai":
-        return new OpenAIEmbeddingAdapter({ apiKey, model });
+        return new OpenAIEmbeddingAdapter({ apiKey, model: resolvedModel });
       case "ollama":
-        return new OllamaEmbeddingAdapter({ model, host });
+        return new OllamaEmbeddingAdapter({ model: resolvedModel, host });
       default:
         throw new Error(
           `Unknown AI provider: "${provider}". Supported: "openai", "ollama".`
         );
+    }
+  }
+
+  _createAIAdapter({ provider, apiKey, model, host }) {
+    if (!model) return null; // LLM adapter is optional
+    switch (provider) {
+      case "openai":
+        return new OpenAIAIAdapter({ apiKey, model });
+      case "anthropic":
+        return new AnthropicAIAdapter({ apiKey, model });
+      case "ollama":
+        return new OllamaAIAdapter({ model, host });
+      default:
+        return null; // unknown provider — skip silently (embedding may still work)
     }
   }
 

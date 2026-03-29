@@ -3,14 +3,21 @@
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface AIConfig {
-  /** Embedding provider. */
-  provider: 'openai' | 'ollama';
-  /** API key (required for OpenAI). */
+  /** AI provider. */
+  provider: 'openai' | 'anthropic' | 'ollama';
+  /** API key (required for OpenAI and Anthropic). */
   apiKey?: string;
-  /** Embedding model override. */
+  /** Embedding model override (falls back to `model`). */
+  embedModel?: string;
+  /** Language model override. Required for db.ask() and memory.compress(). */
   model?: string;
   /** Ollama server URL. Default: 'http://localhost:11434'. */
   host?: string;
+}
+
+export interface EncryptConfig {
+  /** AES-256 key: 64-character hex string or 32-byte Uint8Array. */
+  key: string | Uint8Array;
 }
 
 export interface SkalexConfig {
@@ -22,14 +29,29 @@ export interface SkalexConfig {
   debug?: boolean;
   /** Custom storage adapter (overrides FsAdapter). */
   adapter?: StorageAdapter;
-  /** AI / embedding configuration. Required for vector search. */
+  /** AI / embedding configuration. Required for vector search and db.ask(). */
   ai?: AIConfig;
+  /** At-rest encryption configuration. Wraps the storage adapter with AES-256-GCM. */
+  encrypt?: EncryptConfig;
 }
 
-// ─── Embedding ───────────────────────────────────────────────────────────────
+// ─── Adapters ────────────────────────────────────────────────────────────────
 
 export declare abstract class EmbeddingAdapter {
   abstract embed(text: string): Promise<number[]>;
+}
+
+export declare abstract class AIAdapter {
+  abstract generate(schema: Record<string, string> | null, nlQuery: string): Promise<Record<string, unknown>>;
+  abstract summarize(texts: string): Promise<string>;
+}
+
+export declare class EncryptedAdapter extends StorageAdapter {
+  constructor(adapter: StorageAdapter, key: string | Uint8Array);
+  read(name: string): Promise<string | null>;
+  write(name: string, data: string): Promise<void>;
+  delete(name: string): Promise<void>;
+  list(): Promise<string[]>;
 }
 
 // ─── Storage ─────────────────────────────────────────────────────────────────
@@ -58,6 +80,8 @@ export interface CollectionOptions {
   schema?: SchemaDefinition;
   /** Fields to build secondary (non-unique) indexes on. */
   indexes?: string[];
+  /** Enable append-only mutation log for this collection. */
+  changelog?: boolean;
 }
 
 // ─── Query operators ─────────────────────────────────────────────────────────
@@ -211,6 +235,47 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   export(filter?: Filter<T>, options?: ExportOptions): Promise<void>;
 }
 
+// ─── Memory ───────────────────────────────────────────────────────────────────
+
+export declare class Memory {
+  readonly sessionId: string;
+  constructor(sessionId: string, db: Skalex);
+
+  remember(text: string): Promise<SingleResult<Document>>;
+  recall(query: string, options?: { limit?: number; minScore?: number }): Promise<SearchResult<Document>>;
+  history(options?: { since?: string | Date; limit?: number }): Promise<Document[]>;
+  forget(id: string): Promise<SingleResult<Document> | null>;
+  tokenCount(): { tokens: number; count: number };
+  context(options?: { tokens?: number }): string;
+  compress(options?: { threshold?: number }): Promise<void>;
+}
+
+// ─── ChangeLog ────────────────────────────────────────────────────────────────
+
+export interface ChangeLogEntry {
+  _id: string;
+  op: 'insert' | 'update' | 'delete';
+  collection: string;
+  docId: string;
+  doc: Document;
+  prev?: Document;
+  timestamp: Date;
+  session?: string;
+}
+
+export interface ChangeLogQueryOptions {
+  since?: string | Date;
+  limit?: number;
+  session?: string;
+}
+
+export declare class ChangeLog {
+  constructor(db: Skalex);
+  log(op: 'insert' | 'update' | 'delete', collection: string, doc: Document, prev?: Document | null, session?: string | null): Promise<void>;
+  query(collection: string, options?: ChangeLogQueryOptions): Promise<ChangeLogEntry[]>;
+  restore(collection: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
+}
+
 // ─── CollectionInfo ───────────────────────────────────────────────────────────
 
 export interface CollectionInfo {
@@ -265,6 +330,19 @@ export declare class Skalex {
 
   // Embedding
   embed(text: string): Promise<number[]>;
+
+  // AI Query
+  ask(collectionName: string, nlQuery: string, options?: { limit?: number }): Promise<FindResult<Document>>;
+
+  // Schema introspection
+  schema(collectionName: string): Record<string, string> | null;
+
+  // Agent Memory
+  useMemory(sessionId: string): Memory;
+
+  // ChangeLog
+  changelog(): ChangeLog;
+  restore(collectionName: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
 }
 
 export default Skalex;
