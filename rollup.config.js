@@ -1,5 +1,6 @@
 import resolve from "@rollup/plugin-node-resolve";
 import commonjs from "@rollup/plugin-commonjs";
+import terser from "@rollup/plugin-terser";
 
 const input = "src/index.js";
 
@@ -8,6 +9,11 @@ const external = ["fs", "path", "zlib", "crypto", "os"];
 const plugins = [
   resolve({ preferBuiltins: true }),
   commonjs(),
+];
+
+const minPlugins = [
+  ...plugins,
+  terser(),
 ];
 
 export default [
@@ -22,6 +28,17 @@ export default [
     external,
     plugins,
   },
+  // ESM minified
+  {
+    input,
+    output: {
+      file: "dist/skalex.esm.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    external,
+    plugins: minPlugins,
+  },
   // CJS build
   {
     input,
@@ -33,5 +50,17 @@ export default [
     },
     external,
     plugins,
+  },
+  // CJS minified
+  {
+    input,
+    output: {
+      file: "dist/skalex.cjs.min.js",
+      format: "cjs",
+      sourcemap: true,
+      exports: "default",
+    },
+    external,
+    plugins: minPlugins,
   },
 ];

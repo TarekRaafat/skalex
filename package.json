@@ -4,11 +4,30 @@
   "license": "Apache-2.0",
   "description": "AI-first · Isomorphic · Zero-dependency · Local-first JavaScript database.",
   "keywords": [
-    "skalex", "database", "db", "document", "collections",
-    "ai", "ai-first", "vector", "embeddings", "semantic-search",
-    "agent-memory", "mcp", "model-context-protocol",
-    "local-first", "offline", "isomorphic", "browser", "edge",
-    "zero-dependency", "node", "bun", "deno", "json", "file-based"
+    "skalex",
+    "database",
+    "db",
+    "document",
+    "collections",
+    "ai",
+    "ai-first",
+    "vector",
+    "embeddings",
+    "semantic-search",
+    "agent-memory",
+    "mcp",
+    "model-context-protocol",
+    "local-first",
+    "offline",
+    "isomorphic",
+    "browser",
+    "edge",
+    "zero-dependency",
+    "node",
+    "bun",
+    "deno",
+    "json",
+    "file-based"
   ],
   "author": {
     "name": "Tarek Raafat",
@@ -30,9 +49,17 @@
       "import": "./dist/skalex.esm.js",
       "require": "./dist/skalex.cjs.js",
       "types": "./dist/skalex.d.ts"
+    },
+    "./min": {
+      "import": "./dist/skalex.esm.min.js",
+      "require": "./dist/skalex.cjs.min.js",
+      "types": "./dist/skalex.d.ts"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "rollup -c && cp src/index.d.ts dist/skalex.d.ts",
     "test": "vitest run",
@@ -57,6 +84,7 @@
   "devDependencies": {
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
     "jest": "^29.5.0",
     "rollup": "^4.60.0",
     "vitest": "^4.1.2"
