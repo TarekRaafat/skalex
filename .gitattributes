@@ -1,1 +1,2 @@
-tests/smoke/browser.html linguist-detectable=false
+docs/*.html linguist-documentation=true
+tests/smoke/*.html linguist-detectable=false
