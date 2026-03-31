@@ -13,7 +13,7 @@ await db.connect();
 const users = db.useCollection("users");
 
 // Insert
-const { data: user } = await users.insertOne({ name: "Alice", age: 30 });
+const user = await users.insertOne({ name: "Alice", age: 30 });
 console.log(user._id); // "0196f3a2b4c8d1e..."
 
 // Find one
@@ -183,7 +183,7 @@ await db.connect();
 const users = db.useCollection("users");
 const posts = db.useCollection("posts");
 
-const { data: user } = await users.insertOne({ name: "Alice" });
+const user = await users.insertOne({ name: "Alice" });
 
 await posts.insertMany([
   { title: "Hello World", users: user._id },
@@ -310,7 +310,7 @@ await tenant1.disconnect();
 
 ```javascript
 import Skalex from "skalex";
-import { LocalStorageAdapter } from "skalex/adapters";
+import { LocalStorageAdapter } from "skalex/connectors/local";
 
 const db = new Skalex({
   adapter: new LocalStorageAdapter({ namespace: "myapp" }),
@@ -640,4 +640,283 @@ await server.listen(); // blocks on stdin
     }
   }
 }
+```
+
+---
+
+### 22. TypeScript Typed Collections
+
+```typescript
+import Skalex from "skalex";
+import type { Collection } from "skalex";
+
+// Define your document shape
+interface User {
+  name: string;
+  email: string;
+  role: "admin" | "user";
+  age?: number;
+}
+
+interface Order {
+  userId: string;
+  product: string;
+  amount: number;
+  status: "pending" | "paid" | "cancelled";
+}
+
+const db = new Skalex({ path: "./data" });
+
+db.createCollection("users", {
+  schema: {
+    email: { type: "string", required: true, unique: true },
+    role:  { type: "string", enum: ["admin", "user"], required: true },
+  },
+  indexes: ["role"],
+});
+
+await db.connect();
+
+// Typed collection — all methods infer from User
+const users: Collection<User> = db.useCollection<User>("users");
+const orders: Collection<Order> = db.useCollection<Order>("orders");
+
+// insertOne returns User & { _id: string; createdAt: Date; updatedAt: Date }
+const alice = await users.insertOne({
+  name: "Alice",
+  email: "alice@example.com",
+  role: "admin",
+  age: 32,
+});
+
+console.log(alice._id);   // string
+console.log(alice.role);  // "admin"
+
+// find returns { docs: Array<User & SystemFields>, ... }
+const { docs } = await users.find({ role: "admin" });
+
+// TypeScript catches bad fields at compile time
+// await users.insertOne({ name: "Bob", role: "superuser" }); // TS error: not assignable
+
+await orders.insertOne({
+  userId: alice._id,
+  product: "Widget",
+  amount: 9.99,
+  status: "pending",
+});
+
+await db.disconnect();
+```
+
+---
+
+### 23. Error Handling
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+
+db.createCollection("users", {
+  schema: {
+    email: { type: "string", required: true, unique: true },
+    role:  { type: "string", enum: ["admin", "user"], required: true },
+  },
+});
+
+await db.connect();
+const users = db.useCollection("users");
+
+// ── Schema validation errors ───────────────────────────────────────────────
+try {
+  await users.insertOne({ email: "alice@example.com" }); // missing required: role
+} catch (err) {
+  console.error(err.message); // "Validation error: 'role' is required"
+}
+
+try {
+  await users.insertOne({ email: "alice@example.com", role: "superuser" }); // invalid enum
+} catch (err) {
+  console.error(err.message); // "Validation error: 'role' must be one of [admin, user]"
+}
+
+// ── Unique constraint violations ───────────────────────────────────────────
+await users.insertOne({ email: "alice@example.com", role: "admin" });
+
+try {
+  await users.insertOne({ email: "alice@example.com", role: "user" }); // duplicate email
+} catch (err) {
+  console.error(err.message); // "Unique constraint violated: 'email' already exists"
+}
+
+// ── Transaction rollback ───────────────────────────────────────────────────
+const accounts = db.useCollection("accounts");
+await accounts.insertMany([
+  { name: "Alice", balance: 100 },
+  { name: "Bob",   balance: 50  },
+]);
+
+try {
+  await db.transaction(async (db) => {
+    const accounts = db.useCollection("accounts");
+    await accounts.updateOne({ name: "Alice" }, { balance: { $inc: -200 } });
+    // Simulate a business rule check
+    const alice = await accounts.findOne({ name: "Alice" });
+    if (alice.balance < 0) throw new Error("Insufficient funds");
+  });
+} catch (err) {
+  console.error(err.message); // "Insufficient funds"
+  // Alice's balance is fully restored — transaction rolled back
+}
+
+await db.disconnect();
+```
+
+---
+
+### 24. Plugin System
+
+```javascript
+import Skalex from "skalex";
+import { writeFile, appendFile } from "node:fs/promises";
+
+// ── Audit plugin — logs every write to a file ──────────────────────────────
+const auditPlugin = {
+  async afterInsert({ collection, doc }) {
+    const line = `${new Date().toISOString()} INSERT ${collection} ${doc._id}\n`;
+    await appendFile("./audit.log", line);
+  },
+  async afterUpdate({ collection, result }) {
+    const line = `${new Date().toISOString()} UPDATE ${collection} ${result?._id}\n`;
+    await appendFile("./audit.log", line);
+  },
+  async afterDelete({ collection, result }) {
+    const line = `${new Date().toISOString()} DELETE ${collection} ${result?._id}\n`;
+    await appendFile("./audit.log", line);
+  },
+};
+
+// ── Validation plugin — block inserts that fail a business rule ────────────
+const validationPlugin = {
+  async beforeInsert({ collection, doc }) {
+    if (collection === "orders" && doc.amount <= 0) {
+      throw new Error("Order amount must be greater than zero");
+    }
+  },
+};
+
+// ── Read-only plugin — log all finds for debugging ─────────────────────────
+const debugPlugin = {
+  async afterFind({ collection, filter, docs }) {
+    console.log(`[find] ${collection} matched ${docs.length} doc(s)`, filter);
+  },
+};
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+db.use(validationPlugin);
+db.use(auditPlugin);
+db.use(debugPlugin);
+
+const orders = db.useCollection("orders");
+
+// Passes validation — audit entry written
+await orders.insertOne({ product: "Widget", amount: 9.99 });
+
+try {
+  // Fails beforeInsert — nothing written, no audit entry
+  await orders.insertOne({ product: "Bad", amount: 0 });
+} catch (err) {
+  console.error(err.message); // "Order amount must be greater than zero"
+}
+
+// debugPlugin logs: [find] orders matched 1 doc(s) {}
+await orders.find({});
+
+await db.disconnect();
+```
+
+---
+
+### 25. Session Stats
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./data" });
+await db.connect();
+
+const posts = db.useCollection("posts");
+
+// Simulate two users performing operations tagged with their session IDs
+await posts.insertOne({ title: "Hello" },          { session: "user-alice" });
+await posts.insertOne({ title: "World" },          { session: "user-alice" });
+await posts.updateOne({ title: "Hello" }, { title: "Hi" }, { session: "user-alice" });
+
+await posts.find({},                               { session: "user-bob" });
+await posts.find({ title: "Hi" },                 { session: "user-bob" });
+
+// Per-session stats
+const alice = db.sessionStats("user-alice");
+console.log(alice.writes);     // 3
+console.log(alice.reads);      // 0
+console.log(alice.lastActive); // Date
+
+const bob = db.sessionStats("user-bob");
+console.log(bob.writes);       // 0
+console.log(bob.reads);        // 2
+
+// All sessions — useful for a dashboard or rate-limiter
+const all = db.sessionStats();
+console.log(all.length);            // 2
+console.log(all.map(s => s.sessionId)); // ["user-alice", "user-bob"]
+
+await db.disconnect();
+```
+
+---
+
+### 26. Slow Query Log
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({
+  path: "./data",
+  slowQueryLog: {
+    threshold:  20,   // record queries that take longer than 20ms
+    maxEntries: 500,  // keep the last 500 slow entries (ring buffer)
+  },
+});
+await db.connect();
+
+const logs = db.useCollection("logs");
+
+// Insert a large batch to create measurable query times
+await logs.insertMany(
+  Array.from({ length: 5000 }, (_, i) => ({
+    level: i % 3 === 0 ? "error" : "info",
+    message: `Log entry ${i}`,
+    ts: new Date(Date.now() - i * 1000),
+  }))
+);
+
+// Run a query with no index — likely to exceed threshold on large collections
+await logs.find({ level: "error", message: { $regex: /entry 1/ } });
+
+// Retrieve slow query entries
+const slow = db.slowQueries({ minDuration: 20, limit: 10 });
+
+for (const entry of slow) {
+  console.log(
+    `[${entry.collection}] ${entry.op} — ${entry.duration}ms`,
+    entry.filter ?? entry.query
+  );
+}
+
+// Identify unindexed fields causing slowness, then add an index:
+// db.createCollection("logs", { indexes: ["level"] });
+
+await db.disconnect();
 ```

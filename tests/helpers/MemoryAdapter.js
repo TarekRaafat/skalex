@@ -47,9 +47,10 @@ class MemoryAdapter {
     return this._store.get(`__raw:${filePath}`) ?? null;
   }
 
+  /** Reset all stored data — useful for cleaning up between test cases. */
   clear() {
     this._store.clear();
   }
 }
 
-module.exports = MemoryAdapter;
+export default MemoryAdapter;

@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playground | Skalex</title>
+  <meta name="description" content="Try Skalex live in your browser — no install required.">
+  <link rel="icon" type="image/svg+xml" href="./imgs/skalex_icon.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #080024;
+      --bg1:        #0d0035;
+      --bg2:        #110038;
+      --accent:     #FFE500;
+      --accent-dim: rgba(255, 229, 0, 0.12);
+      --text:       #e8e8e8;
+      --text-dim:   #666688;
+      --border:     rgba(255, 255, 255, 0.07);
+      --success:    #4ade80;
+      --warn:       #fbbf24;
+      --error:      #f87171;
+      --info:       #60a5fa;
+      --font-mono:  'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+      --font-ui:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --hh:         52px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); overflow: hidden; }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--hh);
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; padding: 0 16px;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: var(--text);
+    }
+    .logo img { height: 28px; width: auto; }
+
+    .badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+      padding: 3px 9px; border-radius: 999px;
+      background: var(--accent-dim); color: var(--accent);
+      border: 1px solid rgba(255, 229, 0, 0.25);
+    }
+
+    .spacer { flex: 1; }
+
+    .btn-docs {
+      font-size: 13px; color: var(--text-dim); text-decoration: none;
+      padding: 6px 12px; border-radius: 6px;
+      transition: color .15s, background .15s;
+    }
+    .btn-docs:hover { color: var(--text); background: rgba(255,255,255,.06); }
+
+    #runBtn {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--accent); color: #080024;
+      border: none; border-radius: 7px; padding: 7px 18px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    #runBtn:hover  { opacity: .9; }
+    #runBtn:active { transform: scale(.97); }
+    #runBtn.busy   { opacity: .6; cursor: not-allowed; }
+    #runBtn kbd    { font-size: 11px; font-weight: 400; opacity: .55; font-family: var(--font-mono); }
+
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: 195px 1fr 330px;
+      height: calc(100vh - var(--hh));
+      margin-top: var(--hh);
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────────── */
+    #sidebar {
+      background: var(--bg1);
+      border-right: 1px solid var(--border);
+      overflow-y: auto; overflow-x: hidden;
+      padding: 14px 8px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+
+    .sidebar-label {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      color: var(--text-dim); text-transform: uppercase;
+      padding: 2px 10px 10px;
+    }
+
+    .ex-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 9px 10px; border-radius: 7px; cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: background .12s;
+    }
+    .ex-item:hover { background: rgba(255,255,255,.05); }
+    .ex-item.active {
+      background: var(--accent-dim);
+      border-left-color: var(--accent);
+    }
+
+    .ex-icon  { font-size: 15px; line-height: 1.4; flex-shrink: 0; }
+    .ex-meta  { min-width: 0; }
+    .ex-title { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.3; }
+    .ex-item.active .ex-title { color: var(--accent); }
+    .ex-desc  { font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.3; }
+
+    /* ── Editor ──────────────────────────────────────────────────────────── */
+    #editor-wrap {
+      display: flex; flex-direction: column; min-width: 0;
+      border-right: 1px solid var(--border);
+    }
+
+    .panel-bar {
+      height: 36px; flex-shrink: 0;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; padding: 0 14px;
+      font-size: 11px; font-weight: 600; color: var(--text-dim);
+      letter-spacing: .06em; text-transform: uppercase;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .6; }
+
+    #monaco { flex: 1; min-height: 0; }
+
+    /* ── Output ──────────────────────────────────────────────────────────── */
+    #output-wrap { display: flex; flex-direction: column; min-width: 0; }
+
+    .out-bar {
+      height: 36px; flex-shrink: 0;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; padding: 0 14px;
+    }
+    .out-label {
+      flex: 1; font-size: 11px; font-weight: 600;
+      color: var(--text-dim); letter-spacing: .06em; text-transform: uppercase;
+    }
+    #clearBtn {
+      font-size: 11px; color: var(--text-dim); background: transparent;
+      border: 1px solid var(--border); border-radius: 4px; padding: 3px 9px; cursor: pointer;
+      transition: color .12s, border-color .12s;
+    }
+    #clearBtn:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+
+    #output {
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding: 14px 14px 20px;
+      font-family: var(--font-mono); font-size: 12.5px; line-height: 1.65;
+    }
+
+    #hint {
+      color: var(--text-dim); font-style: italic; font-size: 12px;
+    }
+
+    .line {
+      display: flex; gap: 8px; padding: 1px 0;
+      animation: pop .14s ease;
+    }
+    @keyframes pop {
+      from { opacity: 0; transform: translateY(3px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .pfx { color: var(--text-dim); flex-shrink: 0; user-select: none; width: 14px; text-align: center; }
+    .msg { color: var(--text); word-break: break-word; white-space: pre-wrap; }
+
+    .line.warn  .msg { color: var(--warn); }
+    .line.error .msg { color: var(--error); }
+    .line.info  .msg { color: var(--info); }
+    .line.dim   .msg { color: var(--text-dim); font-style: italic; }
+
+    .rule { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+
+    /* ── Spinner ─────────────────────────────────────────────────────────── */
+    .spin { display: inline-block; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Scrollbar ───────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
+
+    /* ── Mobile ──────────────────────────────────────────────────────────── */
+    @media (max-width: 860px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 45vh 35vh;
+        height: calc(100vh - var(--hh));
+        overflow-y: auto;
+      }
+      #sidebar {
+        flex-direction: row; flex-wrap: nowrap;
+        overflow-x: auto; overflow-y: hidden;
+        border-right: none; border-bottom: 1px solid var(--border);
+        padding: 8px; gap: 4px;
+      }
+      .sidebar-label { display: none; }
+      .ex-item { white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; border-radius: 6px; }
+      .ex-item.active { border-bottom-color: var(--accent); }
+      .ex-desc { display: none; }
+      #editor-wrap { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="./">
+    <img src="./imgs/skalex_logo.svg" alt="Skalex">
+  </a>
+  <span class="badge">PLAYGROUND</span>
+  <div class="spacer"></div>
+  <a class="btn-docs" href="./">← Docs</a>
+  <button id="runBtn">▶ Run <kbd>⌘↵</kbd></button>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <div class="sidebar-label">Examples</div>
+  </aside>
+
+  <section id="editor-wrap">
+    <div class="panel-bar"><span class="dot"></span>editor.js</div>
+    <div id="monaco"></div>
+  </section>
+
+  <section id="output-wrap">
+    <div class="out-bar">
+      <span class="out-label">Output</span>
+      <button id="clearBtn">Clear</button>
+    </div>
+    <div id="output"><div id="hint">Press Run ▶ to execute the code.</div></div>
+  </section>
+</main>
+
+<!-- Skalex browser build -->
+<script type="module">
+  import Skalex from './lib/skalex.browser.js';
+  window.__Skalex = Skalex;
+  document.dispatchEvent(new CustomEvent('skalex-ready'));
+</script>
+
+<!-- Monaco CDN -->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script>
+'use strict';
+
+// ── MemoryAdapter ─────────────────────────────────────────────────────────────
+class MemoryAdapter {
+  constructor() { this._s = new Map(); }
+  async read(k)    { const v = this._s.get(k); return v != null ? JSON.parse(v) : null; }
+  async write(k,d) { this._s.set(k, JSON.stringify(d)); }
+  async delete(k)  { this._s.delete(k); }
+  async list()     { return [...this._s.keys()]; }
+}
+
+// ── Examples ──────────────────────────────────────────────────────────────────
+const EXAMPLES = [
+  {
+    id: 'quickstart', icon: '🚀',
+    title: 'Quick Start',
+    desc: 'Insert · Find · Update · Delete',
+    code:
+`// Skalex and MemoryAdapter are pre-loaded. No imports needed.
+
+const db = new Skalex({ adapter: new MemoryAdapter() });
+await db.connect();
+
+const users = db.useCollection("users");
+
+// Insert
+const alice = await users.insertOne({ name: "Alice", role: "admin", score: 100 });
+const bob   = await users.insertOne({ name: "Bob",   role: "user",  score: 75  });
+const carol = await users.insertOne({ name: "Carol", role: "admin", score: 90  });
+console.log("Inserted:", alice.name, "/", bob.name, "/", carol.name);
+
+// Find
+const { docs } = await users.find({ role: "admin" });
+console.log("Admins:", docs.map(d => d.name).join(", "));
+
+// findOne
+const found = await users.findOne({ name: "Bob" });
+console.log("findOne — Bob's score:", found.score);
+
+// Update with $inc
+await users.updateOne({ name: "Bob" }, { score: { $inc: 25 } });
+const updated = await users.findOne({ name: "Bob" });
+console.log("After $inc 25 — Bob's score:", updated.score);
+
+// $push
+await users.updateOne({ name: "Alice" }, { tags: { $push: "vip" } });
+const alice2 = await users.findOne({ name: "Alice" });
+console.log("Alice tags after $push:", alice2.tags);
+
+// Delete
+const deleted = await users.deleteOne({ name: "Carol" });
+console.log("Deleted:", deleted.name);
+console.log("Users remaining:", await users.count());
+
+await db.disconnect();`
+  },
+  {
+    id: 'schema', icon: '🛡️',
+    title: 'Schema Validation',
+    desc: 'type · required · unique · enum',
+    code:
+`// createCollection() must be called before connect()
+
+const db = new Skalex({ adapter: new MemoryAdapter() });
+
+db.createCollection("products", {
+  schema: {
+    name:     { type: "string", required: true, unique: true  },
+    price:    { type: "number", required: true                },
+    category: { type: "string", required: true,
+                enum: ["electronics", "clothing", "food"]     },
+  },
+  indexes: ["category"],
+});
+
+await db.connect();
+const products = db.useCollection("products");
+
+// Valid insert
+const laptop = await products.insertOne({
+  name: "Laptop Pro", price: 1299, category: "electronics",
+});
+console.log("Valid insert:", laptop.name, "— $" + laptop.price);
+
+// Missing required field
+try {
+  await products.insertOne({ name: "Tablet", category: "electronics" });
+} catch (e) {
+  console.warn("Missing required field  →", e.message);
+}
+
+// Invalid enum value
+try {
+  await products.insertOne({ name: "Shirt", price: 29, category: "sports" });
+} catch (e) {
+  console.warn("Invalid enum value      →", e.message);
+}
+
+// Unique constraint
+try {
+  await products.insertOne({ name: "Laptop Pro", price: 799, category: "electronics" });
+} catch (e) {
+  console.warn("Unique violation        →", e.message);
+}
+
+// Wrong type
+try {
+  await products.insertOne({ name: "Phone", price: "free", category: "electronics" });
+} catch (e) {
+  console.warn("Wrong type              →", e.message);
+}
+
+console.log("\\nProducts in DB:", await products.count());
+await db.disconnect();`
+  },
+  {
+    id: 'operators', icon: '🔍',
+    title: 'Query Operators',
+    desc: '$gt · $in · $nin · $regex · $fn',
+    code:
+`const db = new Skalex({ adapter: new MemoryAdapter() });
+await db.connect();
+
+const orders = db.useCollection("orders");
+
+await orders.insertMany([
+  { product: "Laptop",  amount: 1200, status: "shipped",   tag: "electronics" },
+  { product: "Phone",   amount:  800, status: "pending",   tag: "electronics" },
+  { product: "Shirt",   amount:   45, status: "delivered", tag: "clothing"    },
+  { product: "Shoes",   amount:  120, status: "shipped",   tag: "clothing"    },
+  { product: "Monitor", amount:  450, status: "pending",   tag: "electronics" },
+]);
+
+// $gt
+const expensive = await orders.find({ amount: { $gt: 400 } });
+console.log("$gt 400:", expensive.docs.map(d => d.product).join(", "));
+
+// $in
+const active = await orders.find({ status: { $in: ["shipped", "delivered"] } });
+console.log("$in [shipped, delivered]:", active.docs.map(d => d.product).join(", "));
+
+// $nin
+const notPending = await orders.find({ status: { $nin: ["pending"] } });
+console.log("$nin [pending]:", notPending.docs.map(d => d.product).join(", "));
+
+// $regex
+const devices = await orders.find({ product: { $regex: /^(Laptop|Phone|Monitor)$/ } });
+console.log("$regex /Laptop|Phone|Monitor/:", devices.docs.map(d => d.product).join(", "));
+
+// $fn — custom filter
+const bigElec = await orders.find({
+  $fn: d => d.amount > 500 && d.tag === "electronics"
+});
+console.log("$fn amount>500 && electronics:", bigElec.docs.map(d => d.product).join(", "));
+
+// Combined conditions (implicit AND)
+const combined = await orders.find({ tag: "electronics", amount: { $lt: 1000 } });
+console.log("tag=electronics AND amount<1000:", combined.docs.map(d => d.product).join(", "));
+
+await db.disconnect();`
+  },
+  {
+    id: 'pagination', icon: '📄',
+    title: 'Sort & Pagination',
+    desc: 'sort · page · limit · totalPages',
+    code:
+`const db = new Skalex({ adapter: new MemoryAdapter() });
+await db.connect();
+
+const posts = db.useCollection("posts");
+
+await posts.insertMany([
+  { title: "Getting Started with Skalex",  views: 5420 },
+  { title: "Vector Search Deep Dive",      views: 3891 },
+  { title: "Building an AI Agent",         views: 8102 },
+  { title: "MCP Server Setup Guide",       views: 2340 },
+  { title: "Encryption Best Practices",    views: 1876 },
+  { title: "Deploying to Cloudflare",      views: 4210 },
+  { title: "Agent Memory with Skalex",     views: 6530 },
+]);
+
+// All posts sorted by views desc
+const all = await posts.find({}, { sort: { views: -1 } });
+console.log("All posts by views (desc):");
+all.docs.forEach(p =>
+  console.log("  " + String(p.views).padStart(5) + "  " + p.title)
+);
+
+// Paginated — 3 per page
+for (let page = 1; page <= 3; page++) {
+  const r = await posts.find({}, { sort: { views: -1 }, page, limit: 3 });
+  console.log(\`\\nPage \${page}/\${r.totalPages}  (\${r.totalDocs} total):\`);
+  r.docs.forEach(p => console.log("  → " + p.title));
+  if (page >= r.totalPages) break;
+}
+
+await db.disconnect();`
+  },
+  {
+    id: 'aggregation', icon: '📊',
+    title: 'Aggregation',
+    desc: 'count · sum · avg · groupBy',
+    code:
+`const db = new Skalex({ adapter: new MemoryAdapter() });
+await db.connect();
+
+const sales = db.useCollection("sales");
+
+await sales.insertMany([
+  { rep: "Alice", region: "North", amount: 12400, month: "Jan" },
+  { rep: "Bob",   region: "South", amount:  8900, month: "Jan" },
+  { rep: "Carol", region: "North", amount: 15600, month: "Feb" },
+  { rep: "Alice", region: "North", amount:  9800, month: "Feb" },
+  { rep: "Bob",   region: "South", amount: 11200, month: "Mar" },
+  { rep: "Carol", region: "North", amount: 13750, month: "Mar" },
+]);
+
+const count    = await sales.count();
+const total    = await sales.sum("amount");
+const avg      = await sales.avg("amount");
+const northSum = await sales.sum("amount", { region: "North" });
+const southSum = await sales.sum("amount", { region: "South" });
+
+console.log("── Overview ─────────────────────────────");
+console.log("  Total records :", count);
+console.log("  Total revenue : $" + total.toLocaleString());
+console.log("  Average deal  : $" + Math.round(avg).toLocaleString());
+console.log("  North region  : $" + northSum.toLocaleString());
+console.log("  South region  : $" + southSum.toLocaleString());
+
+const byRep = await sales.groupBy("rep");
+console.log("\\n── By Sales Rep ─────────────────────────");
+for (const [rep, docs] of Object.entries(byRep)) {
+  const t = docs.reduce((s, d) => s + d.amount, 0);
+  console.log(\`  \${rep.padEnd(6)}  \${docs.length} deals   $\${t.toLocaleString()}\`);
+}
+
+const byRegion = await sales.groupBy("region");
+console.log("\\n── By Region ────────────────────────────");
+for (const [region, docs] of Object.entries(byRegion)) {
+  const t = docs.reduce((s, d) => s + d.amount, 0);
+  console.log(\`  \${region.padEnd(6)}  \${docs.length} deals   $\${t.toLocaleString()}\`);
+}
+
+await db.disconnect();`
+  },
+  {
+    id: 'transactions', icon: '⚡',
+    title: 'Transactions',
+    desc: 'atomic commit · auto rollback',
+    code:
+`const db = new Skalex({ adapter: new MemoryAdapter() });
+await db.connect();
+
+const accounts = db.useCollection("accounts");
+
+await accounts.insertMany([
+  { owner: "Alice", balance: 1000 },
+  { owner: "Bob",   balance:  500 },
+]);
+
+const show = async (label) => {
+  const { docs } = await accounts.find({});
+  console.log(label);
+  docs.forEach(a => console.log(\`  \${a.owner.padEnd(6)} $\${a.balance}\`));
+};
+
+await show("── Initial ───────────────────────────────");
+
+// Successful transaction: transfer $200 Alice → Bob
+await db.transaction(async (tx) => {
+  const acc = tx.useCollection("accounts");
+  await acc.updateOne({ owner: "Alice" }, { balance: { $inc: -200 } });
+  await acc.updateOne({ owner: "Bob"   }, { balance: { $inc:  200 } });
+});
+
+await show("\\n── After $200 Alice → Bob ────────────────");
+
+// Failed transaction: rolls back automatically
+try {
+  await db.transaction(async (tx) => {
+    const acc = tx.useCollection("accounts");
+    await acc.updateOne({ owner: "Bob" }, { balance: { $inc: -999999 } });
+    throw new Error("Payment gateway timeout");
+  });
+} catch (e) {
+  console.warn("\\nTransaction failed:", e.message);
+  console.warn("Changes rolled back automatically.");
+}
+
+await show("\\n── After failed transaction (unchanged) ──");
+
+await db.disconnect();`
+  },
+  {
+    id: 'watch', icon: '👁️',
+    title: 'Watch',
+    desc: 'reactive mutations · unsub',
+    code:
+`const db = new Skalex({ adapter: new MemoryAdapter() });
+await db.connect();
+
+const tasks = db.useCollection("tasks");
+
+// Subscribe — returns unsub function
+const events = [];
+const unsub = tasks.watch(ev => {
+  events.push(ev);
+  const icon = ev.op === "insert" ? "+" : ev.op === "update" ? "~" : "−";
+  console.log(\`  [\${icon}] \${ev.op.padEnd(6)}  \${ev.doc.title}\`);
+});
+
+console.log("── Watching mutations ───────────────────");
+
+await tasks.insertOne({ title: "Design landing page",  status: "todo" });
+await tasks.insertOne({ title: "Write documentation",  status: "todo" });
+await tasks.insertOne({ title: "Set up CI pipeline",   status: "todo" });
+await tasks.insertOne({ title: "Write release notes",  status: "todo" });
+
+await tasks.updateOne({ title: "Design landing page"  }, { status: "done" });
+await tasks.updateOne({ title: "Write documentation"  }, { status: "done" });
+
+await tasks.deleteOne({ title: "Set up CI pipeline" });
+
+// Unsubscribe — no more events after this
+unsub();
+console.log("\\n── Unsubscribed ─────────────────────────");
+
+// This insert is silent
+await tasks.insertOne({ title: "Post-unsub task (silent)", status: "todo" });
+
+console.log("\\n── Summary ──────────────────────────────");
+console.log("  Events captured :", events.length);
+console.log("  Inserts          :", events.filter(e => e.op === "insert").length);
+console.log("  Updates          :", events.filter(e => e.op === "update").length);
+console.log("  Deletes          :", events.filter(e => e.op === "delete").length);
+console.log("  Final task count :", await tasks.count());
+
+await db.disconnect();`
+  },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let editor     = null;
+let activeId   = EXAMPLES[0].id;
+let running    = false;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function waitForSkalex() {
+  if (window.__Skalex) return Promise.resolve(window.__Skalex);
+  return new Promise(r => document.addEventListener('skalex-ready', () => r(window.__Skalex), { once: true }));
+}
+
+// ── Build sidebar ─────────────────────────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+EXAMPLES.forEach((ex, i) => {
+  const el = document.createElement('div');
+  el.className = 'ex-item' + (i === 0 ? ' active' : '');
+  el.dataset.id = ex.id;
+  el.innerHTML =
+    '<span class="ex-icon">' + ex.icon + '</span>' +
+    '<div class="ex-meta">' +
+      '<div class="ex-title">' + ex.title + '</div>' +
+      '<div class="ex-desc">' + ex.desc + '</div>' +
+    '</div>';
+  el.addEventListener('click', () => {
+    activeId = ex.id;
+    document.querySelectorAll('.ex-item').forEach(n => n.classList.toggle('active', n.dataset.id === ex.id));
+    if (editor) editor.setValue(ex.code);
+  });
+  sidebar.appendChild(el);
+});
+
+// ── Output helpers ────────────────────────────────────────────────────────────
+const outputEl = document.getElementById('output');
+
+function clearOutput() { outputEl.innerHTML = ''; }
+
+function print(text, type) {
+  const div = document.createElement('div');
+  div.className = 'line' + (type ? ' ' + type : '');
+  const pfx = { error: '✗', warn: '!', dim: '·' }[type] || '›';
+  div.innerHTML = '<span class="pfx">' + pfx + '</span><span class="msg"></span>';
+  div.querySelector('.msg').textContent = text;
+  outputEl.appendChild(div);
+  outputEl.scrollTop = outputEl.scrollHeight;
+}
+
+function rule() {
+  const hr = document.createElement('hr');
+  hr.className = 'rule';
+  outputEl.appendChild(hr);
+}
+
+function fmt(...args) {
+  return args.map(a => {
+    if (typeof a === 'string') return a;
+    if (a === null) return 'null';
+    if (a === undefined) return 'undefined';
+    try { return JSON.stringify(a); } catch { return String(a); }
+  }).join(' ');
+}
+
+// ── Runner ────────────────────────────────────────────────────────────────────
+async function run(code) {
+  if (running) return;
+  running = true;
+
+  const btn = document.getElementById('runBtn');
+  btn.classList.add('busy');
+  btn.innerHTML = '<span class="spin">⟳</span> Running…';
+
+  clearOutput();
+
+  const Skalex = await waitForSkalex();
+
+  const con = {
+    log:   (...a) => print(fmt(...a), ''),
+    warn:  (...a) => print(fmt(...a), 'warn'),
+    error: (...a) => print(fmt(...a), 'error'),
+    info:  (...a) => print(fmt(...a), 'info'),
+  };
+
+  const t0 = performance.now();
+  try {
+    const Fn = Object.getPrototypeOf(async function(){}).constructor;
+    await (new Fn('Skalex', 'MemoryAdapter', 'console', code))(Skalex, MemoryAdapter, con);
+    const ms = (performance.now() - t0).toFixed(1);
+    rule();
+    print('Done in ' + ms + 'ms', 'dim');
+  } catch (err) {
+    rule();
+    print(err.message, 'error');
+  }
+
+  running = false;
+  btn.classList.remove('busy');
+  btn.innerHTML = '▶ Run <kbd>⌘↵</kbd>';
+}
+
+// ── Wire buttons ──────────────────────────────────────────────────────────────
+document.getElementById('runBtn').addEventListener('click', () => {
+  run(editor ? editor.getValue() : EXAMPLES.find(e => e.id === activeId).code);
+});
+document.getElementById('clearBtn').addEventListener('click', clearOutput);
+
+// ── Monaco ────────────────────────────────────────────────────────────────────
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+
+require(['vs/editor/editor.main'], function () {
+  monaco.editor.defineTheme('skalex', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'comment',           foreground: '4a4a6a', fontStyle: 'italic' },
+      { token: 'keyword',           foreground: 'c792ea' },
+      { token: 'string',            foreground: 'c3e88d' },
+      { token: 'number',            foreground: 'f78c6c' },
+      { token: 'delimiter',         foreground: '89ddff' },
+      { token: 'identifier',        foreground: 'e8e8e8' },
+      { token: 'type.identifier',   foreground: 'ffcb6b' },
+    ],
+    colors: {
+      'editor.background':                '#080024',
+      'editor.foreground':                '#e8e8e8',
+      'editorLineNumber.foreground':      '#33335a',
+      'editorLineNumber.activeForeground':'#FFE500',
+      'editor.selectionBackground':       '#2d2060',
+      'editor.lineHighlightBackground':   '#0d0035',
+      'editorCursor.foreground':          '#FFE500',
+      'editor.inactiveSelectionBackground':'#1e1a40',
+      'editorBracketMatch.background':    '#2d2060',
+      'editorBracketMatch.border':        '#FFE500',
+    },
+  });
+
+  editor = monaco.editor.create(document.getElementById('monaco'), {
+    value:                     EXAMPLES[0].code,
+    language:                  'javascript',
+    theme:                     'skalex',
+    fontSize:                  13,
+    fontFamily:                "'Fira Code', 'Cascadia Code', Consolas, monospace",
+    fontLigatures:             true,
+    minimap:                   { enabled: false },
+    scrollBeyondLastLine:      false,
+    automaticLayout:           true,
+    padding:                   { top: 16, bottom: 16 },
+    lineNumbers:               'on',
+    renderLineHighlight:       'all',
+    smoothScrolling:           true,
+    cursorBlinking:            'smooth',
+    cursorSmoothCaretAnimation:'on',
+    wordWrap:                  'off',
+    tabSize:                   2,
+    scrollbar:                 { verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
+  });
+
+  // Cmd/Ctrl + Enter → run
+  editor.addCommand(
+    monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+    () => run(editor.getValue())
+  );
+});
+</script>
+</body>
+</html>

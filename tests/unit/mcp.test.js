@@ -58,7 +58,7 @@ describe("MCP protocol — initialize", () => {
 
 describe("MCP protocol — tools/list", () => {
   test("returns a list of tool definitions", async () => {
-    const { transport } = await makeServer();
+    const { transport } = await makeServer({ scopes: { "*": ["read", "write"] } });
     await transport.receive({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     const res = transport.lastSent();
     expect(res.result.tools).toBeInstanceOf(Array);
@@ -181,7 +181,7 @@ describe("skalex_find tool", () => {
 
 describe("skalex_insert tool", () => {
   test("inserts a document and returns it", async () => {
-    const { db, transport } = await makeServer();
+    const { db, transport } = await makeServer({ scopes: { "*": ["read", "write"] } });
     db.useCollection("items");
 
     await transport.receive({
@@ -190,8 +190,8 @@ describe("skalex_insert tool", () => {
     });
 
     const result = JSON.parse(transport.lastSent().result.content[0].text);
-    expect(result.data.name).toBe("widget");
-    expect(result.data._id).toBeDefined();
+    expect(result.name).toBe("widget");
+    expect(result._id).toBeDefined();
   });
 });
 
@@ -199,20 +199,20 @@ describe("skalex_insert tool", () => {
 
 describe("skalex_update tool", () => {
   test("updates the first matching document", async () => {
-    const { db, transport } = await makeServer();
+    const { db, transport } = await makeServer({ scopes: { "*": ["read", "write"] } });
     const col = db.useCollection("items");
-    const { data } = await col.insertOne({ name: "old" });
+    const inserted = await col.insertOne({ name: "old" });
 
     await transport.receive({
       jsonrpc: "2.0", id: 1, method: "tools/call",
       params: {
         name: "skalex_update",
-        arguments: { collection: "items", filter: { _id: data._id }, update: { name: "new" } },
+        arguments: { collection: "items", filter: { _id: inserted._id }, update: { name: "new" } },
       },
     });
 
     const result = JSON.parse(transport.lastSent().result.content[0].text);
-    expect(result.data.name).toBe("new");
+    expect(result.name).toBe("new");
   });
 });
 
@@ -220,18 +220,18 @@ describe("skalex_update tool", () => {
 
 describe("skalex_delete tool", () => {
   test("deletes the first matching document", async () => {
-    const { db, transport } = await makeServer();
+    const { db, transport } = await makeServer({ scopes: { "*": ["read", "write"] } });
     const col = db.useCollection("items");
-    const { data } = await col.insertOne({ name: "to-delete" });
+    const inserted = await col.insertOne({ name: "to-delete" });
 
     await transport.receive({
       jsonrpc: "2.0", id: 1, method: "tools/call",
-      params: { name: "skalex_delete", arguments: { collection: "items", filter: { _id: data._id } } },
+      params: { name: "skalex_delete", arguments: { collection: "items", filter: { _id: inserted._id } } },
     });
 
     const result = JSON.parse(transport.lastSent().result.content[0].text);
-    expect(result.data._id).toBe(data._id);
-    expect(await col.findOne({ _id: data._id })).toBeNull();
+    expect(result._id).toBe(inserted._id);
+    expect(await col.findOne({ _id: inserted._id })).toBeNull();
   });
 });
 

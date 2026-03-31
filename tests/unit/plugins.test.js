@@ -2,7 +2,7 @@
  * Unit tests for the PluginEngine + db.use() integration.
  */
 import { describe, test, expect, beforeEach, vi } from "vitest";
-import PluginEngine from "../../src/plugins.js";
+import PluginEngine from "../../src/features/plugins.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
@@ -163,9 +163,9 @@ describe("db.use() — beforeDelete / afterDelete", () => {
     const calls = [];
     db.use({ async afterDelete(ctx) { calls.push(ctx); } });
     const col = db.useCollection("items");
-    const { data } = await col.insertOne({ name: "bye" });
-    await col.deleteOne({ _id: data._id });
-    expect(calls[0].result._id).toBe(data._id);
+    const doc = await col.insertOne({ name: "bye" });
+    await col.deleteOne({ _id: doc._id });
+    expect(calls[0].result._id).toBe(doc._id);
     await db.disconnect();
   });
 

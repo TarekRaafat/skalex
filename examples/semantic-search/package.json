@@ -1,0 +1,14 @@
+{
+  "name": "skalex-example-semantic-search",
+  "version": "1.0.0",
+  "description": "Skalex semantic search — vector search, hybrid search, and nearest-neighbour over a knowledge base.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start:ollama": "USE_OLLAMA=1 node index.js"
+  },
+  "dependencies": {
+    "skalex": "file:../.."
+  }
+}

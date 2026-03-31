@@ -2,7 +2,7 @@
  * Unit tests for aggregation.js + Collection aggregation methods.
  */
 import { describe, test, expect } from "vitest";
-import { count, sum, avg, groupBy } from "../../src/aggregation.js";
+import { count, sum, avg, groupBy } from "../../src/features/aggregation.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 

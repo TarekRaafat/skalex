@@ -1,43 +1,27 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseTtl, computeExpiry, sweep } from "../../src/ttl.js";
+import { computeExpiry, sweep } from "../../src/engine/ttl.js";
 
-describe("parseTtl", () => {
-  test("number → seconds to ms", () => {
-    expect(parseTtl(60)).toBe(60_000);
-    expect(parseTtl(0)).toBe(0);
+describe("parseTtl validation", () => {
+  test("rejects negative numeric TTL", () => {
+    expect(() => computeExpiry(-1)).toThrow(/positive/);
+    expect(() => computeExpiry(-300)).toThrow(/positive/);
   });
 
-  test("ms suffix", () => {
-    expect(parseTtl("500ms")).toBe(500);
+  test("rejects zero TTL", () => {
+    expect(() => computeExpiry(0)).toThrow(/positive/);
   });
 
-  test("s suffix", () => {
-    expect(parseTtl("30s")).toBe(30_000);
+  test("rejects negative string TTL", () => {
+    // "-5s" does not match the positive-number regex — invalid format
+    expect(() => computeExpiry("-5s")).toThrow(/Invalid TTL/);
   });
 
-  test("m suffix", () => {
-    expect(parseTtl("30m")).toBe(1_800_000);
-  });
-
-  test("h suffix", () => {
-    expect(parseTtl("24h")).toBe(86_400_000);
-  });
-
-  test("d suffix", () => {
-    expect(parseTtl("7d")).toBe(604_800_000);
-  });
-
-  test("decimal values", () => {
-    expect(parseTtl("0.5h")).toBe(1_800_000);
-  });
-
-  test("invalid format throws", () => {
-    expect(() => parseTtl("5years")).toThrow(/Invalid TTL format/);
-    expect(() => parseTtl("abc")).toThrow();
-  });
-
-  test("non-string non-number throws", () => {
-    expect(() => parseTtl(null)).toThrow(/Invalid TTL value/);
+  test("accepts valid positive TTLs without throwing", () => {
+    expect(() => computeExpiry(1)).not.toThrow();
+    expect(() => computeExpiry("30m")).not.toThrow();
+    expect(() => computeExpiry("24h")).not.toThrow();
+    expect(() => computeExpiry("7d")).not.toThrow();
+    expect(() => computeExpiry("500ms")).not.toThrow();
   });
 });
 

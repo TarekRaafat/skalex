@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { matchesFilter, presortFilter } from "../../src/query.js";
+import { matchesFilter, presortFilter } from "../../src/engine/query.js";
 
 describe("matchesFilter", () => {
   const doc = { name: "Alice", age: 30, role: "admin", tags: ["a", "b"], address: { city: "Cairo" } };
@@ -65,9 +65,14 @@ describe("matchesFilter", () => {
     expect(matchesFilter(doc, { role: { $nin: ["admin", "guest"] } })).toBe(false);
   });
 
-  test("$regex", () => {
+  test("$regex with RegExp instance", () => {
     expect(matchesFilter(doc, { name: { $regex: /^Al/ } })).toBe(true);
     expect(matchesFilter(doc, { name: { $regex: /^Bo/ } })).toBe(false);
+  });
+
+  test("$regex with string (LLM-produced)", () => {
+    expect(matchesFilter(doc, { name: { $regex: "^Al" } })).toBe(true);
+    expect(matchesFilter(doc, { name: { $regex: "^Bo" } })).toBe(false);
   });
 
   test("$fn", () => {

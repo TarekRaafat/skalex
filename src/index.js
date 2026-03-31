@@ -1,24 +1,27 @@
-const Collection = require("./collection");
-const { logger } = require("./utils");
-const FsAdapter = require("./adapters/storage/fs");
-const MigrationEngine = require("./migrations");
-const IndexEngine = require("./indexes");
-const { parseSchema, inferSchema } = require("./validator");
-const { sweep } = require("./ttl");
-const OpenAIEmbeddingAdapter = require("./adapters/embedding/openai");
-const OllamaEmbeddingAdapter = require("./adapters/embedding/ollama");
-const OpenAIAIAdapter = require("./adapters/ai/openai");
-const AnthropicAIAdapter = require("./adapters/ai/anthropic");
-const OllamaAIAdapter = require("./adapters/ai/ollama");
-const EncryptedAdapter = require("./adapters/storage/encrypted");
-const Memory = require("./memory");
-const ChangeLog = require("./changelog");
-const { QueryCache, processLLMFilter, validateLLMFilter } = require("./ask");
-const EventBus = require("./events");
-const QueryLog = require("./query-log");
-const SessionStats = require("./session-stats");
-const PluginEngine = require("./plugins");
-const SkalexMCPServer = require("./mcp/index");
+import Collection from "./engine/collection.js";
+import { logger as _defaultLogger } from "./engine/utils.js";
+import FsAdapter from "./connectors/storage/fs.js";
+import MigrationEngine from "./engine/migrations.js";
+import IndexEngine from "./engine/indexes.js";
+import { parseSchema, inferSchema } from "./engine/validator.js";
+import { sweep } from "./engine/ttl.js";
+import OpenAIEmbeddingAdapter from "./connectors/embedding/openai.js";
+import OllamaEmbeddingAdapter from "./connectors/embedding/ollama.js";
+import OpenAILLMAdapter from "./connectors/llm/openai.js";
+import AnthropicLLMAdapter from "./connectors/llm/anthropic.js";
+import OllamaLLMAdapter from "./connectors/llm/ollama.js";
+import EncryptedAdapter from "./connectors/storage/encrypted.js";
+import Memory from "./features/memory.js";
+import ChangeLog from "./features/changelog.js";
+import { QueryCache, processLLMFilter, validateLLMFilter } from "./features/ask.js";
+import EventBus from "./features/events.js";
+import QueryLog from "./features/query-log.js";
+import SessionStats from "./features/session-stats.js";
+import PluginEngine from "./features/plugins.js";
+import SkalexMCPServer from "./connectors/mcp/index.js";
+
+/** Key used to store migration state in the _meta collection. */
+const META_KEY = "migrations";
 
 /**
  * Skalex — an in-process document database with file-system persistence.
@@ -44,15 +47,31 @@ class Skalex {
    * @param {string}  [config.ai.host]         - Ollama server URL override.
    * @param {object}  [config.encrypt]             - Encryption configuration.
    * @param {string}  [config.encrypt.key]         - AES-256 key (64-char hex or 32-byte Uint8Array).
-   * @param {object}  [config.slowQueryLog]        - Slow query log options.
-   * @param {number}  [config.slowQueryLog.threshold] - Duration threshold in ms. Default: 100.
-   * @param {number}  [config.slowQueryLog.maxEntries] - Max entries to keep. Default: 500.
+   * @param {object}  [config.slowQueryLog]              - Slow query log options.
+   * @param {number}  [config.slowQueryLog.threshold]    - Duration threshold in ms. Default: 100.
+   * @param {number}  [config.slowQueryLog.maxEntries]   - Max entries to keep. Default: 500.
+   * @param {object}  [config.queryCache]                - Query cache options.
+   * @param {number}  [config.queryCache.maxSize]        - Max cached entries. Default: 500.
+   * @param {number}  [config.queryCache.ttl]            - Cache TTL in ms. Default: 0 (no expiry).
+   * @param {object}  [config.memory]                    - Global agent memory options.
+   * @param {number}  [config.memory.compressionThreshold] - Token threshold for auto-compress. Default: 8000.
+   * @param {number}  [config.memory.maxEntries]         - Max memory entries before auto-compress. Default: none.
+   * @param {Function} [config.logger]                   - Custom logger function (message, level) => void.
+   * @param {object}  [config.llmAdapter]                - Pre-built LLM adapter instance (overrides ai).
+   * @param {object}  [config.embeddingAdapter]          - Pre-built embedding adapter instance (overrides ai).
+   * @param {number}  [config.regexMaxLength=500]        - Maximum allowed $regex pattern length in ask() filters.
+   * @param {Function} [config.idGenerator]              - Custom document ID generator function. Default: built-in timestamp+random.
+   * @param {Function} [config.serializer]               - Custom serializer for storage writes. Default: JSON.stringify.
+   * @param {Function} [config.deserializer]             - Custom deserializer for storage reads. Default: JSON.parse.
+   * @param {boolean} [config.autoSave=false]            - Automatically persist after every write without passing { save: true }.
+   * @param {number}  [config.ttlSweepInterval]          - Interval in ms to periodically sweep expired TTL documents.
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, plugins } = {}) {
+  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, queryCache, memory, logger, plugins, llmAdapter, embeddingAdapter, regexMaxLength, idGenerator, serializer, deserializer, autoSave, ttlSweepInterval } = {}) {
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
 
+    this._adapterConfig = adapter ?? null; // track whether a custom adapter was explicitly provided
     let fs = adapter || new FsAdapter({ dir: path, format });
     if (encrypt) fs = new EncryptedAdapter(fs, encrypt.key);
     this.fs = fs;
@@ -65,11 +84,21 @@ class Skalex {
 
     this._aiConfig = ai || null;
     this._encryptConfig = encrypt || null;
-    this._embeddingAdapter = ai ? this._createEmbeddingAdapter(ai) : null;
-    this._aiAdapter = ai ? this._createAIAdapter(ai) : null;
+    this._pluginsConfig = Array.isArray(plugins) ? plugins : null;
+    this._memoryConfig = memory || null;
+    this._regexMaxLength = regexMaxLength ?? 500;
+    this._idGenerator = idGenerator ?? null;
+    this._serializer = serializer ?? JSON.stringify;
+    this._deserializer = deserializer ?? JSON.parse;
+    this._autoSave = autoSave ?? false;
+    this._ttlSweepInterval = ttlSweepInterval ?? 0;
+    this._ttlTimer = null;
+    this._embeddingAdapter = embeddingAdapter ?? (ai ? this._createEmbeddingAdapter(ai) : null);
+    this._aiAdapter = llmAdapter ?? (ai ? this._createAIAdapter(ai) : null);
     this._changeLog = new ChangeLog(this);
-    this._queryCache = new QueryCache();
+    this._queryCache = new QueryCache(queryCache || {});
     this._eventBus = new EventBus();
+    this._logger = logger ?? _defaultLogger;
     this._queryLog = slowQueryLog ? new QueryLog(slowQueryLog) : null;
     this._sessionStats = new SessionStats();
     this._plugins = new PluginEngine();
@@ -104,16 +133,17 @@ class Skalex {
       }
 
       // Sweep expired TTL documents
-      for (const name in this.collections) {
-        const col = this.collections[name];
-        const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
-        if (removed > 0) this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+      this._sweepTtl();
+
+      // Start periodic TTL sweep if configured
+      if (this._ttlSweepInterval > 0) {
+        this._ttlTimer = setInterval(() => this._sweepTtl(), this._ttlSweepInterval);
       }
 
       this.isConnected = true;
       this._log("> - Connected to the database (√)");
     } catch (error) {
-      logger(`Error connecting to the database: ${error}`, "error");
+      this._logger(`Error connecting to the database: ${error}`, "error");
       throw error;
     }
   }
@@ -124,6 +154,10 @@ class Skalex {
    */
   async disconnect() {
     try {
+      if (this._ttlTimer) {
+        clearInterval(this._ttlTimer);
+        this._ttlTimer = null;
+      }
       await this.saveData();
       this.collections = {};
       this._collectionInstances = {};
@@ -131,7 +165,7 @@ class Skalex {
       this.isConnected = false;
       this._log("> - Disconnected from the database (√)");
     } catch (error) {
-      logger(`Error disconnecting from the database: ${error}`, "error");
+      this._logger(`Error disconnecting from the database: ${error}`, "error");
       throw error;
     }
   }
@@ -169,10 +203,10 @@ class Skalex {
   }
 
   /**
-   * Define a collection with optional schema and secondary indexes.
-   * Must be called before connect() so schema is available when loading data.
+   * Define a collection with optional schema, indexes, and behaviour options.
+   * Must be called before connect() so configuration is available when loading data.
    * @param {string} collectionName
-   * @param {{ schema?: object, indexes?: string[] }} [options]
+   * @param {{ schema?: object, indexes?: string[], changelog?: boolean, softDelete?: boolean, versioning?: boolean, strict?: boolean, onSchemaError?: "throw"|"warn"|"strip", defaultTtl?: number|string, defaultEmbed?: string, maxDocs?: number }} [options]
    * @returns {Collection}
    */
   createCollection(collectionName, options = {}) {
@@ -182,7 +216,18 @@ class Skalex {
     return instance;
   }
 
-  _createCollectionStore(collectionName, { schema, indexes = [], changelog = false } = {}) {
+  _createCollectionStore(collectionName, {
+    schema,
+    indexes      = [],
+    changelog    = false,
+    softDelete   = false,
+    versioning   = false,
+    strict       = false,
+    onSchemaError = "throw",
+    defaultTtl   = null,
+    defaultEmbed = null,
+    maxDocs      = null,
+  } = {}) {
     let parsedSchema = null;
     let fieldIndex = null;
 
@@ -201,10 +246,46 @@ class Skalex {
       data: [],
       index: new Map(),
       isSaving: false,
+      _pendingSave: false,
       schema: parsedSchema,
+      rawSchema: schema || null,
       fieldIndex,
       changelog,
+      softDelete,
+      versioning,
+      strict,
+      onSchemaError,
+      defaultTtl,
+      defaultEmbed,
+      maxDocs,
     };
+  }
+
+  /**
+   * Rename a collection. Updates in-memory state and persists the new name.
+   * Requires the storage adapter to support `delete(name)`.
+   * @param {string} from
+   * @param {string} to
+   * @returns {Promise<void>}
+   */
+  async renameCollection(from, to) {
+    if (!this.collections[from]) throw new Error(`Collection "${from}" not found`);
+    if (this.collections[to])   throw new Error(`Collection "${to}" already exists`);
+
+    const store = this.collections[from];
+    store.collectionName = to;
+    this.collections[to] = store;
+    delete this.collections[from];
+
+    if (this._collectionInstances[from]) {
+      const inst = this._collectionInstances[from];
+      inst.name = to;
+      this._collectionInstances[to] = inst;
+      delete this._collectionInstances[from];
+    }
+
+    await this.saveData(to);
+    await this.fs.delete(from);
   }
 
   // ─── Persistence ─────────────────────────────────────────────────────────
@@ -222,14 +303,27 @@ class Skalex {
           const raw = await this.fs.read(name);
           if (!raw) return;
 
-          const parsed = JSON.parse(raw);
+          const parsed = this._deserializer(raw);
           const { collectionName, data } = parsed;
           if (!collectionName) return;
 
-          // Preserve schema/index config from createCollection, if any
+          // Prefer config from createCollection over persisted values
           const existing = this.collections[collectionName];
-          const parsedSchema = existing ? existing.schema : null;
+          const rawSchema   = existing?.rawSchema   ?? parsed.rawSchema   ?? null;
+          const parsedSchema = existing?.schema     ?? (rawSchema ? parseSchema(rawSchema) : null);
+          const changelog    = existing?.changelog  ?? parsed.changelog   ?? false;
+          const softDelete   = existing?.softDelete ?? parsed.softDelete  ?? false;
+          const versioning   = existing?.versioning ?? parsed.versioning  ?? false;
+          const strict       = existing?.strict     ?? parsed.strict      ?? false;
+          const onSchemaError = existing?.onSchemaError ?? parsed.onSchemaError ?? "throw";
+          const defaultTtl   = existing?.defaultTtl   ?? parsed.defaultTtl   ?? null;
+          const defaultEmbed = existing?.defaultEmbed ?? parsed.defaultEmbed ?? null;
+          const maxDocs      = existing?.maxDocs      ?? parsed.maxDocs      ?? null;
+
           let fieldIndex = existing ? existing.fieldIndex : null;
+          if (!fieldIndex && parsedSchema?.uniqueFields?.length) {
+            fieldIndex = new IndexEngine([], parsedSchema.uniqueFields);
+          }
 
           const idIndex = this.buildIndex(data, "_id");
           if (fieldIndex) fieldIndex.buildFromData(data);
@@ -239,18 +333,28 @@ class Skalex {
             data,
             index: idIndex,
             isSaving: false,
+            _pendingSave: false,
             schema: parsedSchema,
+            rawSchema,
             fieldIndex,
+            changelog,
+            softDelete,
+            versioning,
+            strict,
+            onSchemaError,
+            defaultTtl,
+            defaultEmbed,
+            maxDocs,
           };
         } catch (error) {
           if (error.code !== "ENOENT") {
-            logger(`WARNING: Could not load collection "${name}": ${error.message}. Collection will be empty.`, "error");
+            this._logger(`WARNING: Could not load collection "${name}": ${error.message}. Collection will be empty.`, "error");
           }
         }
       }));
     } catch (error) {
       if (error.code !== "ENOENT") {
-        logger(`Error loading data: ${error}`, "error");
+        this._logger(`Error loading data: ${error}`, "error");
         throw error;
       }
     }
@@ -258,21 +362,43 @@ class Skalex {
 
   /**
    * Persist one or all collections via the storage adapter.
+   * Implements a write queue: concurrent saves for the same collection are
+   * coalesced — the second caller sets a flag and triggers a re-run after
+   * the in-flight write completes.
    * @param {string} [collectionName] - If omitted, saves all collections.
    * @returns {Promise<void>}
    */
   async saveData(collectionName) {
     const saveOne = async (name) => {
       const col = this.collections[name];
-      if (!col || col.isSaving) return;
+      if (!col) return;
+      if (col.isSaving) {
+        col._pendingSave = true;
+        return;
+      }
       col.isSaving = true;
+      col._pendingSave = false;
       try {
-        await this.fs.write(name, JSON.stringify({ collectionName: name, data: col.data }));
+        const payload = { collectionName: name, data: col.data };
+        if (col.rawSchema)                   payload.rawSchema    = col.rawSchema;
+        if (col.changelog)                   payload.changelog    = col.changelog;
+        if (col.softDelete)                  payload.softDelete   = col.softDelete;
+        if (col.versioning)                  payload.versioning   = col.versioning;
+        if (col.strict)                      payload.strict       = col.strict;
+        if (col.onSchemaError !== "throw")   payload.onSchemaError = col.onSchemaError;
+        if (col.defaultTtl)                  payload.defaultTtl   = col.defaultTtl;
+        if (col.defaultEmbed)                payload.defaultEmbed = col.defaultEmbed;
+        if (col.maxDocs)                     payload.maxDocs      = col.maxDocs;
+        await this.fs.write(name, this._serializer(payload));
       } catch (error) {
-        logger(`Error saving "${name}": ${error.message}`, "error");
+        this._logger(`Error saving "${name}": ${error.message}`, "error");
         throw error;
       } finally {
         col.isSaving = false;
+      }
+      if (col._pendingSave) {
+        col._pendingSave = false;
+        await saveOne(name);
       }
     };
 
@@ -322,13 +448,33 @@ class Skalex {
    * @returns {Skalex}
    */
   namespace(id) {
+    if (this._adapterConfig) {
+      throw new Error(
+        "namespace() requires the default FsAdapter. " +
+        "When a custom storage adapter is configured, create a separate Skalex instance with your adapter instead."
+      );
+    }
+    // Strip path separators and traversal sequences — only alphanumeric, dash, and underscore allowed.
+    const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
+    if (!safeId) throw new Error("namespace: id must contain at least one alphanumeric character");
     return new Skalex({
-      path: `${this.dataDirectory}/${id}`,
+      path: `${this.dataDirectory}/${safeId}`,
       format: this.dataFormat,
       debug: this.debug,
       ai: this._aiConfig || undefined,
       encrypt: this._encryptConfig || undefined,
       slowQueryLog: this._queryLog ? { threshold: this._queryLog._threshold, maxEntries: this._queryLog._maxEntries } : undefined,
+      plugins: this._pluginsConfig || undefined,
+      memory: this._memoryConfig || undefined,
+      logger: this._logger !== _defaultLogger ? this._logger : undefined,
+      llmAdapter: this._aiAdapter && !this._aiConfig ? this._aiAdapter : undefined,
+      embeddingAdapter: this._embeddingAdapter && !this._aiConfig ? this._embeddingAdapter : undefined,
+      regexMaxLength: this._regexMaxLength !== 500 ? this._regexMaxLength : undefined,
+      idGenerator: this._idGenerator || undefined,
+      serializer: this._serializer !== JSON.stringify ? this._serializer : undefined,
+      deserializer: this._deserializer !== JSON.parse ? this._deserializer : undefined,
+      autoSave: this._autoSave || undefined,
+      ttlSweepInterval: this._ttlSweepInterval || undefined,
     });
   }
 
@@ -343,6 +489,19 @@ class Skalex {
    */
   use(plugin) {
     this._plugins.register(plugin);
+  }
+
+  // ─── Global Watch ─────────────────────────────────────────────────────────
+
+  /**
+   * Subscribe to all mutation events across every collection.
+   * Returns an unsubscribe function.
+   *
+   * @param {Function} callback - Receives { op, collection, doc, prev? } for every mutation.
+   * @returns {() => void}
+   */
+  watch(callback) {
+    return this._eventBus.on("*", callback);
   }
 
   // ─── Session Stats ────────────────────────────────────────────────────────
@@ -368,13 +527,9 @@ class Skalex {
    * @returns {Promise<any>} The return value of fn.
    */
   async transaction(fn) {
-    // Deep-copy snapshot before transaction
     const snapshot = {};
     for (const name in this.collections) {
-      snapshot[name] = {
-        data: JSON.parse(JSON.stringify(this.collections[name].data)),
-        index: new Map(this.collections[name].index),
-      };
+      snapshot[name] = this._snapshotCollection(this.collections[name]);
     }
 
     try {
@@ -382,13 +537,13 @@ class Skalex {
       await this.saveData();
       return result;
     } catch (error) {
-      // Rollback
-      for (const name in snapshot) {
-        if (!this.collections[name]) continue;
-        this.collections[name].data = snapshot[name].data;
-        this.collections[name].index = snapshot[name].index;
-        if (this.collections[name].fieldIndex) {
-          this.collections[name].fieldIndex.buildFromData(snapshot[name].data);
+      // Rollback: restore snapshotted collections
+      for (const name in snapshot) this._applySnapshot(name, snapshot[name]);
+      // Remove collections created during the failed transaction
+      for (const name in this.collections) {
+        if (!(name in snapshot)) {
+          delete this.collections[name];
+          delete this._collectionInstances[name];
         }
       }
       throw error;
@@ -405,17 +560,12 @@ class Skalex {
    */
   async seed(fixtures, { reset = false } = {}) {
     for (const [name, docs] of Object.entries(fixtures)) {
-      const col = this.useCollection(name);
-      if (reset) {
-        this.collections[name].data = [];
-        this.collections[name].index = new Map();
-        if (this.collections[name].fieldIndex) {
-          this.collections[name].fieldIndex.buildFromData([]);
-        }
-        // Evict cached instance so it sees the reset store
+      if (reset && this.collections[name]) {
+        this._applySnapshot(name, { data: [], index: new Map() });
         delete this._collectionInstances[name];
       }
-      await this.useCollection(name).insertMany(docs);
+      const col = this.useCollection(name);
+      await col.insertMany(docs);
     }
     await this.saveData();
   }
@@ -429,7 +579,7 @@ class Skalex {
   dump() {
     const result = {};
     for (const name in this.collections) {
-      result[name] = [...this.collections[name].data];
+      if (!name.startsWith("_")) result[name] = [...this.collections[name].data];
     }
     return result;
   }
@@ -446,10 +596,15 @@ class Skalex {
       const col = this.collections[collectionName];
       if (!col) return null;
       return {
-        name: collectionName,
-        count: col.data.length,
-        schema: col.schema ? Object.fromEntries(col.schema.fields) : null,
-        indexes: col.fieldIndex ? [...col.fieldIndex.indexedFields] : [],
+        name:         collectionName,
+        count:        col.data.length,
+        schema:       col.schema ? Object.fromEntries(col.schema.fields) : null,
+        indexes:      col.fieldIndex ? [...col.fieldIndex.indexedFields] : [],
+        softDelete:   col.softDelete   ?? false,
+        versioning:   col.versioning   ?? false,
+        strict:       col.strict       ?? false,
+        onSchemaError: col.onSchemaError ?? "throw",
+        maxDocs:      col.maxDocs      ?? null,
       };
     }
     const result = {};
@@ -462,29 +617,20 @@ class Skalex {
   // ─── Import ──────────────────────────────────────────────────────────────
 
   /**
-   * Import documents from a JSON or CSV file into a collection.
+   * Import documents from a JSON file into a collection.
    * The collection name is derived from the file name (without extension).
+   * Requires FsAdapter (or a compatible adapter that implements `readRaw`).
    * @param {string} filePath - Absolute or relative path to the file.
-   * @param {"json"|"csv"} [format="json"]
-   * @returns {Promise<{ docs: object[] }>}
+   * @returns {Promise<Document[]>}
    */
-  async import(filePath, format = "json") {
+  async import(filePath) {
     const content = await this.fs.readRaw(filePath);
     let docs;
-
-    if (format === "json") {
+    try {
       docs = JSON.parse(content);
-    } else {
-      const lines = content.trim().split("\n");
-      const headers = lines[0].split(",");
-      docs = lines.slice(1).map(line => {
-        const values = line.split(",");
-        const doc = {};
-        headers.forEach((h, i) => { doc[h.trim()] = values[i] ? values[i].trim() : ""; });
-        return doc;
-      });
+    } catch {
+      throw new Error(`import: invalid JSON in file "${filePath}"`);
     }
-
     const name = filePath.split("/").pop().replace(/\.[^.]+$/, "");
     const col = this.useCollection(name);
     return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
@@ -525,17 +671,7 @@ class Skalex {
     }
 
     const col = this.useCollection(collectionName);
-    const store = this.collections[collectionName];
-
-    // Build a schema descriptor for the LLM
-    let schema = null;
-    if (store && store.schema) {
-      schema = Object.fromEntries(
-        [...store.schema.fields.entries()].map(([k, v]) => [k, v.type])
-      );
-    } else if (store && store.data.length > 0) {
-      schema = inferSchema(store.data[0]);
-    }
+    const schema = this.schema(collectionName);
 
     // Cache lookup
     let filter = this._queryCache.get(collectionName, schema, nlQuery);
@@ -547,7 +683,7 @@ class Skalex {
       this._saveMeta({ queryCache: this._queryCache.toJSON() });
     }
 
-    return col.find(processLLMFilter(filter), { limit });
+    return col.find(processLLMFilter(filter, { regexMaxLength: this._regexMaxLength }), { limit });
   }
 
   // ─── Schema ──────────────────────────────────────────────────────────────
@@ -644,6 +780,21 @@ class Skalex {
     return this._queryLog.entries(opts);
   }
 
+  /**
+   * Number of recorded slow query entries currently in the buffer.
+   * @returns {number}
+   */
+  slowQueryCount() {
+    return this._queryLog ? this._queryLog.size : 0;
+  }
+
+  /**
+   * Clear all recorded slow query entries.
+   */
+  clearSlowQueries() {
+    this._queryLog?.clear();
+  }
+
   // ─── MCP Server ───────────────────────────────────────────────────────────
 
   /**
@@ -653,7 +804,7 @@ class Skalex {
    * @param {"stdio"|"http"} [opts.transport]  - Transport type. Default: "stdio".
    * @param {number}  [opts.port]              - HTTP port. Default: 3000.
    * @param {string}  [opts.host]              - HTTP host. Default: "127.0.0.1".
-   * @param {object}  [opts.scopes]            - Access control map. Default: { "*": ["read", "write"] }.
+   * @param {object}  [opts.scopes]            - Access control map. Default: { "*": ["read"] } (read-only).
    * @returns {SkalexMCPServer}
    */
   mcp(opts = {}) {
@@ -665,7 +816,7 @@ class Skalex {
   _getMeta() {
     const metaCol = this.collections["_meta"];
     if (!metaCol) return {};
-    return metaCol.index.get("migrations") || {};
+    return metaCol.index.get(META_KEY) || {};
   }
 
   _saveMeta(data) {
@@ -673,23 +824,47 @@ class Skalex {
       this._createCollectionStore("_meta");
     }
     const col = this.collections["_meta"];
-    const existing = col.index.get("migrations");
+    const existing = col.index.get(META_KEY);
     if (existing) {
       Object.assign(existing, data);
     } else {
-      const doc = { _id: "migrations", ...data };
+      const doc = { _id: META_KEY, ...data };
       col.data.push(doc);
-      col.index.set("migrations", doc);
+      col.index.set(META_KEY, doc);
     }
   }
 
-  _createEmbeddingAdapter({ provider, apiKey, embedModel, model, host }) {
+  /** Sweep expired TTL documents from all collections. */
+  _sweepTtl() {
+    for (const name in this.collections) {
+      const col = this.collections[name];
+      const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
+      if (removed > 0) this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+    }
+  }
+
+  _createEmbeddingAdapter({ provider, apiKey, embedModel, model, host, embedBaseUrl, dimensions, organization, embedTimeout, embedRetries, embedRetryDelay }) {
     const resolvedModel = embedModel || model;
     switch (provider) {
       case "openai":
-        return new OpenAIEmbeddingAdapter({ apiKey, model: resolvedModel });
+        return new OpenAIEmbeddingAdapter({
+          apiKey,
+          model: resolvedModel,
+          baseUrl: embedBaseUrl,
+          ...(dimensions      !== undefined && { dimensions }),
+          ...(organization    !== undefined && { organization }),
+          ...(embedTimeout    !== undefined && { timeout:    embedTimeout }),
+          ...(embedRetries    !== undefined && { retries:    embedRetries }),
+          ...(embedRetryDelay !== undefined && { retryDelay: embedRetryDelay }),
+        });
       case "ollama":
-        return new OllamaEmbeddingAdapter({ model: resolvedModel, host });
+        return new OllamaEmbeddingAdapter({
+          model: resolvedModel,
+          host,
+          ...(embedTimeout    !== undefined && { timeout:    embedTimeout }),
+          ...(embedRetries    !== undefined && { retries:    embedRetries }),
+          ...(embedRetryDelay !== undefined && { retryDelay: embedRetryDelay }),
+        });
       default:
         throw new Error(
           `Unknown AI provider: "${provider}". Supported: "openai", "ollama".`
@@ -697,23 +872,89 @@ class Skalex {
     }
   }
 
-  _createAIAdapter({ provider, apiKey, model, host }) {
+  _createAIAdapter({ provider, apiKey, model, host, baseUrl, apiVersion, temperature, maxTokens, topP, topK, organization, timeout, retries, retryDelay, seed, generatePrompt, summarizePrompt }) {
     if (!model) return null; // LLM adapter is optional
     switch (provider) {
       case "openai":
-        return new OpenAIAIAdapter({ apiKey, model });
+        return new OpenAILLMAdapter({
+          apiKey,
+          model,
+          baseUrl,
+          ...(maxTokens    !== undefined && { maxTokens }),
+          ...(temperature  !== undefined && { temperature }),
+          ...(topP         !== undefined && { topP }),
+          ...(organization !== undefined && { organization }),
+          ...(timeout      !== undefined && { timeout }),
+          ...(retries         !== undefined && { retries }),
+          ...(retryDelay      !== undefined && { retryDelay }),
+          ...(seed            !== undefined && { seed }),
+          ...(generatePrompt  !== undefined && { generatePrompt }),
+          ...(summarizePrompt !== undefined && { summarizePrompt }),
+        });
       case "anthropic":
-        return new AnthropicAIAdapter({ apiKey, model });
+        return new AnthropicLLMAdapter({
+          apiKey,
+          model,
+          baseUrl,
+          apiVersion,
+          ...(maxTokens       !== undefined && { maxTokens }),
+          ...(temperature     !== undefined && { temperature }),
+          ...(topP            !== undefined && { topP }),
+          ...(topK            !== undefined && { topK }),
+          ...(timeout         !== undefined && { timeout }),
+          ...(retries         !== undefined && { retries }),
+          ...(retryDelay      !== undefined && { retryDelay }),
+          ...(generatePrompt  !== undefined && { generatePrompt }),
+          ...(summarizePrompt !== undefined && { summarizePrompt }),
+        });
       case "ollama":
-        return new OllamaAIAdapter({ model, host });
+        return new OllamaLLMAdapter({
+          model,
+          host,
+          ...(temperature     !== undefined && { temperature }),
+          ...(topP            !== undefined && { topP }),
+          ...(topK            !== undefined && { topK }),
+          ...(timeout         !== undefined && { timeout }),
+          ...(retries         !== undefined && { retries }),
+          ...(retryDelay      !== undefined && { retryDelay }),
+          ...(generatePrompt  !== undefined && { generatePrompt }),
+          ...(summarizePrompt !== undefined && { summarizePrompt }),
+        });
       default:
         return null; // unknown provider — skip silently (embedding may still work)
     }
   }
 
   _log(msg) {
-    if (this.debug) logger(msg);
+    if (this.debug) this._logger(msg, "info");
+  }
+
+  /**
+   * Return a deep snapshot of a collection's mutable state.
+   * @param {{ data: object[], index: Map }} col
+   * @returns {{ data: object[], index: Map }}
+   */
+  _snapshotCollection(col) {
+    return {
+      data: JSON.parse(JSON.stringify(col.data)),
+      index: new Map(col.index),
+    };
+  }
+
+  /**
+   * Apply a snapshot to a collection, rebuilding its field index if present.
+   * @param {string} name
+   * @param {{ data: object[], index: Map }} snap
+   */
+  _applySnapshot(name, snap) {
+    const col = this.collections[name];
+    if (!col) return;
+    col.data = snap.data;
+    // Rebuild the _id index from the deep-copied data so all Map values
+    // point to the restored objects, not the pre-rollback mutated ones.
+    col.index = this.buildIndex(snap.data, "_id");
+    if (col.fieldIndex) col.fieldIndex.buildFromData(snap.data);
   }
 }
 
-module.exports = Skalex;
+export default Skalex;

@@ -2,7 +2,7 @@
  * Unit tests for ask.js — QueryCache, processLLMFilter, validateLLMFilter.
  */
 import { describe, test, expect } from "vitest";
-import { QueryCache, processLLMFilter, validateLLMFilter } from "../../src/ask.js";
+import { QueryCache, processLLMFilter, validateLLMFilter } from "../../src/features/ask.js";
 
 // ─── QueryCache ──────────────────────────────────────────────────────────────
 

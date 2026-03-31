@@ -2,7 +2,7 @@
  * Unit tests for events.js — EventBus.
  */
 import { describe, test, expect, vi } from "vitest";
-import EventBus from "../../src/events.js";
+import EventBus from "../../src/features/events.js";
 
 describe("EventBus — on / emit / off", () => {
   test("emits to registered listeners", () => {
@@ -101,6 +101,57 @@ describe("EventBus — on / emit / off", () => {
   });
 });
 
+// ─── Wildcard "*" channel ────────────────────────────────────────────────────
+
+describe("EventBus — wildcard '*' listener", () => {
+  test("'*' listener fires for every emitted event regardless of channel name", () => {
+    const bus = new EventBus();
+    const fn  = vi.fn();
+    bus.on("*", fn);
+    bus.emit("users", { op: "insert" });
+    bus.emit("posts", { op: "delete" });
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  test("'*' and specific-channel listeners both fire for the same emit", () => {
+    const bus      = new EventBus();
+    const specific = vi.fn();
+    const wildcard = vi.fn();
+    bus.on("users", specific);
+    bus.on("*", wildcard);
+    bus.emit("users", { op: "insert" });
+    expect(specific).toHaveBeenCalledOnce();
+    expect(wildcard).toHaveBeenCalledOnce();
+  });
+
+  test("'*' listener receives the same data payload as the specific listener", () => {
+    const bus = new EventBus();
+    const payload = { op: "update", doc: { _id: "1" } };
+    let captured;
+    bus.on("*", e => { captured = e; });
+    bus.emit("items", payload);
+    expect(captured).toStrictEqual(payload);
+  });
+
+  test("unsubscribing '*' listener stops delivery", () => {
+    const bus  = new EventBus();
+    const fn   = vi.fn();
+    const unsub = bus.on("*", fn);
+    unsub();
+    bus.emit("users", {});
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  test("'*' listener is scoped to its registration — removeAll('*') removes it", () => {
+    const bus = new EventBus();
+    const fn  = vi.fn();
+    bus.on("*", fn);
+    bus.removeAll("*");
+    bus.emit("users", {});
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
 // ─── Integration: collection.watch() ─────────────────────────────────────────
 
 import Skalex from "../../src/index.js";
@@ -131,10 +182,10 @@ describe("collection.watch() — callback API", () => {
     const db  = makeDb();
     await db.connect();
     const col = db.useCollection("items");
-    const { data } = await col.insertOne({ val: 1 });
+    const doc = await col.insertOne({ val: 1 });
     const events = [];
     col.watch(e => events.push(e));
-    await col.updateOne({ _id: data._id }, { val: 2 });
+    await col.updateOne({ _id: doc._id }, { val: 2 });
     expect(events).toHaveLength(1);
     expect(events[0].op).toBe("update");
     await db.disconnect();
@@ -144,10 +195,10 @@ describe("collection.watch() — callback API", () => {
     const db  = makeDb();
     await db.connect();
     const col = db.useCollection("items");
-    const { data } = await col.insertOne({ val: 1 });
+    const doc = await col.insertOne({ val: 1 });
     const events = [];
     col.watch(e => events.push(e));
-    await col.deleteOne({ _id: data._id });
+    await col.deleteOne({ _id: doc._id });
     expect(events).toHaveLength(1);
     expect(events[0].op).toBe("delete");
     await db.disconnect();

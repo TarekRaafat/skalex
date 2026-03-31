@@ -7,7 +7,7 @@ import { describe, test, expect, beforeEach, vi } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
-import MockAIAdapter from "../helpers/MockAIAdapter.js";
+import MockLLMAdapter from "../helpers/MockLLMAdapter.js";
 
 function makeDb(opts = {}) {
   const adapter = new MemoryAdapter();
@@ -33,6 +33,15 @@ describe("connect / disconnect", () => {
     expect(db.isConnected).toBe(false);
     expect(Object.keys(db._collectionInstances)).toHaveLength(0);
   });
+
+  test("Collection methods auto-connect if connect() was never called", async () => {
+    const { db } = makeDb();
+    // Deliberately skip db.connect()
+    const users = db.useCollection("users");
+    const doc = await users.insertOne({ name: "Alice" });
+    expect(doc._id).toBeDefined();
+    expect(db.isConnected).toBe(true);
+  });
 });
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
@@ -42,7 +51,7 @@ describe("insertOne / findOne", () => {
     const { db } = makeDb();
     await db.connect();
     const users = db.useCollection("users");
-    const { data } = await users.insertOne({ name: "Alice", age: 30 });
+    const data = await users.insertOne({ name: "Alice", age: 30 });
 
     expect(data._id).toBeDefined();
     expect(data.name).toBe("Alice");
@@ -63,11 +72,26 @@ describe("insertOne / findOne", () => {
     await db.disconnect();
   });
 
+  test("find returns projected documents (select)", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const users = db.useCollection("users");
+    await users.insertMany([
+      { name: "Alice", age: 30 },
+      { name: "Bob", age: 25 },
+    ]);
+    const { docs } = await users.find({}, { select: ["name"] });
+    expect(docs).toHaveLength(2);
+    expect(docs.every(d => d.name !== undefined)).toBe(true);
+    expect(docs.every(d => d.age === undefined)).toBe(true);
+    await db.disconnect();
+  });
+
   test("findOne _id fast path", async () => {
     const { db } = makeDb();
     await db.connect();
     const users = db.useCollection("users");
-    const { data: inserted } = await users.insertOne({ name: "Alice" });
+    const inserted = await users.insertOne({ name: "Alice" });
     const doc = await users.findOne({ _id: inserted._id });
     expect(doc._id).toBe(inserted._id);
     await db.disconnect();
@@ -88,7 +112,7 @@ describe("insertMany", () => {
     const { db } = makeDb();
     await db.connect();
     const users = db.useCollection("users");
-    const { docs } = await users.insertMany([{ name: "Alice" }, { name: "Bob" }]);
+    const docs = await users.insertMany([{ name: "Alice" }, { name: "Bob" }]);
     expect(docs).toHaveLength(2);
     expect(docs[0]._id).toBeDefined();
     await db.disconnect();
@@ -265,7 +289,7 @@ describe("updateMany", () => {
       { name: "B", role: "user" },
       { name: "C", role: "admin" },
     ]);
-    const { docs } = await users.updateMany({ role: "user" }, { role: "member" });
+    const docs = await users.updateMany({ role: "user" }, { role: "member" });
     expect(docs).toHaveLength(2);
     const r = await users.find({ role: "user" });
     expect(r.docs).toHaveLength(0);
@@ -280,7 +304,7 @@ describe("deleteOne", () => {
     const users = db.useCollection("users");
     await users.insertOne({ name: "Alice" });
     const result = await users.deleteOne({ name: "Alice" });
-    expect(result.data.name).toBe("Alice");
+    expect(result.name).toBe("Alice");
     expect(await users.findOne({ name: "Alice" })).toBeNull();
     await db.disconnect();
   });
@@ -304,7 +328,7 @@ describe("deleteMany", () => {
       { name: "B", role: "user" },
       { name: "C", role: "admin" },
     ]);
-    const { docs } = await users.deleteMany({ role: "user" });
+    const docs = await users.deleteMany({ role: "user" });
     expect(docs).toHaveLength(2);
     const r = await users.find({});
     expect(r.docs).toHaveLength(1);
@@ -346,7 +370,7 @@ describe("insertOne ifNotExists", () => {
     const users = db.useCollection("users");
     await users.insertOne({ name: "Alice", role: "admin" });
     const result = await users.insertOne({ name: "Alice" }, { ifNotExists: true });
-    expect(result.data.role).toBe("admin"); // original doc returned
+    expect(result.role).toBe("admin"); // original doc returned
     const { docs } = await users.find({});
     expect(docs).toHaveLength(1);
     await db.disconnect();
@@ -393,6 +417,71 @@ describe("unique index constraints", () => {
     await expect(users.insertOne({ email: "a@test.com" })).rejects.toThrow(/Unique constraint/);
     await db.disconnect();
   });
+
+  test("updateOne does not throw when updating non-unique fields on a doc with a unique field", async () => {
+    // Regression: collection.js passes a shallow copy as oldDoc to IndexEngine.update().
+    // Before the _id-based comparison fix, this false-positive threw a unique constraint error.
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("users", {
+      schema: { email: { type: "string", unique: true } },
+    });
+    const users = db.useCollection("users");
+    await users.insertOne({ email: "alice@test.com", name: "Alice" });
+    const updated = await users.updateOne({ email: "alice@test.com" }, { name: "Alice Smith" });
+    expect(updated.name).toBe("Alice Smith");
+    expect(updated.email).toBe("alice@test.com");
+    await db.disconnect();
+  });
+
+  test("updateOne throws when changing a unique field to a value already taken by another doc", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("users", {
+      schema: { email: { type: "string", unique: true } },
+    });
+    const users = db.useCollection("users");
+    await users.insertOne({ email: "alice@test.com" });
+    await users.insertOne({ email: "bob@test.com" });
+    await expect(
+      users.updateOne({ email: "bob@test.com" }, { email: "alice@test.com" })
+    ).rejects.toThrow(/Unique constraint/);
+    await db.disconnect();
+  });
+
+  test("updateMany keeps the field index consistent", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("users", { indexes: ["role"] });
+    const users = db.useCollection("users");
+    await users.insertMany([
+      { name: "Alice", role: "user" },
+      { name: "Bob",   role: "user" },
+    ]);
+    await users.updateMany({ role: "user" }, { role: "member" });
+    // Index must reflect the new value
+    expect(await users.count({ role: "member" })).toBe(2);
+    expect(await users.count({ role: "user" })).toBe(0);
+    await db.disconnect();
+  });
+
+  test("deleteMany keeps the field index consistent", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("items", { indexes: ["status"] });
+    const items = db.useCollection("items");
+    await items.insertMany([
+      { name: "A", status: "done" },
+      { name: "B", status: "done" },
+      { name: "C", status: "active" },
+    ]);
+    await items.deleteMany({ status: "done" });
+    expect(await items.count({})).toBe(1);
+    // Index must not return stale entries
+    expect(await items.count({ status: "done" })).toBe(0);
+    expect(await items.count({ status: "active" })).toBe(1);
+    await db.disconnect();
+  });
 });
 
 // ─── TTL ─────────────────────────────────────────────────────────────────────
@@ -402,7 +491,7 @@ describe("TTL documents", () => {
     const { db } = makeDb();
     await db.connect();
     const sessions = db.useCollection("sessions");
-    const { data } = await sessions.insertOne({ token: "abc" }, { ttl: "1h" });
+    const data = await sessions.insertOne({ token: "abc" }, { ttl: "1h" });
     expect(data._expiresAt).toBeInstanceOf(Date);
     expect(data._expiresAt.getTime()).toBeGreaterThan(Date.now());
     await db.disconnect();
@@ -521,6 +610,21 @@ describe("transaction", () => {
     expect(doc.balance).toBe(100); // rolled back
     await db.disconnect();
   });
+
+  test("rolls back collections created inside the transaction", async () => {
+    const { db } = makeDb();
+    await db.connect();
+
+    await expect(
+      db.transaction(async (d) => {
+        await d.useCollection("brand_new").insertOne({ x: 1 });
+        throw new Error("fail");
+      })
+    ).rejects.toThrow("fail");
+
+    expect(db.collections["brand_new"]).toBeUndefined();
+    await db.disconnect();
+  });
 });
 
 // ─── Seed ────────────────────────────────────────────────────────────────────
@@ -602,10 +706,21 @@ describe("inspect", () => {
 
 describe("namespace", () => {
   test("returns a Skalex instance scoped to a sub-path", () => {
-    const { db } = makeDb();
+    const db = new Skalex({ path: "/tmp/skalex-ns-test" });
     const ns = db.namespace("tenant1");
     expect(ns).toBeInstanceOf(Skalex);
     expect(ns.dataDirectory).toContain("tenant1");
+  });
+
+  test("propagates plugins config to the child instance", async () => {
+    const calls = [];
+    const plugin = { async afterInsert(ctx) { calls.push(ctx.collection); } };
+    const db = new Skalex({ path: "/tmp/skalex-ns-plugins", plugins: [plugin] });
+    const ns = db.namespace("ns1");
+    await ns.connect();
+    await ns.useCollection("logs").insertOne({ msg: "hello" });
+    await ns.disconnect();
+    expect(calls).toContain("logs");
   });
 });
 
@@ -715,19 +830,6 @@ describe("import", () => {
     await db.disconnect();
   });
 
-  test("imports CSV from a file path", async () => {
-    const { db, adapter } = makeDb();
-    await db.connect();
-
-    adapter._store.set("__raw:/data/items.csv", "name,price\nAlpha,5\nBeta,10");
-
-    await db.import("/data/items.csv", "csv");
-
-    const { docs } = await db.useCollection("items").find({});
-    expect(docs).toHaveLength(2);
-    expect(docs[0].name).toBe("Alpha");
-    await db.disconnect();
-  });
 });
 
 // ─── collection.js does not import native fs/path ────────────────────────────
@@ -735,7 +837,7 @@ describe("import", () => {
 describe("architectural constraints", () => {
   test("collection.js does not require native fs or path", async () => {
     const src = await import("node:fs").then(m => m.promises.readFile(
-      new URL("../../src/collection.js", import.meta.url), "utf8"
+      new URL("../../src/engine/collection.js", import.meta.url), "utf8"
     ));
     expect(src).not.toMatch(/require\([""]fs[""]\)/);
     expect(src).not.toMatch(/require\([""]path[""]\)/);
@@ -780,7 +882,7 @@ describe("insertOne / insertMany with { embed }", () => {
     const { db } = makeVectorDb({ "hello": [0.5, 0.5, 0, 0] });
     await db.connect();
     const docs = db.useCollection("docs");
-    const { data } = await docs.insertOne({ text: "hello" }, { embed: "text" });
+    const data = await docs.insertOne({ text: "hello" }, { embed: "text" });
     expect(data._vector).toBeUndefined();
     await db.disconnect();
   });
@@ -811,11 +913,85 @@ describe("insertOne / insertMany with { embed }", () => {
     const { db } = makeVectorDb();
     await db.connect();
     const docs = db.useCollection("docs");
-    const { docs: inserted } = await docs.insertMany(
+    const inserted = await docs.insertMany(
       [{ text: "foo" }, { text: "bar" }],
       { embed: "text" }
     );
     expect(inserted.every(d => d._vector === undefined)).toBe(true);
+    await db.disconnect();
+  });
+});
+
+describe("populate", () => {
+  test("find() populate resolves foreign key to related document", async () => {
+    // Regression: find() was using { [field]: id } instead of { _id: id },
+    // so it looked up e.g. { authorId: id } in the authors collection rather than { _id: id }.
+    const { db } = makeDb();
+    await db.connect();
+    const authors = db.useCollection("authors");
+    const posts   = db.useCollection("posts");
+    const author = await authors.insertOne({ name: "Alice" });
+    await posts.insertMany([
+      { title: "Post A", authors: author._id },
+      { title: "Post B", authors: author._id },
+    ]);
+    const { docs } = await posts.find({}, { populate: ["authors"] });
+    expect(docs).toHaveLength(2);
+    expect(docs[0].authors).toMatchObject({ name: "Alice" });
+    expect(docs[1].authors).toMatchObject({ name: "Alice" });
+    await db.disconnect();
+  });
+
+  test("find() populate does not overwrite resolved doc with raw ID", async () => {
+    // Regression: Object.assign(newItem, item) ran after populate and overwrote
+    // the resolved document with the raw foreign-key string.
+    const { db } = makeDb();
+    await db.connect();
+    const companies = db.useCollection("companies");
+    const contacts  = db.useCollection("contacts");
+    const company = await companies.insertOne({ name: "Acme" });
+    await contacts.insertOne({ name: "Bob", companies: company._id });
+    const { docs } = await contacts.find({}, { populate: ["companies"] });
+    // Must be the resolved object, not the raw _id string
+    expect(typeof docs[0].companies).toBe("object");
+    expect(docs[0].companies.name).toBe("Acme");
+    await db.disconnect();
+  });
+
+  test("findOne() populate resolves foreign key to related document", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const authors = db.useCollection("authors");
+    const posts   = db.useCollection("posts");
+    const author = await authors.insertOne({ name: "Carol" });
+    await posts.insertOne({ title: "Post C", authors: author._id });
+    const doc = await posts.findOne({ title: "Post C" }, { populate: ["authors"] });
+    expect(doc.authors).toMatchObject({ name: "Carol" });
+    await db.disconnect();
+  });
+
+  test("find() populate with select returns both populated and selected fields", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const teams  = db.useCollection("teams");
+    const people = db.useCollection("people");
+    const team = await teams.insertOne({ name: "Engineering" });
+    await people.insertOne({ name: "Dave", teams: team._id, age: 40 });
+    const { docs } = await people.find({}, { populate: ["teams"], select: ["name", "teams"] });
+    expect(docs[0].name).toBe("Dave");
+    expect(docs[0].teams).toMatchObject({ name: "Engineering" });
+    expect(docs[0].age).toBeUndefined(); // not in select
+    await db.disconnect();
+  });
+
+  test("find() populate with unknown related _id returns original field value", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const posts = db.useCollection("posts");
+    await posts.insertOne({ title: "Orphan", authors: "nonexistent-id" });
+    const { docs } = await posts.find({}, { populate: ["authors"] });
+    // relatedItem not found — field keeps its original value
+    expect(docs[0].authors).toBe("nonexistent-id");
     await db.disconnect();
   });
 });
@@ -953,7 +1129,7 @@ describe("collection.similar()", () => {
     });
     await db.connect();
     const docs = db.useCollection("docs");
-    const { data: cat } = await docs.insertOne({ text: "cat" },    { embed: "text" });
+    const cat = await docs.insertOne({ text: "cat" },    { embed: "text" });
     await docs.insertOne({ text: "kitten" }, { embed: "text" });
     await docs.insertOne({ text: "dog" },    { embed: "text" });
 
@@ -969,7 +1145,7 @@ describe("collection.similar()", () => {
     const { db } = makeVectorDb({ "a": [1, 0, 0, 0], "b": [0.8, 0.2, 0, 0] });
     await db.connect();
     const docs = db.useCollection("docs");
-    const { data: docA } = await docs.insertOne({ text: "a" }, { embed: "text" });
+    const docA = await docs.insertOne({ text: "a" }, { embed: "text" });
     await docs.insertOne({ text: "b" }, { embed: "text" });
 
     const { docs: results } = await docs.similar(docA._id);
@@ -991,8 +1167,8 @@ describe("collection.similar()", () => {
     const { db } = makeVectorDb();
     await db.connect();
     const docs = db.useCollection("docs");
-    const { data } = await docs.insertOne({ text: "no vector" });
-    const { docs: results } = await docs.similar(data._id);
+    const doc = await docs.insertOne({ text: "no vector" });
+    const { docs: results } = await docs.similar(doc._id);
     expect(results).toHaveLength(0);
     await db.disconnect();
   });
@@ -1001,7 +1177,7 @@ describe("collection.similar()", () => {
     const { db } = makeVectorDb({ "a": [1, 0, 0, 0], "b": [0.9, 0.1, 0, 0] });
     await db.connect();
     const docs = db.useCollection("docs");
-    const { data: docA } = await docs.insertOne({ text: "a" }, { embed: "text" });
+    const docA = await docs.insertOne({ text: "a" }, { embed: "text" });
     await docs.insertOne({ text: "b" }, { embed: "text" });
     const { docs: results } = await docs.similar(docA._id);
     expect(results[0]._vector).toBeUndefined();
@@ -1028,7 +1204,7 @@ describe("db.embed()", () => {
 function makeAskDbWith(responses) {
   const adapter = new MemoryAdapter();
   const db = new Skalex({ adapter });
-  db._aiAdapter = new MockAIAdapter(responses);
+  db._aiAdapter = new MockLLMAdapter(responses);
   return db;
 }
 

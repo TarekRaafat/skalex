@@ -22,8 +22,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import MemoryAdapter    from "../helpers/MemoryAdapter.js";
-import FsAdapter        from "../../src/adapters/storage/fs.js";
-import EncryptedAdapter from "../../src/adapters/storage/encrypted.js";
+import FsAdapter        from "../../src/connectors/storage/fs.js";
+import EncryptedAdapter from "../../src/connectors/storage/encrypted.js";
 
 // ─── Test key for EncryptedAdapter ────────────────────────────────────────────
 

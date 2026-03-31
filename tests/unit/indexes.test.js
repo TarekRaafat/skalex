@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import IndexEngine from "../../src/indexes.js";
+import IndexEngine from "../../src/engine/indexes.js";
 
 describe("IndexEngine", () => {
   let engine;
@@ -71,6 +71,17 @@ describe("IndexEngine", () => {
     const oldDoc = docs[0];
     const newDoc = { ...oldDoc, role: "superadmin" };
     expect(() => engine.update(oldDoc, newDoc)).not.toThrow();
+    expect(engine.isUniqueTaken("email", "a@test.com")).toBe(true);
+  });
+
+  test("update() self-update via shallow copy does not throw (simulates collection.js mutation path)", () => {
+    // collection.js does: const oldDoc = { ...item }; applyUpdate(item); update(oldDoc, item)
+    // oldDoc is a COPY — not the same reference as what is stored in the index.
+    // This must not throw even though oldDoc !== the indexed doc by reference.
+    const liveDoc = docs[0]; // reference held by the index
+    const oldDocCopy = { ...liveDoc }; // shallow copy, as collection.js creates
+    liveDoc.role = "superadmin"; // simulate applyUpdate mutating in place
+    expect(() => engine.update(oldDocCopy, liveDoc)).not.toThrow();
     expect(engine.isUniqueTaken("email", "a@test.com")).toBe(true);
   });
 

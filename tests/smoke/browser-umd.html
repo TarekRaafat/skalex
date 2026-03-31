@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skalex UMD Smoke Test</title>
+  <style>
+    body { font-family: monospace; padding: 2rem; background: #0d1117; color: #e6edf3; }
+    h1   { color: #58a6ff; margin-bottom: 1rem; }
+    h2   { color: #8b949e; font-size: 0.9rem; margin: 1.5rem 0 0.5rem; }
+    .pass  { color: #3fb950; }
+    .fail  { color: #f85149; }
+    .throw { color: #d29922; }
+    #summary { margin-top: 2rem; padding: 1rem; background: #161b22; border-radius: 6px; }
+    #summary.ok   { border-left: 4px solid #3fb950; }
+    #summary.fail { border-left: 4px solid #f85149; }
+  </style>
+</head>
+<body>
+  <h1>Skalex v4 — UMD / CDN Smoke Test</h1>
+  <p id="info">Running…</p>
+  <div id="output"></div>
+  <div id="summary"></div>
+
+  <!-- Load the IIFE build exactly as a CDN user would — plain <script src>, no type="module" -->
+  <script src="../../dist/skalex.umd.min.js"></script>
+
+  <script>
+    // ─── Helpers ───────────────────────────────────────────────────────────────
+
+    const out = document.getElementById("output");
+    let passed = 0;
+    let failed = 0;
+
+    function assert(label, condition) {
+      const el = document.createElement("div");
+      if (condition) {
+        el.className = "pass";
+        el.textContent = `  ✓ ${label}`;
+        passed++;
+      } else {
+        el.className = "fail";
+        el.textContent = `  ✗ ${label}`;
+        failed++;
+        console.error("FAILED:", label);
+      }
+      out.appendChild(el);
+    }
+
+    async function section(name, fn) {
+      const h = document.createElement("h2");
+      h.textContent = name;
+      out.appendChild(h);
+      try {
+        await fn();
+      } catch (err) {
+        const el = document.createElement("div");
+        el.className = "throw";
+        el.textContent = `  ✗ THREW: ${err.message}`;
+        out.appendChild(el);
+        failed++;
+        console.error(err);
+      }
+    }
+
+    // Inline LocalStorageAdapter — mirrors what a CDN user would bring themselves
+    // or import via npm. Connectors are intentionally not bundled in the IIFE build.
+    class LocalStorageAdapter {
+      constructor({ namespace = "smoke" } = {}) {
+        this._prefix = `skalex:${namespace}:`;
+      }
+      _key(n) { return this._prefix + n; }
+      async read(n)     { const v = localStorage.getItem(this._key(n)); return v ?? null; }
+      async write(n, d) { localStorage.setItem(this._key(n), d); }
+      async delete(n)   { localStorage.removeItem(this._key(n)); }
+      async list() {
+        return Object.keys(localStorage)
+          .filter(k => k.startsWith(this._prefix))
+          .map(k => k.slice(this._prefix.length));
+      }
+      join(...p)       { return p.join("/"); }
+      ensureDir()      {}
+      async writeRaw(p, c) { localStorage.setItem("__raw:" + p, c); }
+      async readRaw(p) {
+        const v = localStorage.getItem("__raw:" + p);
+        if (v === null) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+        return v;
+      }
+    }
+
+    async function run() {
+      // ─── 1. Global shape ──────────────────────────────────────────────────────
+
+      await section("UMD global shape", async () => {
+        assert("window.Skalex is a function/class",     typeof Skalex === "function");
+        assert("Skalex has no .default property",       !("default" in Skalex));
+        assert("Skalex has no .LocalStorageAdapter",    !("LocalStorageAdapter" in Skalex));
+        assert("Skalex has no .EncryptedAdapter",       !("EncryptedAdapter" in Skalex));
+      });
+
+      // Shared adapter for all remaining sections
+      const adapter = new LocalStorageAdapter({ namespace: "umd-smoke" });
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith("skalex:umd-smoke:")) localStorage.removeItem(k);
+      }
+
+      // ─── 2. Core CRUD ─────────────────────────────────────────────────────────
+
+      await section("Core CRUD", async () => {
+        const db = new Skalex({ adapter });
+        await db.connect();
+
+        const col = db.useCollection("users");
+        const doc = await col.insertOne({ name: "Alice", role: "admin" });
+        assert("insertOne returns _id",                 typeof doc._id === "string");
+
+        const found = await col.findOne({ name: "Alice" });
+        assert("findOne works",                         found?.name === "Alice");
+
+        const updated = await col.updateOne({ name: "Alice" }, { role: "superadmin" });
+        assert("updateOne works",                       updated?.role === "superadmin");
+
+        await col.deleteOne({ name: "Alice" });
+        assert("deleteOne works",                       await col.findOne({ name: "Alice" }) === null);
+
+        await db.disconnect();
+      });
+
+      // ─── 3. Persistence ───────────────────────────────────────────────────────
+
+      await section("Persistence via inline adapter", async () => {
+        const db = new Skalex({ adapter });
+        await db.connect();
+
+        const col = db.useCollection("notes");
+        await col.insertOne({ title: "hello" });
+        await db.saveData("notes");
+
+        const db2 = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "umd-smoke" }) });
+        await db2.connect();
+        const { docs } = await db2.useCollection("notes").find({ title: "hello" });
+        assert("data persists across reconnect",        docs.length >= 1);
+
+        await db.disconnect();
+        await db2.disconnect();
+      });
+
+      // ─── 4. Query operators ───────────────────────────────────────────────────
+
+      await section("Query operators", async () => {
+        const db = new Skalex({ adapter });
+        await db.connect();
+
+        const col = db.useCollection("items");
+        await col.insertMany([{ n: 1 }, { n: 2 }, { n: 3 }]);
+
+        const { docs: gt } = await col.find({ n: { $gt: 1 } });
+        assert("$gt works",                             gt.length === 2);
+
+        const { docs: fn } = await col.find({ n: { $fn: v => v % 2 === 0 } });
+        assert("$fn works",                             fn.length === 1);
+
+        await db.disconnect();
+      });
+
+      // ─── 5. Transaction ───────────────────────────────────────────────────────
+
+      await section("Transaction", async () => {
+        const db = new Skalex({ adapter });
+        await db.connect();
+
+        const col = db.useCollection("accounts");
+        await col.insertMany([{ name: "A", bal: 100 }, { name: "B", bal: 50 }]);
+
+        await db.transaction(async (tx) => {
+          const c = tx.useCollection("accounts");
+          await c.updateOne({ name: "A" }, { bal: { $inc: -10 } });
+          await c.updateOne({ name: "B" }, { bal: { $inc:  10 } });
+        });
+
+        assert("transaction commit: A",                 (await col.findOne({ name: "A" }))?.bal === 90);
+        assert("transaction commit: B",                 (await col.findOne({ name: "B" }))?.bal === 60);
+
+        await db.disconnect();
+      });
+
+      // Cleanup
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith("skalex:umd-smoke:") || k.startsWith("__raw:")) {
+          localStorage.removeItem(k);
+        }
+      }
+
+      // ─── Summary ──────────────────────────────────────────────────────────────
+
+      const summaryEl = document.getElementById("summary");
+      const ua = navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/)?.[0] ?? navigator.userAgent.slice(0, 60);
+      summaryEl.className = failed === 0 ? "ok" : "fail";
+      summaryEl.innerHTML = `
+        <strong>${failed === 0 ? "✓ All checks passed" : `✗ ${failed} check(s) failed`}</strong><br>
+        Passed: ${passed} &nbsp; Failed: ${failed}<br>
+        Browser: ${ua}
+      `;
+      document.getElementById("info").textContent = `Finished — ${passed} passed, ${failed} failed.`;
+    }
+
+    run().catch(err => {
+      console.error(err);
+      document.getElementById("info").textContent = `Finished — ${passed} passed, ${failed} failed.`;
+    });
+  </script>
+</body>
+</html>

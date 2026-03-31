@@ -1,5 +1,7 @@
 # Installation <!-- {docsify-ignore} -->
 
+In 30 seconds, you'll have a database running. No server to provision. No config file to write. No DevOps required.
+
 ---
 
 ## Requirements
@@ -41,6 +43,8 @@ import type { Collection, SkalexConfig } from "skalex";
 
 ## Quick Start
 
+That's the entire setup. Now you can build.
+
 ```javascript
 import Skalex from "skalex";
 
@@ -50,9 +54,9 @@ await db.connect();
 
 const users = db.useCollection("users");
 
-const { data } = await users.insertOne({ name: "Alice", age: 30 });
+const doc = await users.insertOne({ name: "Alice", age: 30 });
 
-console.log(data._id); // "0196f3a2b4c8d1e..."
+console.log(doc._id); // "0196f3a2b4c8d1e..."
 
 await db.disconnect();
 ```

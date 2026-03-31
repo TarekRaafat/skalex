@@ -1,0 +1,13 @@
+{
+  "name": "skalex-example-ai-chat-memory",
+  "version": "1.0.0",
+  "description": "Skalex episodic agent memory — stores, recalls, and compresses conversation history.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "skalex": "file:../.."
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { parseSchema, validateDoc, inferSchema } from "../../src/validator.js";
+import { parseSchema, validateDoc, inferSchema, stripInvalidFields } from "../../src/engine/validator.js";
 
 describe("parseSchema", () => {
   test("parses string shorthand", () => {
@@ -79,6 +79,86 @@ describe("validateDoc", () => {
     expect(validateDoc({ name: "Alice", created: new Date() }, fields)).toEqual([]);
     const errs = validateDoc({ name: "Alice", created: "yesterday" }, fields);
     expect(errs.some(e => e.includes("\"created\""))).toBe(true);
+  });
+});
+
+describe("validateDoc — strict mode", () => {
+  const { fields } = parseSchema({ name: "string", age: "number" });
+
+  test("no errors for a valid document containing only schema fields", () => {
+    expect(validateDoc({ name: "Alice", age: 30 }, fields, true)).toEqual([]);
+  });
+
+  test("returns an error for an unknown field in strict mode", () => {
+    const errs = validateDoc({ name: "Alice", extra: "data" }, fields, true);
+    expect(errs.some(e => e.includes("Unknown field") && e.includes('"extra"'))).toBe(true);
+  });
+
+  test("reports multiple unknown fields", () => {
+    const errs = validateDoc({ name: "Alice", a: 1, b: 2 }, fields, true);
+    expect(errs.filter(e => e.includes("Unknown field"))).toHaveLength(2);
+  });
+
+  test("_-prefixed fields are permitted in strict mode", () => {
+    const errs = validateDoc({ name: "Alice", _id: "123", _vector: [] }, fields, true);
+    expect(errs).toEqual([]);
+  });
+
+  test("strict: false (default) allows unknown fields", () => {
+    expect(validateDoc({ name: "Alice", extra: "data" }, fields, false)).toEqual([]);
+    expect(validateDoc({ name: "Alice", extra: "data" }, fields)).toEqual([]);
+  });
+
+  test("strict mode accumulates both type errors and unknown-field errors", () => {
+    const errs = validateDoc({ name: 42, extra: "data" }, fields, true);
+    expect(errs.some(e => e.includes('"name"'))).toBe(true);
+    expect(errs.some(e => e.includes("Unknown field"))).toBe(true);
+  });
+});
+
+describe("stripInvalidFields", () => {
+  const { fields } = parseSchema({
+    name: "string",
+    age:  "number",
+    role: { type: "string", enum: ["admin", "user"] },
+  });
+
+  test("keeps fields that pass type and enum checks", () => {
+    const out = stripInvalidFields({ name: "Alice", age: 30 }, fields);
+    expect(out.name).toBe("Alice");
+    expect(out.age).toBe(30);
+  });
+
+  test("removes fields not declared in the schema", () => {
+    const out = stripInvalidFields({ name: "Alice", undeclared: "x" }, fields);
+    expect(out.undeclared).toBeUndefined();
+  });
+
+  test("removes fields with wrong type", () => {
+    const out = stripInvalidFields({ name: "Alice", age: "thirty" }, fields);
+    expect(out.age).toBeUndefined();
+  });
+
+  test("removes fields that violate enum", () => {
+    const out = stripInvalidFields({ name: "Alice", role: "superadmin" }, fields);
+    expect(out.role).toBeUndefined();
+  });
+
+  test("preserves _-prefixed system fields unconditionally", () => {
+    const out = stripInvalidFields({ name: "Alice", _id: "abc", _vector: [1, 2] }, fields);
+    expect(out._id).toBe("abc");
+    expect(out._vector).toEqual([1, 2]);
+  });
+
+  test("does not mutate the original document", () => {
+    const doc = { name: "Alice", extra: "bad" };
+    stripInvalidFields(doc, fields);
+    expect(doc.extra).toBe("bad");
+  });
+
+  test("returns empty object (minus system fields) when nothing valid remains", () => {
+    const out = stripInvalidFields({ undeclared: "x" }, fields);
+    expect(Object.keys(out)).toHaveLength(0);
   });
 });
 

@@ -1,0 +1,16 @@
+{
+  "_comment": "Add the 'skalex' entry to the mcpServers object in your Claude Desktop config.",
+  "_config_location": {
+    "macOS":   "~/Library/Application Support/Claude/claude_desktop_config.json",
+    "Windows": "%APPDATA%\\Claude\\claude_desktop_config.json"
+  },
+  "mcpServers": {
+    "skalex": {
+      "command": "node",
+      "args": ["/absolute/path/to/examples/mcp-agent-server/index.js"],
+      "env": {
+        "OPENAI_KEY": "sk-..."
+      }
+    }
+  }
+}

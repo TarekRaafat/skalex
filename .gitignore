@@ -132,3 +132,16 @@ dist
 .yarn/install-state.gz
 .pnp.*
 .DS_Store
+
+# Bun lock file (npm is the primary package manager)
+bun.lock
+
+# Runtime data directories
+.db/
+mcp-data/
+tmp/
+
+# Internal planning & audit documents
+AUDIT.md
+Skalex_v4_Plan.md
+LAUNCH.md

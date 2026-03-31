@@ -7,238 +7,345 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [4.0.0-alpha] — 2026-03-29
+## [4.0.0-alpha] - 2026-03-31
 
-> **Breaking changes** — see `MIGRATION.md` for upgrade instructions.
+> **v4 is a ground-up rewrite.** Skalex is no longer just a local document store. It is now the only JavaScript database that ships vector search, agent memory, an MCP server, natural language queries, pluggable storage, and AES-256-GCM encryption in a single zero-dependency package. Runs everywhere: Node.js, Bun, Deno, browsers, edge runtimes. The entire architecture was rebuilt around AI-first use cases. If you are building an AI agent, a local-first app, or anything that needs a database without the infrastructure overhead, this is that release.
+>
+> **Breaking changes**: see [MIGRATION](MIGRATION.md) for upgrade instructions.
 
 ### Breaking Changes
-- `insertOne()` now returns `{ data: document }` instead of the raw document
-- `updateOne()` now returns `{ data: document }` instead of the raw document
-- `deleteOne()` now returns `{ data: document }` instead of the raw document
-- `updateMany()` now always returns `{ docs: [] }` when no matches found — never bare `[]`
-- Minimum Node.js version raised to `>=18.0.0`
-- `package.json` `main`/`module`/`types`/`exports` now point to `dist/`
-- Sort direction convention updated to MongoDB standard — `1` = ascending, `-1` = descending
 
-### Added
+- **Minimum Node.js version raised to `>=18.0.0`**
+- **Sort direction is now MongoDB-standard**: `1` = ascending, `-1` = descending
+- **`db.mcp()` defaults to read-only access**: was `{ "*": ["read", "write"] }`, now `{ "*": ["read"] }`; pass `scopes: { "*": ["read", "write"] }` to restore write access
+- **`db.namespace(id)` sanitises the ID**: characters outside `[a-zA-Z0-9_-]` are replaced with `_`; if your IDs contained dots or slashes (e.g. `"tenant.001"`), rename the data directory on disk before upgrading
+- **MCP HTTP CORS is opt-in**: `db.mcp({ transport: "http" })` no longer sends `Access-Control-Allow-Origin`; pass `allowedOrigin` to enable browser client access
+- **`db.import()` is JSON-only**: the `format` parameter and CSV import support have been removed; the `format: "csv"` path used a naive parser that corrupted values containing commas, making round-trips with `collection.export({ format: "csv" })` unreliable
 
-#### Architecture
-- **Dual build** — `dist/skalex.esm.js` + `dist/skalex.cjs.js` + `dist/skalex.d.ts` via Rollup
-- **`StorageAdapter` interface** — abstract base (`read/write/delete/list`) for all backends
-- **`FsAdapter`** — Node.js file-system backend with atomic rename writes and gz/json format support
-- **`LocalStorageAdapter`** — browser `localStorage` backend with `skalex:<ns>:<name>` key prefixing
-- **`adapter` config option** — pass a custom `StorageAdapter` to target any environment (browser, edge, Bun)
-- **`rollup.config.js`** + **`vitest.config.js`** — build and test tooling
-
-#### Query Engine
-- **`IndexEngine`** — secondary field indexes with O(1) `lookup()` via `Map<value, Set<doc>>`
-- **Unique index enforcement** — schema `unique: true` throws on duplicate insert/update
-- **`presortFilter()`** — evaluates indexed and equality fields before regex/`$fn` for performance
-- **Full query operator support** — `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$regex`, `$fn`
-
-#### Schema & Validation
-- **`parseSchema()` + `validateDoc()`** — zero-dependency schema validation with `type`, `required`, `unique`, `enum`
-- **`inferSchema()`** — infer a schema from a sample document
-
-#### TTL & Migrations
-- **TTL documents** — `insertOne(doc, { ttl: "30m" })` sets `_expiresAt`; expired docs swept on `connect()`
-- **`MigrationEngine`** — `addMigration({ version, up })` with `_meta` state tracking; pending migrations run on `connect()`
-- **`db.migrationStatus()`** — reports applied vs pending migration versions
-
-#### Database Methods
-- **`db.transaction(fn)`** — snapshot + commit/rollback; rolls back all in-memory state on error
-- **`db.seed(fixtures, { reset })`** — seed collections from fixtures; optional clear before seed
-- **`db.dump()`** — snapshot of all collection data as plain arrays
-- **`db.inspect([name])`** — metadata per collection: doc count, schema, index list
-- **`db.namespace(id)`** — scoped `Skalex` instance storing data under a sub-directory
-- **`db.import(filePath, format)`** — import JSON or CSV from a file path
-- **`debug: true`** config option — enables connect/disconnect log output
-
-#### Collection Methods
-- **`collection.upsert(filter, doc)`** — update if match found, insert otherwise
-- **`insertOne(doc, { ifNotExists })`** — return existing doc instead of inserting duplicate
-- **`updatedAt`** field set at creation time by `insertOne` and `insertMany`
-
-#### Vector Search
-- **`EmbeddingAdapter` interface** — abstract base (`embed(text) → number[]`) for all embedding backends
-- **`OpenAIEmbeddingAdapter`** — OpenAI embeddings via `fetch`; default model `text-embedding-3-small`
-- **`OllamaEmbeddingAdapter`** — local embeddings via Ollama; default model `nomic-embed-text`
-- **`ai` constructor option** — `{ provider, apiKey, embedModel, model, host }` wires embedding + language model adapters
-- **`db.embed(text)`** — direct access to the configured embedding adapter
-- **`insertOne` / `insertMany` `embed` option** — field name or function selector; auto-embeds on insert, stores as `_vector`
-- **`collection.search(query, opts)`** — cosine similarity search over all documents with a `_vector` field; supports `filter` (hybrid), `limit`, `minScore`
-- **`collection.similar(id, opts)`** — nearest-neighbour lookup for an existing document; supports `limit`, `minScore`
-- **`src/vector.js`** — `cosineSimilarity(a, b)` and `stripVector(doc)` utilities
-- **`_vector` field** stripped from all `find`, `findOne`, `search`, `similar`, `insertOne`, and `insertMany` results — never exposed to callers
-- **`namespace()` inherits `ai` + `encrypt` config** — namespaced instances share the same adapters
-
-#### AI Query Layer
-- **`AIAdapter` interface** — abstract base (`generate(schema, nlQuery)`, `summarize(texts)`) for language model backends
-- **`OpenAIAIAdapter`** — chat completions with `json_object` response format; default model `gpt-4o-mini`
-- **`AnthropicAIAdapter`** — messages API with markdown-fence stripping; default model `claude-haiku-4-5`
-- **`OllamaAIAdapter`** — local `/api/generate` with `format: "json"`; default model `llama3.2`
-- **`db.ask(collection, nlQuery, opts)`** — translate natural language to a filter via the language model; results cached by djb2 hash of `{ collection, schema, query }`
-- **`db.schema(collection)`** — returns declared or inferred `{ field: type }` schema for any collection
-- **`QueryCache`** — `set/get/toJSON/fromJSON`; persisted in `_meta` across connect/disconnect cycles
-- **`processLLMFilter(filter)`** — converts `$regex` strings → `RegExp`, ISO date strings in range operators → `Date`
-- **`validateLLMFilter(filter, schema)`** — warns on unknown fields; non-throwing
-
-#### Agent Memory
-- **`Memory` class** — per-session episodic store backed by `_memory_<sessionId>` collection
-- **`memory.remember(text)`** — stores text with embedding for semantic recall
-- **`memory.recall(query, opts)`** — semantic search over stored memories
-- **`memory.history(opts)`** — chronological listing with optional `since`/`limit`
-- **`memory.forget(id)`** — delete a memory entry by `_id`
-- **`memory.tokenCount()`** — token estimate (chars ÷ 4 heuristic)
-- **`memory.context(opts)`** — LLM-ready string capped to a token budget, newest-first selection
-- **`memory.compress(opts)`** — summarises old memories via `_aiAdapter`; keeps 10 most recent intact
-- **`db.useMemory(sessionId)`** — factory returning a `Memory` instance
-
-#### ChangeLog
-- **`ChangeLog` class** — append-only mutation log stored in `_changelog` collection
-- **`createCollection` `changelog: true` option** — enables per-collection mutation logging
-- **`changelog.log(op, collection, doc, prev, session)`** — records `insert`, `update`, `delete` with timestamp
-- **`changelog.query(collection, opts)`** — query entries with `since`, `limit`, `session` filters
-- **`changelog.restore(collection, timestamp, opts)`** — replays log entries to rebuild state at a point in time; supports single-doc `{ _id }` restore
-- **`db.changelog()`** — returns the shared `ChangeLog` instance
-- **`db.restore(collection, timestamp, opts)`** — convenience wrapper for `changelog.restore()`
-
-#### Encryption
-- **`EncryptedAdapter`** — wraps any `StorageAdapter` with AES-256-GCM; transparent to callers
-- **Algorithm**: AES-256-GCM via `globalThis.crypto.subtle` — Node ≥18, Bun, Deno, and all modern browsers; zero extra dependencies
-- **Wire format**: `base64(iv[12] | ciphertext + authTag[16])` — random IV per write, 128-bit authentication tag
-- **`encrypt: { key }` constructor option** — 64-char hex string or 32-byte `Uint8Array`; wraps `FsAdapter` transparently
-- **`namespace()` inherits `encrypt` config** — all namespaced instances share the same encryption key
-
-#### Docs & Testing
-- **Vitest test suite** — 239 tests across `tests/unit/` + `tests/integration/`; all I/O mocked via `MemoryAdapter`
-- **Full v4 TypeScript definitions** — `src/index.d.ts` updated with `AIAdapter`, `EncryptedAdapter`, `Memory`, `ChangeLog`, `EncryptConfig`, `ChangeLogEntry`, and all new API surface
-- **`CHANGELOG.md`** (this file)
-- **`AUDIT.md`** — Phase 0 audit log documenting all 19 fixes with before/after line references
-- **`MIGRATION.md`** — upgrade guide for v3 → v4 breaking changes
-- **`ARCHITECTURE.md`** — internal design reference covering all v4 + Phase 3 decisions
-- **`MockEmbeddingAdapter`** test helper — deterministic 4-dim vectors, call log for assertions
-- **`MockAIAdapter`** test helper — configurable `nlQuery → filter` map, `calls[]` + `summarizeCalls[]` logs
-
-#### Events & Reactive Queries
-- **`EventBus`** — lightweight cross-runtime pub/sub (`src/events.js`); zero Node.js dependencies, works in Node/Bun/Deno/browser
-- **`collection.watch(filter?, callback?)`** — observe mutations on a collection; callback form returns unsub fn, no-callback form returns `AsyncIterableIterator`
-- Mutation events shape: `{ op, collection, doc, prev? }` — emitted after every `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`
-
-#### Aggregation
-- **`collection.count(filter?)`** — document count with optional filter
-- **`collection.sum(field, filter?)`** — numeric field sum; skips non-numeric values; dot-notation supported
-- **`collection.avg(field, filter?)`** — numeric field average; returns `null` for empty/no-numeric
-- **`collection.groupBy(field, filter?)`** — group documents by field value → `{ value: docs[] }`
-
-#### Stats & Observability
-- **`db.stats(collection?)`** — returns `{ collection, count, estimatedSize, avgDocSize }` per collection
-- **`slowQueryLog` constructor option** — enables slow query recording with configurable `threshold` (ms) and `maxEntries`
-- **`db.slowQueries(opts?)`** — retrieve recorded slow queries; filters by `collection`, `minDuration`, `limit`; instrumented on `find()` and `search()`
-
-#### Session Tagging
-- **`session` option** on `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany` — passed through to changelog for audit trail
-
-#### MCP Server
-- **`db.mcp(opts?)`** — creates a `SkalexMCPServer` exposing the database as MCP tools
-- **Transports**: `stdio` (default — for Claude Desktop / Cursor) and `http` (HTTP + SSE)
-- **Tools**: `skalex_collections`, `skalex_schema`, `skalex_find`, `skalex_insert`, `skalex_update`, `skalex_delete`, `skalex_search`, `skalex_ask`
-- **Access control**: `scopes` map `{ collection | "*": ["read"] | ["read","write"] | ["admin"] }`; read-only scope hides write tools from `tools/list`
-- **Protocol**: JSON-RPC 2.0; `initialize`, `tools/list`, `tools/call`, `ping`, `notifications/initialized`
-- **`server.connect(transport)`** — accepts custom transports for embedding / testing
-- **`MockTransport`** test helper — in-memory transport for unit testing MCP servers
-
-#### Plugin System
-- **`PluginEngine`** — pre/post hooks on all collection operations (`src/plugins.js`)
-- **`db.use(plugin)`** — register a plugin; hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
-- **`plugins` constructor option** — pre-register plugins at construction time
-- All hooks are awaited in registration order; errors propagate to the caller
-
-#### Session Stats
-- **`SessionStats`** class — per-session read/write/lastActive tracking keyed by session ID (`src/session-stats.js`)
-- **`db.sessionStats(sessionId?)`** — return stats for one session or all sessions
-- **`session` option extended to `find()` and `search()`** — read operations now recorded per session
-- `insertMany`, `updateMany`, `deleteMany` all record writes against the provided session ID
-
-#### Edge & SQLite Adapters
-- **`D1Adapter`** (`src/adapters/storage/d1.js`) — Cloudflare D1 / Workers SQLite; pass a D1Database binding
-- **`BunSQLiteAdapter`** (`src/adapters/storage/bun-sqlite.js`) — Bun-native `bun:sqlite`; zero extra deps; `:memory:` or file path
-- **`LibSQLAdapter`** (`src/adapters/storage/libsql.js`) — LibSQL / Turso; pass any `@libsql/client`-compatible client
-
-#### Adapter Conformance Suite
-- **`tests/conformance/adapter.test.js`** — shared read/write/delete/list contract tests run against MemoryAdapter, FsAdapter (json), FsAdapter (gz), and EncryptedAdapter(MemoryAdapter)
-
-#### Docs & Testing (Phase 4)
-- **Vitest test suite** — 347 tests (18 test files); new tests: session-stats (22), plugins (20), adapter conformance (44)
-- **`src/index.d.ts`** updated with `MutationEvent`, `CollectionStats`, `SlowQueryEntry`, `SkalexMCPServer`, `MCPOptions`, `MCPScopes`, `SlowQueryLogConfig`, `Plugin`, `SessionEntry`, `D1Adapter`, `BunSQLiteAdapter`, `LibSQLAdapter`, aggregation/watch/stats/mcp/plugins/sessionStats methods, `session` option on find/search
-
-### Fixed
-- `findOne()` returned the raw document instead of the projected `newItem` — populate and select options were silently discarded
-- `matchesFilter()` short-circuited on the first key — multi-condition AND filters never evaluated beyond the first condition
-- Function filters evaluated as empty-object match due to `instanceof Object` check ordering
-- `$in` and `$nin` operators were semantically inverted and crashed on non-array field values
-- `$inc` in `applyUpdate()` modified a local variable and never wrote back — increments were silently lost
-- `$push` in `applyUpdate()` same write-back bug — pushed to a local copy
-- `applyUpdate()` set `updatedAt` inside the field loop — once per field instead of once per update call
-- `applyUpdate()` contained dead `Object.assign(item, item)` no-op (removed)
-- `isSaving` was a single database-level flag — concurrent saves of different collections were silently dropped
-- `isSaving` was not reset via `finally` — an unhandled error could lock the database permanently
-- `writeFile()` double-serialised JSON — files were written as a string-within-a-string
-- `findOne()` ignored the `_id` Map index — performed O(2n) scan instead of O(1) lookup
-- Nested key traversal in `matchesFilter()` crashed on null/undefined intermediate values
-- Nested key traversal falsely skipped values of `0`, `""`, `false`
-- `collection.js` imported native `fs` and `path` — broke non-Node environments and bypassed the storage adapter
-- `useCollection()` created a new `Collection` instance on every call — state could not be reliably attached
-- `loadData()` silently swallowed all errors — corrupt files were indistinguishable from missing files
-- `export()` and `saveData()` caught errors but did not re-throw — callers could not detect failure
-
-### Updated
-- `src/collection.js` and `src/index.js` fully rewritten to wire all new modules
-- `Collection` internal state renamed: `this.data` → `this._data`, `this.index` → `this._index`
-- `useCollection()` now caches and returns the same `Collection` instance; cache cleared on `disconnect()`
-- `export()` routes through the storage adapter — no more direct `fs`/`path` imports in `collection.js`
-- `generateUniqueId()` now uses `crypto.randomBytes` (Node) / `crypto.getRandomValues` (browser)
-- `filesys.js` class renamed from `fs` to `FileSystem` — no longer shadows the Node built-in
+> See [MIGRATION](MIGRATION.md) for step-by-step instructions on §1 Node.js requirement, §2 sort direction, and §3 CSV import.
 
 ---
 
-## [3.2.5] — prior
+### Added
+
+#### Constructor Options
+
+| Option | Description |
+|--------|-------------|
+| `adapter` | Plug in any storage backend without changing application code |
+| `encrypt: { key }` | Wrap the adapter with AES-256-GCM; accepts a 64-char hex string or 32-byte `Uint8Array` |
+| `autoSave` | Persist after every write automatically, without passing `{ save: true }` per operation; default `false` |
+| `ttlSweepInterval` | Interval in ms for a periodic TTL sweep; timer starts on `connect()` and stops on `disconnect()` |
+| `debug` | Log connect/disconnect lifecycle events |
+
+#### Storage & Adapters
+
+Six pluggable backends ship out of the box; swap without changing any other code:
+
+| Adapter | Environment |
+|---------|-------------|
+| `FsAdapter` | Node.js, Bun, Deno; atomic writes; `gz` (default) or `json` format |
+| `LocalStorageAdapter` | Browser `localStorage` |
+| `EncryptedAdapter` | Wraps any adapter with AES-256-GCM; random IV per write; zero extra dependencies |
+| `BunSQLiteAdapter` | Bun-native `bun:sqlite`; `:memory:` or file path |
+| `D1Adapter` | Cloudflare D1 / Workers |
+| `LibSQLAdapter` | LibSQL / Turso |
+
+#### Collection Options (`createCollection`)
+
+New options available when defining a collection:
+
+| Option | Description |
+|--------|-------------|
+| `softDelete` | Marks documents with `_deletedAt` instead of removing them; retrieve with `{ includeDeleted: true }` |
+| `versioning` | Auto-increments `_version` on every insert and update |
+| `strict` | Rejects documents with fields not declared in the schema |
+| `onSchemaError` | `"throw"` (default) \| `"warn"` \| `"strip"`; behaviour on schema validation failure |
+| `defaultTtl` | TTL applied to every inserted document automatically (e.g. `"24h"`) |
+| `defaultEmbed` | Field name auto-embedded as `_vector` on every insert |
+| `maxDocs` | Capped collection; oldest documents evicted FIFO when the limit is exceeded |
+
+#### Query Engine
+
+- **Secondary indexes**: declare `indexes: ["field"]` on `createCollection()` for O(1) lookups on any field
+- **Unique constraints**: `schema: { field: { unique: true } }` enforces no-duplicate on insert and update
+- **Query operators**: `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$fn`
+- **Dot-notation**: filter, sort, aggregate, and project nested fields: `{ "address.city": "Cairo" }`
+- **Filter pre-sorter**: indexed and equality fields are evaluated before regex/`$fn` for maximum performance
+
+#### Schema & Validation
+
+- **`db.schema(collection)`**: returns a declared or inferred `{ field: type }` map for any collection
+- Schema rules: `type`, `required`, `unique`, `enum`; declared on `createCollection()`
+
+#### TTL Documents
+
+- **`ttl` insert option**: `insertOne(doc, { ttl: "30m" | "24h" | "7d" | seconds })` sets `_expiresAt`
+- Expired documents are swept on `connect()` and on every `ttlSweepInterval` tick if configured
+
+#### Migrations
+
+- **`db.addMigration({ version, up })`**: register versioned migration functions; pending migrations run automatically on `connect()`
+- **`db.migrationStatus()`**: returns `{ current, applied, pending }`
+
+#### Database Methods
+
+- **`db.transaction(fn)`**: snapshots all in-memory state; rolls back automatically if `fn` throws
+- **`db.seed(fixtures, { reset })`**: bulk-insert fixtures per collection; `reset: true` clears before seeding
+- **`db.dump()`**: returns all user collection data as plain objects; internal system collections are excluded
+- **`db.inspect([name])`**: returns `{ name, count, schema, indexes, softDelete, versioning, strict, onSchemaError, maxDocs }` per collection
+- **`db.renameCollection(from, to)`**: renames a collection in memory and on disk
+- **`db.namespace(id)`**: returns a scoped `Skalex` instance stored under `<path>/<id>/`; inherits all config from the parent; throws if a custom `adapter` was configured (create a separate instance instead)
+- **`db.import(filePath)`**: imports a JSON array from any file path; collection name is derived from the filename
+- **`db.embed(text)`**: direct access to the configured embedding adapter
+
+#### Collection Methods
+
+- **`collection.upsert(filter, doc)`**: updates the first matching document or inserts if none found
+- **`collection.upsertMany(docs, matchKey)`**: batch upsert keyed on `matchKey`
+- **`collection.restore(filter)`**: undoes a soft delete; requires `softDelete: true` on the collection
+- **`insertOne` `ifNotExists` option**: `insertOne(doc, { ifNotExists: true })` returns the existing document instead of throwing on a duplicate
+
+#### Vector Search
+
+- **`OpenAIEmbeddingAdapter`**: OpenAI text embeddings; default model `text-embedding-3-small`
+- **`OllamaEmbeddingAdapter`**: local embeddings via Ollama; default model `nomic-embed-text`
+- **`ai` constructor option**: `{ provider, apiKey, embedModel, model, host }` wires both embedding and language model in one place
+- **`embed` insert option**: `insertOne(doc, { embed: "fieldName" })` auto-embeds the named field as `_vector`; works on `insertMany` too
+- **`collection.search(query, opts)`**: cosine similarity search; supports `filter` (hybrid search), `limit`, `minScore`
+- **`collection.similar(id, opts)`**: nearest-neighbour lookup by document ID
+- `_vector` is never exposed in query or search results
+
+#### AI Query Layer
+
+- **`OpenAILLMAdapter`**: chat completions; default model `gpt-4o-mini`
+- **`AnthropicLLMAdapter`**: Messages API; default model `claude-haiku-4-5`
+- **`OllamaLLMAdapter`**: local LLM via Ollama; default model `llama3.2`
+- **`db.ask(collection, nlQuery, opts)`**: translates a natural language question into a structured filter via the configured LLM, then runs `find()`; results are cached by query + schema hash and survive connect/disconnect cycles
+
+#### Agent Memory
+
+- **`db.useMemory(sessionId)`**: returns a `Memory` instance backed by a `_memory_<sessionId>` collection
+- **`memory.remember(text)`**: stores a text episode with a semantic embedding
+- **`memory.recall(query, opts)`**: semantic similarity search over stored memories
+- **`memory.history(opts)`**: chronological listing; supports `since` and `limit`
+- **`memory.forget(id)`**: delete a memory entry by `_id`
+- **`memory.context(opts)`**: returns an LLM-ready context string capped to a token budget
+- **`memory.compress(opts)`**: summarises older episodes via the LLM; keeps the most recent entries intact
+- **`memory.tokenCount()`**: token estimate (chars ÷ 4 heuristic)
+
+#### ChangeLog
+
+- **`changelog: true`** collection option: enables an append-only mutation log on the collection
+- **`db.changelog()`**: returns the shared `ChangeLog` instance
+- **`changelog.query(collection, opts)`**: query log entries with `since`, `limit`, `session` filters
+- **`db.restore(collection, timestamp, opts)`**: replays the log to restore a collection to any past point in time; single-document restore supported via `{ _id }`
+
+#### Events & Reactive Queries
+
+- **`collection.watch(filter?, callback?)`**: observe mutations on a collection in real time; callback form returns an unsubscribe function; no-callback form returns an `AsyncIterableIterator`
+- **`db.watch(callback)`**: global observer that fires for every mutation across all collections; event shape: `{ op, collection, doc, prev? }`
+
+#### Aggregation
+
+- **`collection.count(filter?)`**: document count with optional filter
+- **`collection.sum(field, filter?)`**: numeric field sum; dot-notation supported
+- **`collection.avg(field, filter?)`**: numeric field average
+- **`collection.groupBy(field, filter?)`**: group documents by field value; returns a `{ value: docs[] }` map
+
+#### Stats & Observability
+
+- **`db.stats(collection?)`**: `{ collection, count, estimatedSize, avgDocSize }` per collection
+- **`slowQueryLog` constructor option**: `{ threshold, maxEntries }` enables slow query recording
+- **`db.slowQueries(opts?)`**: retrieve recorded slow queries; filter by `collection`, `minDuration`, `limit`
+- **`db.slowQueryCount()`**: returns the number of recorded slow queries
+- **`db.clearSlowQueries()`**: clears the slow query ring buffer
+
+#### Session Stats & Tagging
+
+- **`session` option** on all mutations and reads: tags operations for audit and per-session stat tracking
+- **`db.sessionStats(sessionId?)`**: returns `{ sessionId, reads, writes, lastActive }` per session
+
+#### Plugin System
+
+- **`db.use(plugin)`**: register a plugin with lifecycle hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
+- **`plugins` constructor option**: pre-register plugins at construction time
+- All hooks are `async`, awaited in registration order; a throwing hook propagates the error to the caller
+
+#### MCP Server
+
+- **`db.mcp(opts?)`**: exposes the database as MCP tools for Claude Desktop, Cursor, and any MCP-compatible client
+- **Transports**: `stdio` (default, for Claude Desktop / Cursor) and `http` (HTTP + SSE, for network clients)
+- **Tools**: `skalex_collections`, `skalex_schema`, `skalex_find`, `skalex_insert`, `skalex_update`, `skalex_delete`, `skalex_search`, `skalex_ask`
+- **`scopes`**: per-collection access control: `["read"]`, `["read","write"]`, or `["admin"]`; use `"*"` as a wildcard; default is `{ "*": ["read"] }` (read-only)
+- **`allowedOrigin`**: opt-in CORS for browser MCP clients (HTTP transport only); default `null`
+- **`maxBodySize`**: maximum POST body size in bytes for the HTTP transport (default 1 MiB); increase when inserting documents with large text fields
+- **`scripts/mcp-server.js`**: ready-to-run stdio entry point for Claude Desktop / Cursor; CWD-independent
+
+#### TypeScript
+
+- Full generics and union types ship in the package; no `@types/` package needed
+- `Collection<T>`: typed collection with inferred return shapes on all methods
+
+#### Runtime & Packaging
+
+- Runs in Node.js ≥18, Bun, Deno 2.x, browsers, and edge runtimes (Cloudflare Workers, etc.)
+- `dist/skalex.esm.js`: ESM for Node.js, Bun, Deno
+- `dist/skalex.cjs`: CommonJS for Node.js `require()`
+- `dist/skalex.browser.js`: browser ESM; all `node:*` built-ins stubbed at build time
+- `dist/skalex.esm.min.js` + `dist/skalex.min.cjs`: minified variants
+- Subpath exports: `skalex/connectors/encrypted`, `/local`, `/d1`, `/bun-sqlite`, `/libsql`
+- `skalex/min`: subpath export for minified builds
+
+---
+
+### Security
+
+- **Regex denial of service**: `db.ask()` validates all LLM-generated `$regex` patterns before compilation; patterns are length-capped and those with nested quantifiers (e.g. `(a+)+`) that cause catastrophic backtracking are rejected
+- **MCP system collection access**: collection names starting with `_` are blocked in all MCP tool calls; `skalex_collections` does not expose internal system collections
+- **MCP HTTP request flooding**: the HTTP transport enforces a configurable POST body size limit (default 1 MiB via `maxBodySize`); oversized requests are rejected with a 413 response
+- **SQL injection via table name**: the `table` option on `BunSQLiteAdapter`, `D1Adapter`, and `LibSQLAdapter` is validated against a strict identifier allowlist at construction time
+- **Prototype pollution**: field names in `updateOne` / `updateMany`, dot-notation filter paths, and `groupBy` field values are hardened against `__proto__`, `constructor`, and `prototype` manipulation
+- **Encryption key validation**: `EncryptedAdapter` validates the full hex key string on construction and throws immediately on invalid characters, preventing silent key weakening
+- **TTL overflow**: `parseTtl()` throws on non-finite results, preventing extremely large values from silently making documents permanent
+- **API error body leakage**: error response bodies from OpenAI, Anthropic, and Ollama are truncated to 200 characters before being included in thrown errors
+
+---
+
+## [3.2.5] - prior
 
 - Fixed: Files Read/Write compression handling
 
-## [3.2.4] — prior
+## [3.2.4] - prior
 
 - Fixed: Empty filter object handling
 
-## [3.2.3] — prior
+## [3.2.3] - prior
 
 - Fixed: Empty filter object handling
 
-## [3.2.2] — prior
+## [3.2.2] - prior
 
 - Fixed: `Collection` reference
 
-## [3.2.1] — prior
+## [3.2.1] - prior
 
 - Fixed: `updateOne` & `updateMany` methods issue
 - Updated: `update` methods for optimizations
 
-## [3.2.0] — prior
+## [3.2.0] - prior
 
 - Added: Complete isolated and improved `fs` module
 - Updated: `loadData` & `saveData` methods
+- Updated: `utils` by separating `fs` related methods
+- Updated: `logger` for better error logging
 - Fixed: `findOne` method broken options
 - Fixed: `find` method find all use-case
+- Cleaned: all methods for better handling
 
-## [3.1.0] — prior
+## [3.1.0] - prior
 
 - Added: `$inc` and `$push` operators to `updateOne` and `updateMany`
 - Fixed: `saveData` format according to the set config data format
 
-## [3.0.1] — prior
+## [3.0.1] - prior
 
 - Fixed: Broken data directory `path` reference
 
-## [3.0.0] — prior
+## [3.0.0] - prior
 
-- Breaking changes — see docs/release-notes.md for details
+> Breaking changes: see [MIGRATION](MIGRATION.md) for upgrade instructions.
+
+- Added: Find nested object values support `find({ "object.key": "value" })`
+- Added: Setting collection `export` destination directory
+- Changed: Setting database files directory from `string` to `object` key `{ path: "./.db" }`
+- Changed: Saved default data format from `JSON` files to compressed `gz` files
+- Changed: Operations `save` from method to an option for `insert`/`update`/`delete`
+- Changed: `exportToCSV` method name to `export`
+- Changed: `find` operation returns all docs by default; use `limit` for pagination
+- Updated: Collection `export` default destination to `exports` directory under `dataDirectory`
+- Updated: All `many` operations output to object key `{ docs }`
+- Updated: Operations `save` to be more efficient by saving used collection instead of all
+- Updated: `population` for dynamic key population
+- Updated: `loadData` and `saveData` methods for improved concurrent file reads/writes
+- Updated: Files & directory handling for consistent path formatting across operating systems
+- Fixed: Updating index map for `updateOne` and `updateMany` operations
+- Fixed: `updateMany` to save inserted updates
+- Fixed: Setting `isSaving` flag in error cases while saving collections
+- Cleaned: `matchesFilter` method for better readability
+
+## [2.0.0] - prior
+
+- Added: Pagination info on the `find` method return
+- Added: Custom `logger` utility function
+- Updated: `generateUniqueId` method to generate better and more unique IDs
+- Updated: `createdAt` to be eligible for modification on creation
+- Updated: `updatedAt` to be eligible for modification on update
+- Updated: `saveData` to provide better performance without conflicts
+
+## [1.4.1] - prior
+
+- Fixed: `saveData` method feedback was broken
+
+## [1.4.0] - prior
+
+- Added: `isSaving` attribute to check if there's saving in process
+- Updated: `buildIndex` method to accept external index key
+- Fixed: `matchesFilter` validating `itemValue` before applying filter
+- Cleaned: `saveData` method and some house keeping
+
+## [1.3.0] - prior
+
+- Added: `$fn` custom function as a filtering option to the `find` method
+- Added: `function` option to the `find` method
+- Cleaned: `Collection` class and some house keeping
+
+## [1.2.0] - prior
+
+- Added: `REGEX` filtering option to the `find` method
+- Added: `Pagination` option to the `find` method
+- Added: `Sorting` options to the `find` method
+- Cleaned: Project files and some house keeping
+
+## [1.1.4] - prior
+
+- Fixed: Collection population of `find` method
+- Added: Collection population to `findOne` method
+
+## [1.1.3] - prior
+
+- Updated: Library documentation
+
+## [1.1.2] - prior
+
+- Updated: Library documentation
+
+## [1.1.1] - prior
+
+- Added: Library documentation
+- Added: Comprehensive code comments
+
+## [1.1.0] - prior
+
+- Added: `useCollection` to select used collections or create if not exists
+- Added: Collections relations: one-to-one and one-to-many
+- Added: `population` function to populate linked collections
+- Added: `select` function to select returned record values
+- Added: `createdAt` and `updatedAt` values to each record
+- Cleaned: Project files and some house keeping
+
+## [1.0.3] - prior
+
+- Fixed: NPM package
+
+## [1.0.2] - prior
+
+- Fixed: NPM package
+
+## [1.0.1] - prior
+
+- Fixed: Library reference
+
+## [1.0.0] - prior
+
+- Initial release

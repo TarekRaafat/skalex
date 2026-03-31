@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skalex Browser Smoke Test</title>
+  <style>
+    body { font-family: monospace; padding: 2rem; background: #0d1117; color: #e6edf3; }
+    h1   { color: #58a6ff; margin-bottom: 1rem; }
+    h2   { color: #8b949e; font-size: 0.9rem; margin: 1.5rem 0 0.5rem; }
+    .pass  { color: #3fb950; }
+    .fail  { color: #f85149; }
+    .throw { color: #d29922; }
+    #summary { margin-top: 2rem; padding: 1rem; background: #161b22; border-radius: 6px; }
+    #summary.ok   { border-left: 4px solid #3fb950; }
+    #summary.fail { border-left: 4px solid #f85149; }
+  </style>
+</head>
+<body>
+  <h1>Skalex v4 — Browser Smoke Test</h1>
+  <p id="info">Running…</p>
+  <div id="output"></div>
+  <div id="summary"></div>
+
+  <script type="module">
+    // ─── Import from the browser-specific dist build and connector barrel ───
+    import Skalex from "../../dist/skalex.browser.js";
+    import { LocalStorageAdapter, EncryptedAdapter } from "../../src/connectors/storage/browser.js";
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    const out = document.getElementById("output");
+    let passed = 0;
+    let failed = 0;
+
+    function assert(label, condition) {
+      const el = document.createElement("div");
+      if (condition) {
+        el.className = "pass";
+        el.textContent = `  ✓ ${label}`;
+        passed++;
+      } else {
+        el.className = "fail";
+        el.textContent = `  ✗ ${label}`;
+        failed++;
+        console.error("FAILED:", label);
+      }
+      out.appendChild(el);
+    }
+
+    async function section(name, fn) {
+      const h = document.createElement("h2");
+      h.textContent = name;
+      out.appendChild(h);
+      try {
+        await fn();
+      } catch (err) {
+        const el = document.createElement("div");
+        el.className = "throw";
+        el.textContent = `  ✗ THREW: ${err.message}`;
+        out.appendChild(el);
+        failed++;
+        console.error(err);
+      }
+    }
+
+    // ─── Clean up any leftovers from previous runs ────────────────────────────
+
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("skalex:smoke-test:")) localStorage.removeItem(key);
+    }
+
+    // ─── Setup ───────────────────────────────────────────────────────────────
+
+    const adapter = new LocalStorageAdapter({ namespace: "smoke-test" });
+    const db = new Skalex({ adapter });
+    await db.connect();
+
+    // ─── Core CRUD ───────────────────────────────────────────────────────────
+
+    await section("insertOne / find / findOne", async () => {
+      const col = db.useCollection("users");
+      const data = await col.insertOne({ name: "Alice", role: "admin" });
+
+      assert("insertOne returns _id",               typeof data._id === "string");
+      assert("insertOne sets createdAt as Date",    data.createdAt instanceof Date);
+      assert("_vector is not exposed",              !("_vector" in data));
+
+      const found = await col.findOne({ name: "Alice" });
+      assert("findOne returns correct doc",         found?.name === "Alice");
+
+      const { docs } = await col.find({ role: "admin" });
+      assert("find returns matching docs",          docs.length === 1);
+    });
+
+    await section("updateOne / deleteOne", async () => {
+      const col = db.useCollection("users");
+      const r = await col.updateOne({ name: "Alice" }, { role: "superadmin" });
+      assert("updateOne returns updated doc",       r?.role === "superadmin");
+
+      await col.insertOne({ name: "Temp" });
+      await col.deleteOne({ name: "Temp" });
+      assert("deleteOne removes doc",               await col.findOne({ name: "Temp" }) === null);
+    });
+
+    // ─── Aggregation ─────────────────────────────────────────────────────────
+
+    await section("count / sum / avg / groupBy", async () => {
+      const col = db.useCollection("orders");
+      await col.insertMany([
+        { product: "A", amount: 10 },
+        { product: "B", amount: 20 },
+        { product: "A", amount: 30 },
+      ]);
+
+      assert("count()",                             await col.count() === 3);
+      assert("sum()",                               await col.sum("amount") === 60);
+      assert("avg()",                               await col.avg("amount") === 20);
+      const groups = await col.groupBy("product");
+      assert("groupBy() — A has 2 docs",            groups.A?.length === 2);
+    });
+
+    // ─── Sort & Pagination ───────────────────────────────────────────────────
+
+    await section("sort / pagination", async () => {
+      const col = db.useCollection("nums");
+      await col.insertMany([{ n: 3 }, { n: 1 }, { n: 2 }]);
+
+      const { docs: asc } = await col.find({}, { sort: { n: 1 } });
+      assert("sort ascending",                      asc.map(d => d.n).join(",") === "1,2,3");
+
+      const page = await col.find({}, { sort: { n: 1 }, page: 1, limit: 2 });
+      assert("pagination totalDocs",                page.totalDocs === 3);
+      assert("pagination page 1 has 2 docs",        page.docs.length === 2);
+    });
+
+    // ─── Query operators ─────────────────────────────────────────────────────
+
+    await section("query operators ($gt, $in, $fn, RegExp)", async () => {
+      const col = db.useCollection("qops");
+      await col.insertMany([
+        { n: 1, tag: "a" },
+        { n: 2, tag: "b" },
+        { n: 3, tag: "a" },
+      ]);
+
+      const { docs: gt } = await col.find({ n: { $gt: 1 } });
+      assert("$gt works",                           gt.length === 2);
+
+      const { docs: inArr } = await col.find({ tag: { $in: ["a"] } });
+      assert("$in works",                           inArr.length === 2);
+
+      const { docs: fn } = await col.find({ n: { $fn: v => v % 2 === 0 } });
+      assert("$fn works",                           fn.length === 1);
+
+      const { docs: rx } = await col.find({ tag: /^a/ });
+      assert("RegExp works",                        rx.length === 2);
+    });
+
+    // ─── Transaction ─────────────────────────────────────────────────────────
+
+    await section("transaction", async () => {
+      const col = db.useCollection("accounts");
+      await col.insertMany([{ name: "A", bal: 100 }, { name: "B", bal: 50 }]);
+
+      await db.transaction(async (tx) => {
+        const c = tx.useCollection("accounts");
+        await c.updateOne({ name: "A" }, { bal: { $inc: -10 } });
+        await c.updateOne({ name: "B" }, { bal: { $inc:  10 } });
+      });
+
+      assert("transaction commit: A",               (await col.findOne({ name: "A" }))?.bal === 90);
+      assert("transaction commit: B",               (await col.findOne({ name: "B" }))?.bal === 60);
+    });
+
+    // ─── Watch ───────────────────────────────────────────────────────────────
+
+    await section("collection.watch()", async () => {
+      const col = db.useCollection("events");
+      const ops = [];
+      const unsub = col.watch(e => ops.push(e.op));
+
+      await col.insertOne({ x: 1 });
+      await col.updateOne({ x: 1 }, { x: 2 });
+      await col.deleteOne({ x: 2 });
+      unsub();
+
+      assert("watch fires insert/update/delete",    ops.join(",") === "insert,update,delete");
+    });
+
+    // ─── Plugin system ────────────────────────────────────────────────────────
+
+    await section("plugin system (db.use())", async () => {
+      const log = [];
+      db.use({
+        async beforeInsert(ctx) { log.push(`before:${ctx.collection}`); },
+        async afterInsert(ctx)  { log.push(`after:${!!ctx.doc._id}`);  },
+        async afterFind(ctx)    { log.push(`find:${ctx.docs.length}`);  },
+      });
+
+      const col = db.useCollection("plug");
+      await col.insertOne({ x: 1 });
+      await col.find({});
+
+      assert("beforeInsert fired",                  log.includes("before:plug"));
+      assert("afterInsert fired with _id",          log.includes("after:true"));
+      assert("afterFind fired",                     log.some(l => l.startsWith("find:")));
+    });
+
+    // ─── Session stats ────────────────────────────────────────────────────────
+
+    await section("session stats", async () => {
+      const col = db.useCollection("ss");
+      await col.insertOne({ v: 1 }, { session: "browser-1" });
+      await col.insertOne({ v: 2 }, { session: "browser-1" });
+      await col.find({}, { session: "browser-1" });
+
+      const s = db.sessionStats("browser-1");
+      assert("sessionStats: writes === 2",          s?.writes === 2);
+      assert("sessionStats: reads === 1",           s?.reads === 1);
+      assert("sessionStats: lastActive is Date",    s?.lastActive instanceof Date);
+    });
+
+    // ─── db.stats() ──────────────────────────────────────────────────────────
+
+    await section("db.stats()", async () => {
+      const s = db.stats("users");
+      assert("stats has count",                     typeof s?.count === "number");
+      assert("stats has estimatedSize",             s?.estimatedSize > 0);
+
+      const all = db.stats();
+      assert("stats() returns array",               Array.isArray(all));
+    });
+
+    // ─── LocalStorage persistence ─────────────────────────────────────────────
+
+    await section("LocalStorageAdapter persistence", async () => {
+      const col = db.useCollection("persist");
+      await col.insertOne({ persisted: true });
+      await db.saveData("persist");
+
+      // list() must return saved collection names via Object.keys path
+      const listAdapter = new LocalStorageAdapter({ namespace: "smoke-test" });
+      const names = await listAdapter.list();
+      assert("list() finds saved collections",      names.includes("persist"));
+      assert("list() excludes unrelated keys",      names.every(n => !n.startsWith("skalex:")));
+
+      // Re-open with a fresh Skalex instance using the same namespace
+      const db2 = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "smoke-test" }) });
+      await db2.connect();
+      const col2 = db2.useCollection("persist");
+      const { docs } = await col2.find({ persisted: true });
+      assert("data persists across reconnect",      docs.length >= 1);
+      await db2.disconnect();
+    });
+
+    // ─── MCP factory ─────────────────────────────────────────────────────────
+
+    await section("db.mcp() factory", async () => {
+      const server = db.mcp({ transport: "stdio" });
+      assert("mcp() returns server",                typeof server.listen === "function");
+    });
+
+    // ─── Connector barrel ─────────────────────────────────────────────────────
+
+    await section("connector barrel (src/connectors/storage/browser.js)", async () => {
+      assert("LocalStorageAdapter exported from barrel", typeof LocalStorageAdapter === "function");
+      assert("EncryptedAdapter exported from barrel",    typeof EncryptedAdapter === "function");
+    });
+
+    // ─── Disconnect ──────────────────────────────────────────────────────────
+
+    await db.disconnect();
+
+    // ─── Summary ─────────────────────────────────────────────────────────────
+
+    const summaryEl = document.getElementById("summary");
+    const ua = navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/)?.[0] ?? navigator.userAgent.slice(0, 60);
+    summaryEl.className = failed === 0 ? "ok" : "fail";
+    summaryEl.innerHTML = `
+      <strong>${failed === 0 ? "✓ All checks passed" : `✗ ${failed} check(s) failed`}</strong><br>
+      Passed: ${passed} &nbsp; Failed: ${failed}<br>
+      Browser: ${ua}
+    `;
+    document.getElementById("info").textContent = `Finished — ${passed} passed, ${failed} failed.`;
+
+    // Clean up localStorage after test
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("skalex:smoke-test:") || key.startsWith("__raw:")) {
+        localStorage.removeItem(key);
+      }
+    }
+  </script>
+</body>
+</html>

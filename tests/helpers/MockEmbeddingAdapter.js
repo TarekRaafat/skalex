@@ -5,7 +5,7 @@
  * a deterministic 4-dimensional vector from the character codes so tests
  * can assert on score ordering without calling any external API.
  */
-const EmbeddingAdapter = require("../../src/adapters/embedding/base.js");
+import EmbeddingAdapter from "../../src/connectors/embedding/base.js";
 
 class MockEmbeddingAdapter extends EmbeddingAdapter {
   /**
@@ -28,4 +28,4 @@ class MockEmbeddingAdapter extends EmbeddingAdapter {
   }
 }
 
-module.exports = MockEmbeddingAdapter;
+export default MockEmbeddingAdapter;

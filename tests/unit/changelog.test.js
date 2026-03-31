@@ -104,6 +104,37 @@ describe("ChangeLog — log / query", () => {
 // ─── Collection changelog option ─────────────────────────────────────────────
 
 describe("Collection changelog: true option", () => {
+  test("schema is preserved after disconnect + reconnect", async () => {
+    const db = makeDb();
+    db.createCollection("products", { schema: { name: "string", price: "number" } });
+    await db.connect();
+    await db.useCollection("products").insertOne({ name: "Widget", price: 9.99 });
+    await db.disconnect();
+
+    // Reconnect — schema must survive without re-calling createCollection
+    await db.connect();
+    const col = db.useCollection("products");
+    await expect(col.insertOne({ name: 123, price: 9.99 })).rejects.toThrow(/Validation/);
+    await expect(col.insertOne({ name: "Gadget", price: 19.99 })).resolves.toBeDefined();
+    await db.disconnect();
+  });
+
+  test("changelog:true is preserved after disconnect + reconnect", async () => {
+    const db = makeDb();
+    db.createCollection("events", { changelog: true });
+    await db.connect();
+    const events = db.useCollection("events");
+    await events.insertOne({ type: "login" });
+    await db.disconnect();
+
+    // Reconnect — loadData must preserve the changelog:true setting
+    await db.connect();
+    await db.useCollection("events").insertOne({ type: "logout" });
+    const entries = await db.changelog().query("events");
+    expect(entries).toHaveLength(2);
+    await db.disconnect();
+  });
+
   test("insertOne logs an entry when changelog:true", async () => {
     const db = makeDb();
     await db.connect();
@@ -132,8 +163,8 @@ describe("Collection changelog: true option", () => {
     await db.connect();
     db.createCollection("items", { changelog: true });
     const items = db.useCollection("items");
-    const { data } = await items.insertOne({ name: "old" });
-    await items.updateOne({ _id: data._id }, { name: "new" });
+    const doc = await items.insertOne({ name: "old" });
+    await items.updateOne({ _id: doc._id }, { name: "new" });
     const entries = await db.changelog().query("items");
     const updateEntry = entries.find(e => e.op === "update");
     expect(updateEntry).toBeDefined();
@@ -147,12 +178,12 @@ describe("Collection changelog: true option", () => {
     await db.connect();
     db.createCollection("items", { changelog: true });
     const items = db.useCollection("items");
-    const { data } = await items.insertOne({ name: "to-delete" });
-    await items.deleteOne({ _id: data._id });
+    const doc = await items.insertOne({ name: "to-delete" });
+    await items.deleteOne({ _id: doc._id });
     const entries = await db.changelog().query("items");
     const del = entries.find(e => e.op === "delete");
     expect(del).toBeDefined();
-    expect(del.docId).toBe(data._id);
+    expect(del.docId).toBe(doc._id);
     await db.disconnect();
   });
 
@@ -244,6 +275,28 @@ describe("ChangeLog — restore", () => {
     await db.connect();
     // No entries logged — restore should not throw
     await expect(db.restore("empty", new Date())).resolves.toBeUndefined();
+    await db.disconnect();
+  });
+
+  test("restore() does not write replay operations back into the changelog", async () => {
+    const db = makeDb();
+    await db.connect();
+    const cl = db.changelog();
+
+    const T_PAST = new Date("2020-01-01");
+    const T_SNAP = new Date("2020-06-01");
+
+    const doc = { _id: "x1", value: "original", createdAt: T_PAST, updatedAt: T_PAST };
+    await cl.log("insert", "notes", doc);
+    backdateLastEntries(db, 1, T_PAST);
+
+    await db.restore("notes", T_SNAP);
+
+    // Only the original insert entry should exist — no phantom entries from the restore replay
+    const entries = await cl.query("notes");
+    expect(entries).toHaveLength(1);
+    expect(entries[0].op).toBe("insert");
+
     await db.disconnect();
   });
 });

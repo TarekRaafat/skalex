@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from "vitest";
-import MigrationEngine from "../../src/migrations.js";
+import MigrationEngine from "../../src/engine/migrations.js";
 
 describe("MigrationEngine", () => {
   function makeEngine(migrations = []) {

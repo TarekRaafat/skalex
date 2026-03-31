@@ -1,7 +1,9 @@
 {
   "name": "skalex",
   "version": "4.0.0-alpha",
+  "minVersion": "4.0",
   "license": "Apache-2.0",
+  "type": "module",
   "description": "AI-first · Isomorphic · Zero-dependency · Local-first JavaScript database.",
   "keywords": [
     "skalex",
@@ -41,50 +43,72 @@
   "bugs": {
     "url": "https://github.com/TarekRaafat/skalex/issues"
   },
-  "main": "./dist/skalex.cjs.js",
+  "main": "./dist/skalex.cjs",
   "module": "./dist/skalex.esm.js",
+  "browser": "./dist/skalex.browser.js",
+  "jsdelivr": "./dist/skalex.umd.min.js",
+  "unpkg": "./dist/skalex.umd.min.js",
   "types": "./dist/skalex.d.ts",
   "exports": {
     ".": {
+      "browser": "./dist/skalex.browser.js",
       "import": "./dist/skalex.esm.js",
-      "require": "./dist/skalex.cjs.js",
+      "require": "./dist/skalex.cjs",
       "types": "./dist/skalex.d.ts"
     },
     "./min": {
+      "browser": "./dist/skalex.browser.js",
       "import": "./dist/skalex.esm.min.js",
-      "require": "./dist/skalex.cjs.min.js",
+      "require": "./dist/skalex.min.cjs",
       "types": "./dist/skalex.d.ts"
     },
-    "./adapters/encrypted": {
-      "require": "./src/adapters/storage/encrypted.js",
-      "default": "./src/adapters/storage/encrypted.js"
+    "./connectors": {
+      "import": "./src/connectors/index.js"
     },
-    "./adapters/local": {
-      "require": "./src/adapters/storage/local.js",
-      "default": "./src/adapters/storage/local.js"
+    "./connectors/storage": {
+      "import": "./src/connectors/storage/index.js"
     },
-    "./adapters/d1": {
-      "require": "./src/adapters/storage/d1.js",
-      "default": "./src/adapters/storage/d1.js"
+    "./connectors/embedding": {
+      "import": "./src/connectors/embedding/index.js"
     },
-    "./adapters/bun-sqlite": {
-      "require": "./src/adapters/storage/bun-sqlite.js",
-      "default": "./src/adapters/storage/bun-sqlite.js"
+    "./connectors/llm": {
+      "import": "./src/connectors/llm/index.js"
     },
-    "./adapters/libsql": {
-      "require": "./src/adapters/storage/libsql.js",
-      "default": "./src/adapters/storage/libsql.js"
+    "./connectors/fs": {
+      "import": "./src/connectors/storage/fs.js"
+    },
+    "./connectors/encrypted": {
+      "import": "./src/connectors/storage/encrypted.js"
+    },
+    "./connectors/local": {
+      "import": "./src/connectors/storage/local.js"
+    },
+    "./connectors/d1": {
+      "import": "./src/connectors/storage/d1.js"
+    },
+    "./connectors/bun-sqlite": {
+      "import": "./src/connectors/storage/bun-sqlite.js"
+    },
+    "./connectors/libsql": {
+      "import": "./src/connectors/storage/libsql.js"
     }
   },
   "files": [
     "dist",
-    "src"
+    "src/connectors"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "rollup -c && cp src/index.d.ts dist/skalex.d.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "smoke:node": "node tests/smoke/node.test.cjs",
+    "smoke:bun": "bun tests/smoke/bun.test.js && bun tests/smoke/bun-sqlite.test.js",
+    "smoke:deno": "deno run tests/smoke/deno.test.js",
+    "smoke:browser": "node tests/smoke/browser.test.js",
+    "smoke": "npm run smoke:node && npm run smoke:bun && npm run smoke:deno && npm run smoke:browser",
+    "test:all": "npm run test && npm run smoke"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -101,12 +125,14 @@
       "email": "tarek.m.raafat@gmail.com"
     }
   ],
+  "sideEffects": false,
   "devDependencies": {
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-terser": "^1.0.0",
-    "jest": "^29.5.0",
-    "rollup": "^4.60.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "playwright": "^1.58.2",
+    "rollup": "^4.60.1",
     "vitest": "^4.1.2"
   }
 }

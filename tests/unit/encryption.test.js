@@ -2,7 +2,7 @@
  * Unit tests for EncryptedAdapter — AES-256-GCM at-rest encryption.
  */
 import { describe, test, expect } from "vitest";
-import EncryptedAdapter from "../../src/adapters/storage/encrypted.js";
+import EncryptedAdapter from "../../src/connectors/storage/encrypted.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
 // 64-char hex → 32-byte AES-256 key

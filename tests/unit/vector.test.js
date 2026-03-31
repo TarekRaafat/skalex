@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { cosineSimilarity, stripVector } from "../../src/vector.js";
+import { cosineSimilarity, stripVector } from "../../src/engine/vector.js";
 
 // ─── cosineSimilarity ────────────────────────────────────────────────────────
 

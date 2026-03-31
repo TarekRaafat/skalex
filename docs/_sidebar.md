@@ -2,6 +2,7 @@
 - - [<div class="ps-icon ps-icon-download"></div> Installation](installation.md "Installation | Skalex")
 - - [<div class="ps-icon ps-icon-book-tag"></div>Documentation](documentation.md "Documentation | Skalex")
 - - [<div class="ps-icon ps-icon-lab"></div> Usage Examples](usage-examples.md "Usage Examples | Skalex")
+- - [<div class="ps-icon ps-icon-code"></div> Playground](playground.md "Playground | Skalex")
 - <div class="title">References</div>
 - - [<div class="ps-icon ps-icon-headset"></div> Support](support.md "Support | Skalex")
 - - [<div class="ps-icon ps-icon-road"></div> Roadmap](roadmap.md "Roadmap | Skalex")

@@ -5,13 +5,13 @@ import { describe, test, expect, beforeEach } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
-import MockAIAdapter from "../helpers/MockAIAdapter.js";
+import MockLLMAdapter from "../helpers/MockLLMAdapter.js";
 
 function makeDb() {
   const adapter = new MemoryAdapter();
   const db = new Skalex({ adapter });
   db._embeddingAdapter = new MockEmbeddingAdapter();
-  db._aiAdapter = new MockAIAdapter();
+  db._aiAdapter = new MockLLMAdapter();
   return db;
 }
 
@@ -19,7 +19,7 @@ describe("Memory — remember / recall / history / forget", () => {
   test("remember() stores a text entry and returns the doc", async () => {
     const db = makeDb();
     const mem = db.useMemory("session-1");
-    const { data } = await mem.remember("The sky is blue");
+    const data = await mem.remember("The sky is blue");
     expect(data._id).toBeDefined();
     expect(data.text).toBe("The sky is blue");
     expect(data.sessionId).toBe("session-1");
@@ -68,10 +68,10 @@ describe("Memory — remember / recall / history / forget", () => {
   test("forget() removes a specific memory by id", async () => {
     const db = makeDb();
     const mem = db.useMemory("session-1");
-    const { data } = await mem.remember("to forget");
-    await mem.forget(data._id);
+    const doc = await mem.remember("to forget");
+    await mem.forget(doc._id);
     const docs = await mem.history();
-    expect(docs.find(d => d._id === data._id)).toBeUndefined();
+    expect(docs.find(d => d._id === doc._id)).toBeUndefined();
   });
 
   test("forget() returns null for unknown id", async () => {

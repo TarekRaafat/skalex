@@ -2,7 +2,7 @@
  * Unit tests for SessionStats + db.sessionStats() integration.
  */
 import { describe, test, expect, beforeEach } from "vitest";
-import SessionStats from "../../src/session-stats.js";
+import SessionStats from "../../src/features/session-stats.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
@@ -180,8 +180,8 @@ describe("db.sessionStats()", () => {
     const db = makeDb();
     await db.connect();
     const col = db.useCollection("items");
-    const { data } = await col.insertOne({ name: "x" });
-    await col.deleteOne({ _id: data._id }, { session: "user-5" });
+    const doc = await col.insertOne({ name: "x" });
+    await col.deleteOne({ _id: doc._id }, { session: "user-5" });
     expect(db.sessionStats("user-5").writes).toBe(1);
     await db.disconnect();
   });

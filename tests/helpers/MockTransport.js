@@ -47,4 +47,4 @@ class MockTransport {
   clear() { this._sent = []; }
 }
 
-module.exports = MockTransport;
+export default MockTransport;
