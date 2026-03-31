@@ -30,7 +30,7 @@
 
 ## What is Skalex? <!-- {docsify-ignore} -->
 
-`Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package — no server, no infrastructure, no external services. One `npm install skalex` on Node.js, Bun, Deno, browsers, and edge runtimes.
+`Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package — no server, no infrastructure, no external services. One `npm install skalex@alpha` on Node.js, Bun, Deno, browsers, and edge runtimes.
 
 **What sets it apart:** all AI capabilities are built into the core. Vector search with cosine similarity, semantic agent memory with compression, `db.ask()` natural language queries via any LLM, and a one-line MCP server for Claude Desktop and Cursor — not plugins, not external services, not additional dependencies. OpenAI and Ollama adapters ship in the box.
 

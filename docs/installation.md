@@ -13,8 +13,10 @@ In 30 seconds, you'll have a database running. No server to provision. No config
 ## Install
 
 ```bash
-npm i skalex
+npm install skalex@alpha
 ```
+
+> **v4.0.0-alpha is the current release.** `npm install skalex` installs the last stable v3 — use `@alpha` to get v4.
 
 ---
 

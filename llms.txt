@@ -26,8 +26,10 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 ## Install
 
 ```bash
-npm install skalex
+npm install skalex@alpha
 ```
+
+> **v4.0.0-alpha is the current release.** `npm install skalex` installs the last stable v3 — use `@alpha` to get v4.
 
 **CDN — ESM** (recommended for browser apps; use the browser-specific barrel):
 

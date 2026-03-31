@@ -107,8 +107,10 @@
 ## Installation
 
 ```bash
-npm install skalex
+npm install skalex@alpha
 ```
+
+> **v4.0.0-alpha is the current release.** `npm install skalex` installs the last stable v3 — use `@alpha` to get v4.
 
 Requires **Node.js ≥ 18**.
 
