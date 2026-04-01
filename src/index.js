@@ -47,7 +47,7 @@ const _deserialize = (text) =>
   );
 
 /**
- * Skalex — an in-process document database with file-system persistence.
+ * Skalex  -  an in-process document database with file-system persistence.
  *
  * @example
  * const db = new Skalex({ path: "./.db" });
@@ -389,7 +389,7 @@ class Skalex {
   /**
    * Persist one or all collections via the storage adapter.
    * Implements a write queue: concurrent saves for the same collection are
-   * coalesced — the second caller sets a flag and triggers a re-run after
+   * coalesced  -  the second caller sets a flag and triggers a re-run after
    * the in-flight write completes.
    * @param {string} [collectionName] - If omitted, saves all collections.
    * @returns {Promise<void>}
@@ -480,7 +480,7 @@ class Skalex {
         "When a custom storage adapter is configured, create a separate Skalex instance with your adapter instead."
       );
     }
-    // Strip path separators and traversal sequences — only alphanumeric, dash, and underscore allowed.
+    // Strip path separators and traversal sequences  -  only alphanumeric, dash, and underscore allowed.
     const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
     if (!safeId) throw new Error("namespace: id must contain at least one alphanumeric character");
     return new Skalex({
@@ -546,6 +546,11 @@ class Skalex {
 
   // ─── Transaction helpers ─────────────────────────────────────────────────
 
+  /**
+   * Emit a collection event, or queue it for after-commit if inside a transaction.
+   * @param {string} collectionName
+   * @param {object} data
+   */
   _emitEvent(collectionName, data) {
     if (this._inTransaction) {
       this._txQueue.push(() => this._eventBus.emit(collectionName, data));
@@ -554,6 +559,11 @@ class Skalex {
     this._eventBus.emit(collectionName, data);
   }
 
+  /**
+   * Run an after-* plugin hook, or queue it for after-commit if inside a transaction.
+   * @param {string} hook
+   * @param {object} data
+   */
   async _runAfterHook(hook, data) {
     if (this._inTransaction) {
       this._txQueue.push(() => this._plugins.run(hook, data));
@@ -562,6 +572,14 @@ class Skalex {
     await this._plugins.run(hook, data);
   }
 
+  /**
+   * Append a changelog entry, or queue it for after-commit if inside a transaction.
+   * @param {string} op
+   * @param {string} collectionName
+   * @param {object} doc
+   * @param {object|null} prev
+   * @param {string|null} session
+   */
   async _logChange(op, collectionName, doc, prev, session) {
     if (this._inTransaction) {
       this._txQueue.push(() => this._changeLog.log(op, collectionName, doc, prev, session));
@@ -570,6 +588,9 @@ class Skalex {
     await this._changeLog.log(op, collectionName, doc, prev, session);
   }
 
+  /**
+   * Drain and execute all queued transaction side-effects in order.
+   */
   async _flushTxQueue() {
     const queue = this._txQueue.splice(0);
     for (const fn of queue) await fn();
@@ -583,12 +604,25 @@ class Skalex {
    * Takes an in-memory snapshot of all collections before calling fn().
    * If fn() throws, in-memory state is restored from the snapshot.
    * All writes made through the collection API during fn() are suppressed
-   * from flushing to disk — a single saveData() runs only on success.
+   * from flushing to disk  -  a single saveData() runs only on success.
+   *
+   * Side effects (watch() callbacks, after-* plugin hooks, changelog entries)
+   * are queued during fn() and flushed in a batch on commit, after the data
+   * is persisted to disk. Plugin hooks that previously fired after each
+   * individual operation now fire together at the end of the transaction.
    *
    * Limitations:
-   * - External side effects (HTTP calls, plugin hooks, event emissions) are not rolled back.
-   * - Crash-safe atomicity across multiple collection files requires WAL (on the roadmap).
-   * - Concurrent transactions are serialised via an internal lock.
+   * - Snapshot cost is O(total data size): all collections are deep-copied at
+   *   the start of every transaction, even ones the transaction does not touch.
+   *   Avoid transactions on very large datasets where snapshot overhead matters.
+   * - No timeout: if fn() hangs, the internal lock is held indefinitely and
+   *   all subsequent transactions queue behind it.
+   * - External side effects (HTTP calls, third-party integrations) inside fn()
+   *   are not rolled back on failure.
+   * - Crash-safe atomicity across multiple collection files requires WAL
+   *   (on the roadmap).
+   * - Direct access to db.collections inside fn() throws  -  use
+   *   db.useCollection() instead.
    *
    * @param {(db: Skalex) => Promise<any>} fn
    * @returns {Promise<any>} The return value of fn.
@@ -603,9 +637,9 @@ class Skalex {
       this._inTransaction = true;
       try {
         const result = await fn(db);
+        await this.saveData();
         this._inTransaction = false;
         await this._flushTxQueue();
-        await this.saveData();
         return result;
       } catch (error) {
         this._inTransaction = false;
@@ -625,7 +659,7 @@ class Skalex {
 
     // Serialise concurrent transactions via a promise-chain lock.
     // Pass a proxy instead of `this` so direct mutations to db.collections
-    // inside fn() are detected and rejected — they bypass the snapshot.
+    // inside fn() are detected and rejected  -  they bypass the snapshot.
     const proxy = new Proxy(this, {
       get(target, prop) {
         if (prop === "collections") throw new Error(
@@ -1016,7 +1050,7 @@ class Skalex {
           ...(summarizePrompt !== undefined && { summarizePrompt }),
         });
       default:
-        return null; // unknown provider — skip silently (embedding may still work)
+        return null; // unknown provider  -  skip silently (embedding may still work)
     }
   }
 
@@ -1027,7 +1061,7 @@ class Skalex {
   /**
    * Return a deep snapshot of a collection's mutable state.
    * Uses structuredClone to correctly preserve Date, BigInt, TypedArray,
-   * Map, Set, and RegExp values — unlike JSON.parse/JSON.stringify.
+   * Map, Set, and RegExp values  -  unlike JSON.parse/JSON.stringify.
    * @param {{ data: object[], index: Map }} col
    * @returns {{ data: object[], index: Map }}
    */

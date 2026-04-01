@@ -226,7 +226,7 @@ class Collection {
       const updateValue = update[field];
 
       if (Array.isArray(updateValue)) {
-        // Direct array assignment — must come before the generic object check
+        // Direct array assignment  -  must come before the generic object check
         // because for...in on [] yields zero iterations and the value would be lost.
         item[field] = updateValue;
       } else if (typeof updateValue === "object" && updateValue !== null) {
@@ -315,11 +315,11 @@ class Collection {
     await this._saveIfNeeded(save);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("restore", this.name, item, null, session || null);
+      await this.database._logChange("restore", this.name, item, null, session || null);
     }
 
     this.database._sessionStats.recordWrite(session);
-    this.database._eventBus.emit(this.name, { op: "restore", collection: this.name, doc: stripVector(item) });
+    this.database._emitEvent(this.name, { op: "restore", collection: this.name, doc: stripVector(item) });
     return stripVector(item);
   }
 
@@ -328,11 +328,11 @@ class Collection {
   /**
    * Watch for mutation events on this collection.
    *
-   * Callback form — returns an unsubscribe function:
+   * Callback form  -  returns an unsubscribe function:
    *   const unsub = col.watch({ status: "active" }, event => console.log(event));
    *   unsub(); // stop watching
    *
-   * AsyncIterator form — no callback:
+   * AsyncIterator form  -  no callback:
    *   for await (const event of col.watch({ status: "active" })) { ... }
    *
    * Event shape: { op: "insert"|"update"|"delete"|"restore", collection, doc, prev? }
@@ -342,11 +342,11 @@ class Collection {
    * @returns {(() => void)|AsyncIterableIterator}
    */
   watch(filter, callback) {
-    // watch(callback) shorthand — no filter
+    // watch(callback) shorthand  -  no filter
     if (typeof filter === "function") { callback = filter; filter = null; }
 
     if (callback) {
-      // Callback-based API — returns unsub fn
+      // Callback-based API  -  returns unsub fn
       return this.database._eventBus.on(this.name, event => {
         if (!filter || matchesFilter(event.doc, filter)) callback(event);
       });
@@ -507,7 +507,7 @@ class Collection {
   // ─── Vector Search ───────────────────────────────────────────────────────
 
   /**
-   * Semantic similarity search — embed a query string and rank all documents
+   * Semantic similarity search  -  embed a query string and rank all documents
    * with a `_vector` field by cosine similarity.
    *
    * @param {string} query
@@ -749,7 +749,7 @@ class Collection {
   /**
    * Save if `save` is explicitly true, or if database-level autoSave is on.
    * Pass `save: false` to opt out even when autoSave is enabled.
-   * Suppressed while a transaction is in progress — the transaction
+   * Suppressed while a transaction is in progress  -  the transaction
    * is responsible for the single flush after fn() resolves.
    * @param {boolean|undefined} save
    */
