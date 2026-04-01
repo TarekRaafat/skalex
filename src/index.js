@@ -24,6 +24,29 @@ import SkalexMCPServer from "./connectors/mcp/index.js";
 const META_KEY = "migrations";
 
 /**
+ * BigInt-safe JSON serializer. Encodes BigInt values as tagged objects so they
+ * survive the serialize → deserialize round-trip without throwing.
+ * @param {any} value
+ * @returns {string}
+ */
+const _serialize = (value) =>
+  JSON.stringify(value, (_, v) =>
+    typeof v === "bigint" ? { __skalex_bigint__: v.toString() } : v
+  );
+
+/**
+ * Counterpart to `_serialize`. Revives tagged BigInt objects back to BigInt.
+ * @param {string} text
+ * @returns {any}
+ */
+const _deserialize = (text) =>
+  JSON.parse(text, (_, v) =>
+    v && typeof v === "object" && "__skalex_bigint__" in v
+      ? BigInt(v.__skalex_bigint__)
+      : v
+  );
+
+/**
  * Skalex — an in-process document database with file-system persistence.
  *
  * @example
@@ -88,8 +111,8 @@ class Skalex {
     this._memoryConfig = memory || null;
     this._regexMaxLength = regexMaxLength ?? 500;
     this._idGenerator = idGenerator ?? null;
-    this._serializer = serializer ?? JSON.stringify;
-    this._deserializer = deserializer ?? JSON.parse;
+    this._serializer = serializer ?? _serialize;
+    this._deserializer = deserializer ?? _deserialize;
     this._autoSave = autoSave ?? false;
     this._inTransaction = false;
     this._txLock = Promise.resolve();
@@ -474,8 +497,8 @@ class Skalex {
       embeddingAdapter: this._embeddingAdapter && !this._aiConfig ? this._embeddingAdapter : undefined,
       regexMaxLength: this._regexMaxLength !== 500 ? this._regexMaxLength : undefined,
       idGenerator: this._idGenerator || undefined,
-      serializer: this._serializer !== JSON.stringify ? this._serializer : undefined,
-      deserializer: this._deserializer !== JSON.parse ? this._deserializer : undefined,
+      serializer: this._serializer !== _serialize ? this._serializer : undefined,
+      deserializer: this._deserializer !== _deserialize ? this._deserializer : undefined,
       autoSave: this._autoSave || undefined,
       ttlSweepInterval: this._ttlSweepInterval || undefined,
     });
