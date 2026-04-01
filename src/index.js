@@ -93,6 +93,7 @@ class Skalex {
     this._autoSave = autoSave ?? false;
     this._inTransaction = false;
     this._txLock = Promise.resolve();
+    this._txQueue = [];
     this._ttlSweepInterval = ttlSweepInterval ?? 0;
     this._ttlTimer = null;
     this._embeddingAdapter = embeddingAdapter ?? (ai ? this._createEmbeddingAdapter(ai) : null);
@@ -520,6 +521,37 @@ class Skalex {
     return this._sessionStats.all();
   }
 
+  // ─── Transaction helpers ─────────────────────────────────────────────────
+
+  _emitEvent(collectionName, data) {
+    if (this._inTransaction) {
+      this._txQueue.push(() => this._eventBus.emit(collectionName, data));
+      return;
+    }
+    this._eventBus.emit(collectionName, data);
+  }
+
+  async _runAfterHook(hook, data) {
+    if (this._inTransaction) {
+      this._txQueue.push(() => this._plugins.run(hook, data));
+      return;
+    }
+    await this._plugins.run(hook, data);
+  }
+
+  async _logChange(op, collectionName, doc, prev, session) {
+    if (this._inTransaction) {
+      this._txQueue.push(() => this._changeLog.log(op, collectionName, doc, prev, session));
+      return;
+    }
+    await this._changeLog.log(op, collectionName, doc, prev, session);
+  }
+
+  async _flushTxQueue() {
+    const queue = this._txQueue.splice(0);
+    for (const fn of queue) await fn();
+  }
+
   // ─── Transaction ─────────────────────────────────────────────────────────
 
   /**
@@ -549,10 +581,12 @@ class Skalex {
       try {
         const result = await fn(this);
         this._inTransaction = false;
+        await this._flushTxQueue();
         await this.saveData();
         return result;
       } catch (error) {
         this._inTransaction = false;
+        this._txQueue = [];
         // Rollback: restore snapshotted collections
         for (const name in snapshot) this._applySnapshot(name, snapshot[name]);
         // Remove collections created during the failed transaction

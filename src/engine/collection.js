@@ -85,14 +85,14 @@ class Collection {
     await this._saveIfNeeded(save);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("insert", this.name, newItem, null, session || null);
+      await this.database._logChange("insert", this.name, newItem, null, session || null);
     }
 
     this.database._sessionStats.recordWrite(session);
-    this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
+    this.database._emitEvent(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
 
     const doc = stripVector(newItem);
-    await this.database._plugins.run("afterInsert", { collection: this.name, doc });
+    await this.database._runAfterHook("afterInsert", { collection: this.name, doc });
     return doc;
   }
 
@@ -124,15 +124,15 @@ class Collection {
 
     if (this._changelogEnabled) {
       for (const newItem of newItems) {
-        await this.database._changeLog.log("insert", this.name, newItem, null, session || null);
+        await this.database._logChange("insert", this.name, newItem, null, session || null);
       }
     }
 
     this.database._sessionStats.recordWrite(session);
     for (const newItem of newItems) {
       const stripped = stripVector(newItem);
-      this.database._eventBus.emit(this.name, { op: "insert", collection: this.name, doc: stripped });
-      await this.database._plugins.run("afterInsert", { collection: this.name, doc: stripped });
+      this.database._emitEvent(this.name, { op: "insert", collection: this.name, doc: stripped });
+      await this.database._runAfterHook("afterInsert", { collection: this.name, doc: stripped });
     }
 
     return newItems.map(stripVector);
@@ -164,13 +164,13 @@ class Collection {
     await this._saveIfNeeded(save);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("update", this.name, item, prev, session || null);
+      await this.database._logChange("update", this.name, item, prev, session || null);
     }
 
     this.database._sessionStats.recordWrite(session);
-    this.database._eventBus.emit(this.name, { op: "update", collection: this.name, doc: stripVector(item), prev });
+    this.database._emitEvent(this.name, { op: "update", collection: this.name, doc: stripVector(item), prev });
 
-    await this.database._plugins.run("afterUpdate", { collection: this.name, filter, update, result: item });
+    await this.database._runAfterHook("afterUpdate", { collection: this.name, filter, update, result: item });
     return stripVector(item);
   }
 
@@ -200,16 +200,16 @@ class Collection {
 
     if (this._changelogEnabled) {
       for (let i = 0; i < items.length; i++) {
-        await this.database._changeLog.log("update", this.name, items[i], prevs[i], session || null);
+        await this.database._logChange("update", this.name, items[i], prevs[i], session || null);
       }
     }
 
     this.database._sessionStats.recordWrite(session);
     for (const item of items) {
-      this.database._eventBus.emit(this.name, { op: "update", collection: this.name, doc: stripVector(item) });
+      this.database._emitEvent(this.name, { op: "update", collection: this.name, doc: stripVector(item) });
     }
 
-    await this.database._plugins.run("afterUpdate", { collection: this.name, filter, update, result: items });
+    await this.database._runAfterHook("afterUpdate", { collection: this.name, filter, update, result: items });
     return items.map(stripVector);
   }
 
@@ -595,13 +595,13 @@ class Collection {
       await this._saveIfNeeded(save);
 
       if (this._changelogEnabled) {
-        await this.database._changeLog.log("delete", this.name, item, null, session || null);
+        await this.database._logChange("delete", this.name, item, null, session || null);
       }
 
       this.database._sessionStats.recordWrite(session);
-      this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: stripVector(item) });
+      this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(item) });
 
-      await this.database._plugins.run("afterDelete", { collection: this.name, filter, result: item });
+      await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: item });
       return stripVector(item);
     }
 
@@ -615,13 +615,13 @@ class Collection {
     await this._saveIfNeeded(save);
 
     if (this._changelogEnabled) {
-      await this.database._changeLog.log("delete", this.name, deletedItem, null, session || null);
+      await this.database._logChange("delete", this.name, deletedItem, null, session || null);
     }
 
     this.database._sessionStats.recordWrite(session);
-    this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: stripVector(deletedItem) });
+    this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(deletedItem) });
 
-    await this.database._plugins.run("afterDelete", { collection: this.name, filter, result: deletedItem });
+    await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: deletedItem });
     return stripVector(deletedItem);
   }
 
@@ -650,16 +650,16 @@ class Collection {
 
       if (this._changelogEnabled) {
         for (const item of items) {
-          await this.database._changeLog.log("delete", this.name, item, null, session || null);
+          await this.database._logChange("delete", this.name, item, null, session || null);
         }
       }
 
       this.database._sessionStats.recordWrite(session);
       for (const item of items) {
-        this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: stripVector(item) });
+        this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(item) });
       }
 
-      await this.database._plugins.run("afterDelete", { collection: this.name, filter, result: items });
+      await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: items });
       return items.map(stripVector);
     }
 
@@ -682,16 +682,16 @@ class Collection {
 
     if (this._changelogEnabled) {
       for (const deletedItem of deletedItems) {
-        await this.database._changeLog.log("delete", this.name, deletedItem, null, session || null);
+        await this.database._logChange("delete", this.name, deletedItem, null, session || null);
       }
     }
 
     this.database._sessionStats.recordWrite(session);
     for (const deletedItem of deletedItems) {
-      this.database._eventBus.emit(this.name, { op: "delete", collection: this.name, doc: stripVector(deletedItem) });
+      this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(deletedItem) });
     }
 
-    await this.database._plugins.run("afterDelete", { collection: this.name, filter, result: deletedItems });
+    await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: deletedItems });
     return deletedItems.map(stripVector);
   }
 
