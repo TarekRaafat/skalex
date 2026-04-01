@@ -571,7 +571,7 @@ class Skalex {
    * @returns {Promise<any>} The return value of fn.
    */
   async transaction(fn) {
-    const run = async () => {
+    const run = async (db) => {
       const snapshot = {};
       for (const name in this.collections) {
         snapshot[name] = this._snapshotCollection(this.collections[name]);
@@ -579,7 +579,7 @@ class Skalex {
 
       this._inTransaction = true;
       try {
-        const result = await fn(this);
+        const result = await fn(db);
         this._inTransaction = false;
         await this._flushTxQueue();
         await this.saveData();
@@ -600,8 +600,24 @@ class Skalex {
       }
     };
 
-    // Serialise concurrent transactions via a promise-chain lock
-    const next = this._txLock.then(run);
+    // Serialise concurrent transactions via a promise-chain lock.
+    // Pass a proxy instead of `this` so direct mutations to db.collections
+    // inside fn() are detected and rejected — they bypass the snapshot.
+    const proxy = new Proxy(this, {
+      get(target, prop) {
+        if (prop === "collections") throw new Error(
+          "Direct access to db.collections inside transaction() is not covered by rollback. " +
+          "Use the collection API (db.useCollection) instead."
+        );
+        const value = Reflect.get(target, prop);
+        // Bind methods to the real instance so internal this.collections
+        // access within useCollection() and other methods is not intercepted.
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    const runWithProxy = () => run(proxy);
+    const next = this._txLock.then(runWithProxy);
     this._txLock = next.catch(() => {});
     return next;
   }
