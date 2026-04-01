@@ -92,12 +92,267 @@ describe("transaction()", () => {
     expect(found.val).toBe(1);
     await db.disconnect();
   });
+
+  test("autoSave: true does not flush to disk during a failed transaction", async () => {
+    class CountingAdapter extends MemoryAdapter {
+      constructor() { super(); this.writeCount = 0; }
+      async write(name, data) { this.writeCount++; return super.write(name, data); }
+    }
+    const adapter = new CountingAdapter();
+    const db = new Skalex({ adapter, autoSave: true });
+    await db.connect();
+    // Record writes that happen during connect (e.g. _meta)
+    const before = adapter.writeCount;
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.useCollection("items").insertOne({ x: 1 });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    // No additional writes should have occurred during the failed transaction
+    expect(adapter.writeCount).toBe(before);
+    await db.disconnect();
+  });
+
+  test("_inTransaction is true during fn() and false after commit", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    let duringTx;
+    await db.transaction(async (tx) => {
+      duringTx = db._inTransaction;
+      await tx.useCollection("items").insertOne({ x: 1 });
+    });
+    expect(duringTx).toBe(true);
+    expect(db._inTransaction).toBe(false);
+    await db.disconnect();
+  });
+
+  test("_inTransaction is false after rollback", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    await expect(
+      db.transaction(async () => { throw new Error("abort"); })
+    ).rejects.toThrow("abort");
+    expect(db._inTransaction).toBe(false);
+    await db.disconnect();
+  });
+
+  test("Date fields are preserved as Date instances after rollback", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("events");
+    const ts = new Date("2024-01-01T00:00:00.000Z");
+    const doc = await col.insertOne({ ts });
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.useCollection("events").updateOne({ _id: doc._id }, { ts: new Date("2099-01-01") });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    const found = await col.findOne({ _id: doc._id });
+    expect(found.ts).toBeInstanceOf(Date);
+    expect(found.ts.toISOString()).toBe(ts.toISOString());
+    await db.disconnect();
+  });
+
+  test("BigInt fields do not crash transaction at snapshot stage", async () => {
+    // Use a BigInt-safe custom serializer so saveData() also handles it
+    const { db } = makeDb({
+      serializer: (v) => JSON.stringify(v, (_, x) =>
+        typeof x === "bigint" ? { __bigint__: x.toString() } : x
+      ),
+      deserializer: (s) => JSON.parse(s, (_, x) =>
+        x && typeof x === "object" && "__bigint__" in x ? BigInt(x.__bigint__) : x
+      ),
+    });
+    await db.connect();
+    const col = db.useCollection("things");
+    await col.insertOne({ n: 9007199254740993n });
+
+    // The transaction snapshot must not throw  -  BigInt used to crash structuredClone
+    // when data was serialized through JSON internally.
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.useCollection("things").insertOne({ n: 1n });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    expect(await col.count()).toBe(1);
+    await db.disconnect();
+  });
+
+  test("TypedArray fields are preserved as TypedArray instances after rollback", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("vecs");
+    const vec = new Float32Array([1, 2, 3]);
+    const doc = await col.insertOne({ vec });
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.useCollection("vecs").updateOne({ _id: doc._id }, { vec: new Float32Array([4, 5, 6]) });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    const found = await col.findOne({ _id: doc._id });
+    expect(found.vec).toBeInstanceOf(Float32Array);
+    expect(Array.from(found.vec)).toEqual([1, 2, 3]);
+    await db.disconnect();
+  });
+
+  test("Map, Set, and RegExp fields are preserved after rollback", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("complex");
+    const doc = await col.insertOne({
+      m: new Map([["a", 1]]),
+      s: new Set([1, 2, 3]),
+      r: /hello/i,
+    });
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.useCollection("complex").updateOne({ _id: doc._id }, {
+          m: new Map([["b", 2]]),
+          s: new Set([9]),
+          r: /bye/,
+        });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    const found = await col.findOne({ _id: doc._id });
+    expect(found.m).toBeInstanceOf(Map);
+    expect(found.m.get("a")).toBe(1);
+    expect(found.s).toBeInstanceOf(Set);
+    expect(found.s.has(1)).toBe(true);
+    expect(found.r).toBeInstanceOf(RegExp);
+    expect(found.r.source).toBe("hello");
+    await db.disconnect();
+  });
+
+  test("concurrent transactions are serialised  -  no lost updates", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("counter");
+    await col.insertOne({ _id: "c", val: 0 });
+
+    // Two concurrent transactions both increment the counter.
+    // If they ran in parallel they would both read val=0 and write val=1,
+    // losing one increment. Serialisation must produce val=2.
+    await Promise.all([
+      db.transaction(async (tx) => {
+        const c = await tx.useCollection("counter").findOne({ _id: "c" });
+        await tx.useCollection("counter").updateOne({ _id: "c" }, { val: c.val + 1 });
+      }),
+      db.transaction(async (tx) => {
+        const c = await tx.useCollection("counter").findOne({ _id: "c" });
+        await tx.useCollection("counter").updateOne({ _id: "c" }, { val: c.val + 1 });
+      }),
+    ]);
+
+    const result = await col.findOne({ _id: "c" });
+    expect(result.val).toBe(2);
+    await db.disconnect();
+  });
+
+  test("db.collections is blocked inside fn() and throws a descriptive error", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    await expect(
+      db.transaction(async (tx) => {
+        // Accessing tx.collections directly bypasses the snapshot  -  must throw
+        void tx.collections;
+      })
+    ).rejects.toThrow("Direct access to db.collections inside transaction()");
+    await db.disconnect();
+  });
+
+  test("watch() events are deferred during a transaction and fire once on commit", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const events = [];
+    col.watch(e => events.push(e));
+
+    await db.transaction(async (tx) => {
+      await tx.useCollection("items").insertOne({ x: 1 });
+      expect(events).toHaveLength(0);
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].op).toBe("insert");
+    await db.disconnect();
+  });
+
+  test("watch() events do not fire when a transaction rolls back", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const events = [];
+    col.watch(e => events.push(e));
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.useCollection("items").insertOne({ x: 1 });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    expect(events).toHaveLength(0);
+    await db.disconnect();
+  });
+
+  test("BigInt fields round-trip through the default serializer on save and load", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const n = 9007199254740993n;
+    await db.useCollection("things").insertOne({ n });
+
+    await db.disconnect();
+    await db.connect();
+
+    const found = await db.useCollection("things").findOne({});
+    expect(typeof found.n).toBe("bigint");
+    expect(found.n).toBe(n);
+    await db.disconnect();
+  });
+
+  test("restore() inside a transaction defers its event until commit", async () => {
+    const { db } = makeDb();
+    db.createCollection("posts", { softDelete: true });
+    await db.connect();
+    const col = db.useCollection("posts");
+    const doc = await col.insertOne({ title: "hello" });
+    await col.deleteOne({ _id: doc._id });
+
+    const events = [];
+    col.watch(e => events.push(e));
+
+    await db.transaction(async (tx) => {
+      await tx.useCollection("posts").restore({ _id: doc._id });
+      expect(events).toHaveLength(0);
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].op).toBe("restore");
+    const restored = await col.findOne({ _id: doc._id });
+    expect(restored).not.toBeNull();
+    expect(restored._deletedAt).toBeUndefined();
+    await db.disconnect();
+  });
 });
 
 // ─── namespace() ─────────────────────────────────────────────────────────────
 
 describe("namespace()", () => {
-  // Structural tests use a plain Skalex (default FsAdapter) — no connection needed.
+  // Structural tests use a plain Skalex (default FsAdapter)  -  no connection needed.
   function makeFsDb(opts = {}) {
     return new Skalex({ path: "./.db-test-ns", ...opts });
   }
@@ -223,7 +478,7 @@ describe("dump()", () => {
     await db.disconnect();
   });
 
-  test("snapshot is a copy — mutations after dump do not affect it", async () => {
+  test("snapshot is a copy  -  mutations after dump do not affect it", async () => {
     const { db } = makeDb();
     await db.connect();
     const col = db.useCollection("items");
@@ -400,7 +655,7 @@ describe("collection.export()", () => {
 
 // ─── applyUpdate() edge cases ────────────────────────────────────────────────
 
-describe("applyUpdate() — edge cases", () => {
+describe("applyUpdate()  -  edge cases", () => {
   async function getCol(opts = {}) {
     const { db } = makeDb();
     await db.connect();
@@ -683,7 +938,7 @@ describe("db.ask()", () => {
     await db.disconnect();
   });
 
-  test("caches results — LLM adapter is not called on repeated query", async () => {
+  test("caches results  -  LLM adapter is not called on repeated query", async () => {
     const llmAdapter = new MockLLMAdapter({ "find admins": { role: "admin" } });
     const { db } = makeDb({ llmAdapter });
     await db.connect();
