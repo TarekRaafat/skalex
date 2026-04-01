@@ -150,7 +150,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Transactions & Integrity
 
-- `db.transaction(fn)` — atomic multi-collection writes; auto-rollback on throw
+- `db.transaction(fn)` — in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback
 - `db.namespace(id)` — scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
 - `db.seed(fixtures, opts?)` — bulk-insert fixtures; `reset: true` clears first
 - `db.addMigration({ version, up })` — versioned migration; runs automatically on `connect()`

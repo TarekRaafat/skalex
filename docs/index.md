@@ -72,7 +72,7 @@
 **Data lifecycle:**
 - TTL documents: auto-expiry with `_expiresAt`; `defaultTtl` per collection; `ttlSweepInterval` for live processes
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
-- Atomic transactions: snapshot + commit/rollback
+- Transactions: in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; external side effects and direct collection mutations are not rolled back
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: auto-increments `_version` on every write
 - Capped collections: `createCollection(name, { maxDocs: N })`, FIFO eviction

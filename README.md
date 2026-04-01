@@ -39,7 +39,7 @@
 - Strict mode: `createCollection(name, { strict: true })` rejects unknown fields; `onSchemaError: "warn" | "strip"` for softer handling
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
 - TTL documents: `insertOne(doc, { ttl: "30m" })`, swept on connect; `defaultTtl` per collection; `ttlSweepInterval` for live processes
-- Transactions: snapshot + commit / rollback
+- Transactions: in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; external side effects and direct collection mutations are not rolled back
 - Change log: `createCollection(name, { changelog: true })`, point-in-time restore
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: `createCollection(name, { versioning: true })`, auto-increments `_version`
@@ -90,7 +90,7 @@
 - `LibSQLAdapter`: LibSQL / Turso client adapter
 
 **Built for developers who value their time.**
-- `db.transaction(fn)`: atomic multi-collection writes
+- `db.transaction(fn)`: in-memory snapshot/rollback; writes serialised and suppressed from disk until `fn()` resolves
 - `db.seed(fixtures)`: idempotent fixture seeding
 - `db.dump()` / `db.inspect()`: snapshot and metadata
 - `db.namespace(id)`: isolated sub-instances per tenant / user

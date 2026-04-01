@@ -195,7 +195,7 @@
       "Secondary field indexes for O(1) lookups",
       "Schema validation with type, required, unique, enum rules",
       "TTL documents with auto-expiry",
-      "Atomic transactions with snapshot and rollback",
+      "Transactions with in-memory snapshot and rollback",
       "Plugin system with pre/post hooks",
       "Reactive collections with watch()",
       "Append-only changelog with point-in-time restore",
@@ -380,7 +380,7 @@
         "name": "Isn't Skalex just a Map with a JSON file underneath?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "At the most reductive level, yes — and so is every database at some layer of abstraction. What Skalex provides on top of that is what takes weeks to assemble correctly on your own: a full embedding pipeline with OpenAI and Ollama adapters; cosine similarity vector search with hybrid filter support; semantic agent memory with compression and token-aware context generation; natural language query translation via any LLM; a complete MCP server with 8 tools, stdio and HTTP transports, and per-collection access control; secondary indexes with O(1) lookups; atomic writes that survive crashes; TTL sweeps; versioned migrations; snapshot transactions with automatic rollback; soft deletes; an append-only changelog with point-in-time restore; and a cross-runtime isomorphic build that runs identically in Node.js, Bun, Deno, browsers, and edge runtimes without polyfills. You could build all of that yourself. Skalex is the choice when you would rather ship."
+          "text": "At the most reductive level, yes — and so is every database at some layer of abstraction. What Skalex provides on top of that is what takes weeks to assemble correctly on your own: a full embedding pipeline with OpenAI and Ollama adapters; cosine similarity vector search with hybrid filter support; semantic agent memory with compression and token-aware context generation; natural language query translation via any LLM; a complete MCP server with 8 tools, stdio and HTTP transports, and per-collection access control; secondary indexes with O(1) lookups; atomic writes that survive crashes; TTL sweeps; versioned migrations; in-memory snapshot transactions with automatic rollback; soft deletes; an append-only changelog with point-in-time restore; and a cross-runtime isomorphic build that runs identically in Node.js, Bun, Deno, browsers, and edge runtimes without polyfills. You could build all of that yourself. Skalex is the choice when you would rather ship."
         }
       },
       {
