@@ -931,12 +931,14 @@ class Skalex {
 
   /**
    * Return a deep snapshot of a collection's mutable state.
+   * Uses structuredClone to correctly preserve Date, BigInt, TypedArray,
+   * Map, Set, and RegExp values — unlike JSON.parse/JSON.stringify.
    * @param {{ data: object[], index: Map }} col
    * @returns {{ data: object[], index: Map }}
    */
   _snapshotCollection(col) {
     return {
-      data: JSON.parse(JSON.stringify(col.data)),
+      data: structuredClone(col.data),
       index: new Map(col.index),
     };
   }
