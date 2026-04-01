@@ -91,6 +91,7 @@ class Skalex {
     this._serializer = serializer ?? JSON.stringify;
     this._deserializer = deserializer ?? JSON.parse;
     this._autoSave = autoSave ?? false;
+    this._inTransaction = false;
     this._ttlSweepInterval = ttlSweepInterval ?? 0;
     this._ttlTimer = null;
     this._embeddingAdapter = embeddingAdapter ?? (ai ? this._createEmbeddingAdapter(ai) : null);
@@ -522,7 +523,17 @@ class Skalex {
 
   /**
    * Run a callback inside a transaction.
-   * All writes are buffered; if the callback throws, all changes are rolled back.
+   *
+   * Takes an in-memory snapshot of all collections before calling fn().
+   * If fn() throws, in-memory state is restored from the snapshot.
+   * All writes made through the collection API during fn() are suppressed
+   * from flushing to disk — a single saveData() runs only on success.
+   *
+   * Limitations:
+   * - External side effects (HTTP calls, plugin hooks, event emissions) are not rolled back.
+   * - Crash-safe atomicity across multiple collection files requires WAL (on the roadmap).
+   * - Concurrent transactions are serialised via an internal lock.
+   *
    * @param {(db: Skalex) => Promise<any>} fn
    * @returns {Promise<any>} The return value of fn.
    */
@@ -532,11 +543,14 @@ class Skalex {
       snapshot[name] = this._snapshotCollection(this.collections[name]);
     }
 
+    this._inTransaction = true;
     try {
       const result = await fn(this);
+      this._inTransaction = false;
       await this.saveData();
       return result;
     } catch (error) {
+      this._inTransaction = false;
       // Rollback: restore snapshotted collections
       for (const name in snapshot) this._applySnapshot(name, snapshot[name]);
       // Remove collections created during the failed transaction

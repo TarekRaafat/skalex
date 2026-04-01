@@ -749,9 +749,12 @@ class Collection {
   /**
    * Save if `save` is explicitly true, or if database-level autoSave is on.
    * Pass `save: false` to opt out even when autoSave is enabled.
+   * Suppressed while a transaction is in progress — the transaction
+   * is responsible for the single flush after fn() resolves.
    * @param {boolean|undefined} save
    */
   async _saveIfNeeded(save) {
+    if (this.database._inTransaction) return;
     if (save ?? this.database._autoSave) await this.database.saveData(this.name);
   }
 
