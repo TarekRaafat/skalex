@@ -92,6 +92,7 @@ class Skalex {
     this._deserializer = deserializer ?? JSON.parse;
     this._autoSave = autoSave ?? false;
     this._inTransaction = false;
+    this._txLock = Promise.resolve();
     this._ttlSweepInterval = ttlSweepInterval ?? 0;
     this._ttlTimer = null;
     this._embeddingAdapter = embeddingAdapter ?? (ai ? this._createEmbeddingAdapter(ai) : null);
@@ -538,30 +539,37 @@ class Skalex {
    * @returns {Promise<any>} The return value of fn.
    */
   async transaction(fn) {
-    const snapshot = {};
-    for (const name in this.collections) {
-      snapshot[name] = this._snapshotCollection(this.collections[name]);
-    }
-
-    this._inTransaction = true;
-    try {
-      const result = await fn(this);
-      this._inTransaction = false;
-      await this.saveData();
-      return result;
-    } catch (error) {
-      this._inTransaction = false;
-      // Rollback: restore snapshotted collections
-      for (const name in snapshot) this._applySnapshot(name, snapshot[name]);
-      // Remove collections created during the failed transaction
+    const run = async () => {
+      const snapshot = {};
       for (const name in this.collections) {
-        if (!(name in snapshot)) {
-          delete this.collections[name];
-          delete this._collectionInstances[name];
-        }
+        snapshot[name] = this._snapshotCollection(this.collections[name]);
       }
-      throw error;
-    }
+
+      this._inTransaction = true;
+      try {
+        const result = await fn(this);
+        this._inTransaction = false;
+        await this.saveData();
+        return result;
+      } catch (error) {
+        this._inTransaction = false;
+        // Rollback: restore snapshotted collections
+        for (const name in snapshot) this._applySnapshot(name, snapshot[name]);
+        // Remove collections created during the failed transaction
+        for (const name in this.collections) {
+          if (!(name in snapshot)) {
+            delete this.collections[name];
+            delete this._collectionInstances[name];
+          }
+        }
+        throw error;
+      }
+    };
+
+    // Serialise concurrent transactions via a promise-chain lock
+    const next = this._txLock.then(run);
+    this._txLock = next.catch(() => {});
+    return next;
   }
 
   // ─── Seed ────────────────────────────────────────────────────────────────
