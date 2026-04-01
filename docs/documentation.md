@@ -4,7 +4,7 @@
 
 ## Class: Skalex
 
-The root database class. Create one instance per process — that's all the setup Skalex needs. Everything else: collections, persistence, migrations, transactions, AI queries, and the MCP server, flows from here.
+The root database class. Create one instance per process  -  that's all the setup Skalex needs. Everything else: collections, persistence, migrations, transactions, AI queries, and the MCP server, flows from here.
 
 ### Constructor
 
@@ -18,49 +18,49 @@ new Skalex(config?)
 | `format` | `"gz" \| "json"` | `"gz"` | Storage format. `"gz"` = compressed, `"json"` = plain |
 | `debug` | `boolean` | `false` | Log connect/disconnect output |
 | `adapter` | `StorageAdapter` | `FsAdapter` | Custom storage backend |
-| `ai` | `object` | — | AI / embedding config; see [Embedding Adapters](#embedding-adapters) and [Language Model Adapters](#language-model-adapters) |
+| `ai` | `object` |  -  | AI / embedding config; see [Embedding Adapters](#embedding-adapters) and [Language Model Adapters](#language-model-adapters) |
 | `encrypt` | `object` | `undefined` | At-rest encryption; see [Encryption](#encryption) |
 | `slowQueryLog` | `object` | `undefined` | Slow query recording; see [Slow Query Log](#slow-query-log) |
 | `queryCache` | `object` | `undefined` | Query cache options: `{ maxSize?: number, ttl?: number }` |
 | `memory` | `object` | `undefined` | Global memory options: `{ compressionThreshold?, maxEntries?, keepRecent?, contextTokens? }` |
 | `logger` | `Function` | built-in | Custom logger `(message, level) => void`. Replaces the built-in `console.log/error`. |
-| `llmAdapter` | `LLMAdapter` | — | Pre-built LLM adapter instance. Overrides the `ai` factory for language model calls. |
-| `embeddingAdapter` | `EmbeddingAdapter` | — | Pre-built embedding adapter instance. Overrides the `ai` factory for embedding calls. |
+| `llmAdapter` | `LLMAdapter` |  -  | Pre-built LLM adapter instance. Overrides the `ai` factory for language model calls. |
+| `embeddingAdapter` | `EmbeddingAdapter` |  -  | Pre-built embedding adapter instance. Overrides the `ai` factory for embedding calls. |
 | `regexMaxLength` | `number` | `500` | Maximum `$regex` pattern length in `ask()` filters. |
 | `idGenerator` | `Function` | built-in | Custom document ID generator `() => string`. Default: built-in timestamp+random. |
 | `serializer` | `Function` | `JSON.stringify` | Custom serializer for storage writes `(data) => string`. |
 | `deserializer` | `Function` | `JSON.parse` | Custom deserializer for storage reads `(raw) => object`. |
-| `plugins` | `Plugin[]` | — | Pre-register plugins; see [Plugin System](#plugin-system) |
+| `plugins` | `Plugin[]` |  -  | Pre-register plugins; see [Plugin System](#plugin-system) |
 | `autoSave` | `boolean` | `false` | Automatically persist after every write without passing `{ save: true }`. Individual calls can opt out with `{ save: false }`. |
-| `ttlSweepInterval` | `number` | — | Interval in ms to periodically sweep expired TTL documents. Cleared on `disconnect()`. See [TTL Documents](#ttl-documents). |
+| `ttlSweepInterval` | `number` |  -  | Interval in ms to periodically sweep expired TTL documents. Cleared on `disconnect()`. See [TTL Documents](#ttl-documents). |
 
 **`ai` config fields:**
 
 | Field | Default | Env var | Description |
 |-------|---------|---------|-------------|
-| `provider` | — | — | `"openai"`, `"anthropic"`, or `"ollama"` (required) |
-| `apiKey` | — | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | API key (required for OpenAI and Anthropic) |
+| `provider` |  -  |  -  | `"openai"`, `"anthropic"`, or `"ollama"` (required) |
+| `apiKey` |  -  | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | API key (required for OpenAI and Anthropic) |
 | `model` | `"gpt-4o-mini"` / `"claude-haiku-4-5"` / `"llama3.2"` | `OPENAI_MODEL` / `ANTHROPIC_MODEL` / `OLLAMA_MODEL` | Language model for `db.ask()` and `memory.compress()` |
 | `embedModel` | `"text-embedding-3-small"` / `"nomic-embed-text"` | `OPENAI_EMBED_MODEL` / `OLLAMA_EMBED_MODEL` | Embedding model for vector search |
 | `host` | `"http://localhost:11434"` | `OLLAMA_HOST` | Ollama server URL |
 | `baseUrl` | `"https://api.openai.com/v1/chat/completions"` / `"https://api.anthropic.com/v1/messages"` | `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` | LLM endpoint override (proxies, OpenAI-compatible APIs) |
 | `embedBaseUrl` | `"https://api.openai.com/v1/embeddings"` | `OPENAI_EMBED_BASE_URL` | Embedding endpoint override (OpenAI only) |
-| `apiVersion` | `"2023-06-01"` | — | Anthropic-Version header (Anthropic only) |
+| `apiVersion` | `"2023-06-01"` |  -  | Anthropic-Version header (Anthropic only) |
 | `temperature` | `0.3` | `OPENAI_TEMPERATURE` / `ANTHROPIC_TEMPERATURE` / `OLLAMA_TEMPERATURE` | Sampling temperature for `summarize()`. `generate()` always uses `0`. |
 | `maxTokens` | `1024` | `OPENAI_MAX_TOKENS` / `ANTHROPIC_MAX_TOKENS` | Maximum tokens for LLM responses |
-| `topP` | — | `OPENAI_TOP_P` / `ANTHROPIC_TOP_P` / `OLLAMA_TOP_P` | Nucleus sampling for `summarize()`. (OpenAI, Anthropic, Ollama) |
-| `topK` | — | `ANTHROPIC_TOP_K` / `OLLAMA_TOP_K` | Top-K sampling for `summarize()`. (Anthropic, Ollama only) |
-| `organization` | — | `OPENAI_ORGANIZATION` | OpenAI organization ID for billing. (OpenAI only) |
-| `timeout` | — | `OPENAI_TIMEOUT` / `ANTHROPIC_TIMEOUT` / `OLLAMA_TIMEOUT` | LLM request timeout in ms |
-| `dimensions` | — | `OPENAI_EMBED_DIMENSIONS` | Embedding output dimensions (`text-embedding-3-*` only). (OpenAI only) |
-| `embedTimeout` | — | `OPENAI_EMBED_TIMEOUT` / `OLLAMA_EMBED_TIMEOUT` | Embedding request timeout in ms |
+| `topP` |  -  | `OPENAI_TOP_P` / `ANTHROPIC_TOP_P` / `OLLAMA_TOP_P` | Nucleus sampling for `summarize()`. (OpenAI, Anthropic, Ollama) |
+| `topK` |  -  | `ANTHROPIC_TOP_K` / `OLLAMA_TOP_K` | Top-K sampling for `summarize()`. (Anthropic, Ollama only) |
+| `organization` |  -  | `OPENAI_ORGANIZATION` | OpenAI organization ID for billing. (OpenAI only) |
+| `timeout` |  -  | `OPENAI_TIMEOUT` / `ANTHROPIC_TIMEOUT` / `OLLAMA_TIMEOUT` | LLM request timeout in ms |
+| `dimensions` |  -  | `OPENAI_EMBED_DIMENSIONS` | Embedding output dimensions (`text-embedding-3-*` only). (OpenAI only) |
+| `embedTimeout` |  -  | `OPENAI_EMBED_TIMEOUT` / `OLLAMA_EMBED_TIMEOUT` | Embedding request timeout in ms |
 | `retries` | `0` | `OPENAI_RETRIES` / `ANTHROPIC_RETRIES` / `OLLAMA_RETRIES` | LLM retry attempts on failure (exponential backoff) |
 | `retryDelay` | `1000` | `OPENAI_RETRY_DELAY` / `ANTHROPIC_RETRY_DELAY` / `OLLAMA_RETRY_DELAY` | LLM base retry delay in ms (doubles each attempt) |
 | `embedRetries` | `0` | `OPENAI_EMBED_RETRIES` / `OLLAMA_EMBED_RETRIES` | Embedding retry attempts on failure |
 | `embedRetryDelay` | `1000` | `OPENAI_EMBED_RETRY_DELAY` / `OLLAMA_EMBED_RETRY_DELAY` | Embedding base retry delay in ms |
-| `seed` | — | `OPENAI_SEED` | Seed for deterministic outputs (OpenAI only) |
-| `generatePrompt` | built-in | — | Custom system prompt for `generate()`. Schema is always appended automatically. |
-| `summarizePrompt` | built-in | — | Custom system prompt for `summarize()`. |
+| `seed` |  -  | `OPENAI_SEED` | Seed for deterministic outputs (OpenAI only) |
+| `generatePrompt` | built-in |  -  | Custom system prompt for `generate()`. Schema is always appended automatically. |
+| `summarizePrompt` | built-in |  -  | Custom system prompt for `summarize()`. |
 
 ```javascript
 const db = new Skalex({ path: "./data", format: "json" });
@@ -73,7 +73,7 @@ const db = new Skalex({
   ai: {
     provider: "openai",
     apiKey: process.env.OPENAI_KEY,
-    embedModel: "text-embedding-3-small", // default — for insertOne/search
+    embedModel: "text-embedding-3-small", // default  -  for insertOne/search
     model: "gpt-4o-mini",                 // for db.ask() and memory.compress()
   },
 });
@@ -135,16 +135,16 @@ Defines a collection with optional schema and secondary indexes. Call before `co
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `schema` | `object` | — | Schema definition; see [Schema Validation](#schema-validation) |
+| `schema` | `object` |  -  | Schema definition; see [Schema Validation](#schema-validation) |
 | `indexes` | `string[]` | `[]` | Fields to build secondary (non-unique) indexes on |
 | `changelog` | `boolean` | `false` | Enable append-only mutation log for this collection |
 | `softDelete` | `boolean` | `false` | Mark documents with `_deletedAt` instead of removing them. Use `col.restore()` to undo. |
 | `versioning` | `boolean` | `false` | Auto-increment `_version` on every insert (starts at `1`) and update |
 | `strict` | `boolean` | `false` | Reject documents containing fields not declared in the schema |
 | `onSchemaError` | `"throw" \| "warn" \| "strip"` | `"throw"` | Behaviour on validation failure: throw (default), log a warning and proceed, or strip invalid fields |
-| `defaultTtl` | `number \| string` | — | Default TTL applied to every inserted document (seconds or shorthand like `"24h"`) |
-| `defaultEmbed` | `string` | — | Field name whose value is auto-embedded as `_vector` on every insert |
-| `maxDocs` | `number` | — | Maximum document count (capped collection). Oldest documents are evicted FIFO when exceeded. |
+| `defaultTtl` | `number \| string` |  -  | Default TTL applied to every inserted document (seconds or shorthand like `"24h"`) |
+| `defaultEmbed` | `string` |  -  | Field name whose value is auto-embedded as `_vector` on every insert |
+| `maxDocs` | `number` |  -  | Maximum document count (capped collection). Oldest documents are evicted FIFO when exceeded. |
 
 **Returns:** `Collection`
 
@@ -159,26 +159,26 @@ const users = db.createCollection("users", {
 ```
 
 ```javascript
-// Capped collection — keeps the latest 1000 log lines
+// Capped collection  -  keeps the latest 1000 log lines
 const logs = db.createCollection("logs", { maxDocs: 1000 });
 
-// Soft-delete — documents are hidden but not removed
+// Soft-delete  -  documents are hidden but not removed
 const posts = db.createCollection("posts", { softDelete: true });
 
-// Versioned — every update increments _version
+// Versioned  -  every update increments _version
 const orders = db.createCollection("orders", { versioning: true });
 
-// Strict + strip — unknown fields silently removed before insert
+// Strict + strip  -  unknown fields silently removed before insert
 const events = db.createCollection("events", {
   schema: { type: "string", payload: "object" },
   strict: true,
   onSchemaError: "strip",
 });
 
-// Default TTL — all sessions auto-expire in 24 hours
+// Default TTL  -  all sessions auto-expire in 24 hours
 const sessions = db.createCollection("sessions", { defaultTtl: "24h" });
 
-// Default embed — every article auto-embedded on insert
+// Default embed  -  every article auto-embedded on insert
 const articles = db.createCollection("articles", { defaultEmbed: "body" });
 ```
 
@@ -224,7 +224,7 @@ db.addMigration({
 
 #### `transaction(fn)`
 
-Runs `fn` inside a transaction. On success, all changes are flushed to storage. On error, all in-memory state is rolled back to the pre-transaction snapshot — including deletion of any collections that were created inside `fn`.
+Runs `fn` inside a transaction. On success, all changes are flushed to storage. On error, all in-memory state is rolled back to the pre-transaction snapshot  -  including deletion of any collections that were created inside `fn`.
 
 **Returns:** `Promise<any>`, the return value of `fn`
 
@@ -272,7 +272,7 @@ Returns a new `Skalex` instance scoped to a sub-directory (`<dataPath>/<id>`) of
 
 **Independence:** Each namespace is a fully independent `Skalex` instance. It requires its own `connect()` / `disconnect()` calls and does not share in-memory state with the parent.
 
-**Requires default storage:** `namespace()` uses the built-in `FsAdapter` to create a sub-directory store. It throws if a custom `adapter` was passed to the constructor — in that case, construct a separate `Skalex` instance with your adapter directly.
+**Requires default storage:** `namespace()` uses the built-in `FsAdapter` to create a sub-directory store. It throws if a custom `adapter` was passed to the constructor  -  in that case, construct a separate `Skalex` instance with your adapter directly.
 
 **Returns:** `Skalex`
 
@@ -432,7 +432,7 @@ Registers a plugin object that intercepts database operations via pre/post hooks
 
 Subscribes to all mutation events across every collection. Fires after every `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`, and `restore`.
 
-**Returns:** `() => void` — unsubscribe function
+**Returns:** `() => void`  -  unsubscribe function
 
 Event shape: `{ op: "insert"|"update"|"delete"|"restore", collection, doc, prev? }`
 
@@ -480,7 +480,7 @@ Creates and returns a `SkalexMCPServer` that exposes the database as MCP tools f
 See [Class: SkalexMCPServer](#class-skalexmcpserver) for details.
 
 ```javascript
-// Claude Desktop / Cursor — stdio transport
+// Claude Desktop / Cursor  -  stdio transport
 const server = db.mcp();
 await server.listen();
 ```
@@ -503,7 +503,7 @@ await server.listen();
 
 ## Class: Collection
 
-The unit of storage in Skalex. Every document lives in a collection. Collections are created on demand and cached — call `db.useCollection()` anywhere and you always get the same instance. Define schemas and indexes upfront with `db.createCollection()` for validation and O(1) queries.
+The unit of storage in Skalex. Every document lives in a collection. Collections are created on demand and cached  -  call `db.useCollection()` anywhere and you always get the same instance. Define schemas and indexes upfront with `db.createCollection()` for validation and O(1) queries.
 
 ---
 
@@ -578,11 +578,11 @@ All update methods accept plain field assignments and the following operators:
 | `$push` | `any` | Append a value to an array field; creates the array if the field does not exist |
 
 ```javascript
-// $inc — increment/decrement
+// $inc  -  increment/decrement
 await users.updateOne({ name: "Alice" }, { score: { $inc: 10 } });
 await accounts.updateOne({ name: "Bob" }, { balance: { $inc: -50 } });
 
-// $push — append to array
+// $push  -  append to array
 await users.updateOne({ name: "Alice" }, { tags: { $push: "vip" } });
 ```
 
@@ -660,7 +660,7 @@ await products.upsertMany(
 const users = db.useCollection("users");
 const posts = db.useCollection("posts");
 
-// Store a user ID under a field named "users" — matching the collection name
+// Store a user ID under a field named "users"  -  matching the collection name
 const user = await users.insertOne({ name: "Alice" });
 await posts.insertOne({ title: "Hello World", users: user._id });
 
@@ -711,7 +711,7 @@ Undoes a soft delete by clearing `_deletedAt`. Requires `softDelete: true` on th
 | `save` | `boolean` | Immediately persist after restore |
 | `session` | `string` | Session ID for audit trail |
 
-**Returns:** `Promise<Document | null>` — the restored document, or `null` if not found or not deleted.
+**Returns:** `Promise<Document | null>`  -  the restored document, or `null` if not found or not deleted.
 
 ```javascript
 const posts = db.createCollection("posts", { softDelete: true });
@@ -846,7 +846,7 @@ const unsub = users.watch((event) => {
   console.log(event.op, event.doc.name);
 });
 
-// With a filter — only fires when doc matches
+// With a filter  -  only fires when doc matches
 const unsub = users.watch({ role: "admin" }, (event) => {
   console.log("Admin changed:", event.doc);
 });
@@ -968,12 +968,12 @@ db.createCollection("users", {
 
 ## Storage Adapters
 
-One codebase, every runtime. All I/O routes through a `StorageAdapter` interface — swap the backend without changing a single line of application code. Node.js to browser to edge: same API, different adapter.
+One codebase, every runtime. All I/O routes through a `StorageAdapter` interface  -  swap the backend without changing a single line of application code. Node.js to browser to edge: same API, different adapter.
 
 Import via the connectors subpackage (npm + bundler):
 
 ```javascript
-// All storage adapters — fully tree-shakeable
+// All storage adapters  -  fully tree-shakeable
 import { FsAdapter, LocalStorageAdapter, EncryptedAdapter,
          BunSQLiteAdapter, D1Adapter, LibSQLAdapter } from 'skalex/connectors/storage';
 
@@ -998,7 +998,7 @@ const db = new Skalex({ adapter: myCustomAdapter });
 
 ### Bun SQLite
 
-Uses Bun's built-in `bun:sqlite` — zero extra dependencies. Pass `":memory:"` for an ephemeral in-memory database.
+Uses Bun's built-in `bun:sqlite`  -  zero extra dependencies. Pass `":memory:"` for an ephemeral in-memory database.
 
 ```javascript
 import BunSQLiteAdapter from "skalex/connectors/bun-sqlite";
@@ -1049,7 +1049,7 @@ new D1Adapter(env.DB, { table: "my_store" })
 
 ### LibSQL / Turso
 
-Compatible with any `@libsql/client`-compatible client — local file, Turso cloud, or embedded replica.
+Compatible with any `@libsql/client`-compatible client  -  local file, Turso cloud, or embedded replica.
 
 ```javascript
 import LibSQLAdapter from "skalex/connectors/libsql";
@@ -1109,7 +1109,7 @@ const db = new Skalex({
   ai: {
     provider: "openai",
     apiKey: process.env.OPENAI_KEY,       // or set OPENAI_API_KEY env var
-    embedModel: "text-embedding-3-small", // default — 1536 dimensions; or set OPENAI_EMBED_MODEL env var
+    embedModel: "text-embedding-3-small", // default  -  1536 dimensions; or set OPENAI_EMBED_MODEL env var
   },
 });
 ```
@@ -1126,16 +1126,16 @@ ai: {
 
 | `ai` field | Env var | Default |
 |------------|---------|---------|
-| `apiKey` | `OPENAI_API_KEY` | — |
+| `apiKey` | `OPENAI_API_KEY` |  -  |
 | `embedModel` | `OPENAI_EMBED_MODEL` | `"text-embedding-3-small"` |
 | `embedBaseUrl` | `OPENAI_EMBED_BASE_URL` | `"https://api.openai.com/v1/embeddings"` |
-| `dimensions` | `OPENAI_EMBED_DIMENSIONS` | — |
-| `organization` | `OPENAI_ORGANIZATION` | — |
-| `embedTimeout` | `OPENAI_EMBED_TIMEOUT` | — |
+| `dimensions` | `OPENAI_EMBED_DIMENSIONS` |  -  |
+| `organization` | `OPENAI_ORGANIZATION` |  -  |
+| `embedTimeout` | `OPENAI_EMBED_TIMEOUT` |  -  |
 | `embedRetries` | `OPENAI_EMBED_RETRIES` | `0` |
 | `embedRetryDelay` | `OPENAI_EMBED_RETRY_DELAY` | `1000` |
-| `headers` | — | — |
-| `fetch` | — | `globalThis.fetch` |
+| `headers` |  -  |  -  |
+| `fetch` |  -  | `globalThis.fetch` |
 
 ### Ollama (local, zero cost)
 
@@ -1144,7 +1144,7 @@ const db = new Skalex({
   path: "./data",
   ai: {
     provider: "ollama",
-    embedModel: "nomic-embed-text",       // default — 768 dimensions; or set OLLAMA_EMBED_MODEL env var
+    embedModel: "nomic-embed-text",       // default  -  768 dimensions; or set OLLAMA_EMBED_MODEL env var
     host: "http://localhost:11434",       // default; or set OLLAMA_HOST env var
   },
 });
@@ -1154,11 +1154,11 @@ const db = new Skalex({
 |------------|---------|---------|
 | `embedModel` | `OLLAMA_EMBED_MODEL` | `"nomic-embed-text"` |
 | `host` | `OLLAMA_HOST` | `"http://localhost:11434"` |
-| `embedTimeout` | `OLLAMA_EMBED_TIMEOUT` | — |
+| `embedTimeout` | `OLLAMA_EMBED_TIMEOUT` |  -  |
 | `embedRetries` | `OLLAMA_EMBED_RETRIES` | `0` |
 | `embedRetryDelay` | `OLLAMA_EMBED_RETRY_DELAY` | `1000` |
-| `headers` | — | — |
-| `fetch` | — | `globalThis.fetch` |
+| `headers` |  -  |  -  |
+| `fetch` |  -  | `globalThis.fetch` |
 
 Run locally: `ollama pull nomic-embed-text`
 
@@ -1219,21 +1219,21 @@ ai: {
 
 | `ai` field | Env var | Default |
 |------------|---------|---------|
-| `apiKey` | `OPENAI_API_KEY` | — |
+| `apiKey` | `OPENAI_API_KEY` |  -  |
 | `model` | `OPENAI_MODEL` | `"gpt-4o-mini"` |
 | `baseUrl` | `OPENAI_BASE_URL` | `"https://api.openai.com/v1/chat/completions"` |
-| `maxTokens` | `OPENAI_MAX_TOKENS` | — |
+| `maxTokens` | `OPENAI_MAX_TOKENS` |  -  |
 | `temperature` | `OPENAI_TEMPERATURE` | `0.3` |
-| `topP` | `OPENAI_TOP_P` | — |
-| `organization` | `OPENAI_ORGANIZATION` | — |
-| `timeout` | `OPENAI_TIMEOUT` | — |
+| `topP` | `OPENAI_TOP_P` |  -  |
+| `organization` | `OPENAI_ORGANIZATION` |  -  |
+| `timeout` | `OPENAI_TIMEOUT` |  -  |
 | `retries` | `OPENAI_RETRIES` | `0` |
 | `retryDelay` | `OPENAI_RETRY_DELAY` | `1000` |
-| `seed` | `OPENAI_SEED` | — |
-| `generatePrompt` | — | built-in |
-| `summarizePrompt` | — | built-in |
-| `headers` | — | — |
-| `fetch` | — | `globalThis.fetch` |
+| `seed` | `OPENAI_SEED` |  -  |
+| `generatePrompt` |  -  | built-in |
+| `summarizePrompt` |  -  | built-in |
+| `headers` |  -  |  -  |
+| `fetch` |  -  | `globalThis.fetch` |
 
 ### Anthropic
 
@@ -1249,21 +1249,21 @@ const db = new Skalex({
 
 | `ai` field | Env var | Default |
 |------------|---------|---------|
-| `apiKey` | `ANTHROPIC_API_KEY` | — |
+| `apiKey` | `ANTHROPIC_API_KEY` |  -  |
 | `model` | `ANTHROPIC_MODEL` | `"claude-haiku-4-5"` |
 | `baseUrl` | `ANTHROPIC_BASE_URL` | `"https://api.anthropic.com/v1/messages"` |
-| `apiVersion` | — | `"2023-06-01"` |
+| `apiVersion` |  -  | `"2023-06-01"` |
 | `maxTokens` | `ANTHROPIC_MAX_TOKENS` | `1024` |
 | `temperature` | `ANTHROPIC_TEMPERATURE` | `0.3` |
-| `topP` | `ANTHROPIC_TOP_P` | — |
-| `topK` | `ANTHROPIC_TOP_K` | — |
-| `timeout` | `ANTHROPIC_TIMEOUT` | — |
+| `topP` | `ANTHROPIC_TOP_P` |  -  |
+| `topK` | `ANTHROPIC_TOP_K` |  -  |
+| `timeout` | `ANTHROPIC_TIMEOUT` |  -  |
 | `retries` | `ANTHROPIC_RETRIES` | `0` |
 | `retryDelay` | `ANTHROPIC_RETRY_DELAY` | `1000` |
-| `generatePrompt` | — | built-in |
-| `summarizePrompt` | — | built-in |
-| `headers` | — | — |
-| `fetch` | — | `globalThis.fetch` |
+| `generatePrompt` |  -  | built-in |
+| `summarizePrompt` |  -  | built-in |
+| `headers` |  -  |  -  |
+| `fetch` |  -  | `globalThis.fetch` |
 
 ### Ollama (local, zero cost)
 
@@ -1283,15 +1283,15 @@ const db = new Skalex({
 | `model` | `OLLAMA_MODEL` | `"llama3.2"` |
 | `host` | `OLLAMA_HOST` | `"http://localhost:11434"` |
 | `temperature` | `OLLAMA_TEMPERATURE` | `0.3` |
-| `topP` | `OLLAMA_TOP_P` | — |
-| `topK` | `OLLAMA_TOP_K` | — |
-| `timeout` | `OLLAMA_TIMEOUT` | — |
+| `topP` | `OLLAMA_TOP_P` |  -  |
+| `topK` | `OLLAMA_TOP_K` |  -  |
+| `timeout` | `OLLAMA_TIMEOUT` |  -  |
 | `retries` | `OLLAMA_RETRIES` | `0` |
 | `retryDelay` | `OLLAMA_RETRY_DELAY` | `1000` |
-| `generatePrompt` | — | built-in |
-| `summarizePrompt` | — | built-in |
-| `headers` | — | — |
-| `fetch` | — | `globalThis.fetch` |
+| `generatePrompt` |  -  | built-in |
+| `summarizePrompt` |  -  | built-in |
+| `headers` |  -  |  -  |
+| `fetch` |  -  | `globalThis.fetch` |
 
 Run locally: `ollama pull llama3.2`
 
@@ -1533,7 +1533,7 @@ All reads and writes are transparently encrypted/decrypted. The wire format is `
 
 ### Composing with any adapter
 
-`EncryptedAdapter` can wrap any storage adapter directly, letting you encrypt data in any environment — including the browser.
+`EncryptedAdapter` can wrap any storage adapter directly, letting you encrypt data in any environment  -  including the browser.
 
 ```javascript
 import EncryptedAdapter from "skalex/connectors/encrypted";
@@ -1558,7 +1558,7 @@ This is equivalent to passing `encrypt: { key }` for `FsAdapter`, but lets you a
 const db = new Skalex({
   path: "./data",
   slowQueryLog: {
-    threshold:  50,   // ms — queries longer than this are recorded (default: 100)
+    threshold:  50,   // ms  -  queries longer than this are recorded (default: 100)
     maxEntries: 1000, // ring buffer size (default: 500)
   },
 });
@@ -1716,7 +1716,7 @@ db.createCollection("orders", {
     userId: { type: "string", required: true },
     status: { type: "string", enum: ["pending", "paid", "cancelled"] },
   },
-  // O(1) lookup for userId and status — no full scan for these fields
+  // O(1) lookup for userId and status  -  no full scan for these fields
   indexes: ["userId", "status"],
 });
 ```
@@ -1727,7 +1727,7 @@ Use the [Slow Query Log](#slow-query-log) to identify unindexed fields:
 
 ```javascript
 const slow = db.slowQueries({ minDuration: 50, limit: 20 });
-// entry.filter shows which fields were in the query — add the slow ones to indexes
+// entry.filter shows which fields were in the query  -  add the slow ones to indexes
 for (const entry of slow) {
   console.log(entry.collection, entry.op, entry.duration + "ms", entry.filter);
 }
@@ -1766,7 +1766,7 @@ Skalex ships four pre-built artifacts in `dist/`:
 
 The **browser build** inlines empty stubs for all `node:*` built-ins at build time using a Rollup plugin. This means no `import … from "node:fs"` lines appear in the bundle, so it loads cleanly in any browser without CORS errors.
 
-**npm + bundler** — recommended for production apps; full tree-shaking across all adapter types:
+**npm + bundler**  -  recommended for production apps; full tree-shaking across all adapter types:
 
 ```js
 import Skalex from 'skalex';
@@ -1775,12 +1775,12 @@ import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter }   from 'skalex/connect
 import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connectors/llm';
 ```
 
-**CDN — ESM** (`<script type="module">`) — no bundler required; use the browser-specific barrel which exports only the browser-compatible adapters:
+**CDN  -  ESM** (`<script type="module">`)  -  no bundler required; use the browser-specific barrel which exports only the browser-compatible adapters:
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -1793,18 +1793,18 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 </script>
 ```
 
-**CDN — IIFE** (`<script src>`, no `type="module"`) — exposes `window.Skalex`, for quick demos or when ESM is not an option. Connectors are not included; bring your own adapter:
+**CDN  -  IIFE** (`<script src>`, no `type="module"`)  -  exposes `window.Skalex`, for quick demos or when ESM is not an option. Connectors are not included; bring your own adapter:
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.1"></script>
 
 <script>
   // Skalex is available as window.Skalex
-  // Provide your own storage adapter — LocalStorageAdapter is not bundled in the IIFE build.
+  // Provide your own storage adapter  -  LocalStorageAdapter is not bundled in the IIFE build.
   // For persistent storage in a real app, use the ESM CDN path above or install via npm.
   const db = new Skalex({ adapter: myAdapter });
   await db.connect();
@@ -1829,8 +1829,8 @@ npm run smoke:browser  # Headless Chromium via Playwright (requires: npx playwri
 ```
 
 The browser smoke tests can also be opened manually in any browser for visual inspection:
-- `tests/smoke/browser.html` — ESM build (`dist/skalex.browser.js`)
-- `tests/smoke/browser-umd.html` — UMD/IIFE CDN build (`dist/skalex.umd.min.js`)
+- `tests/smoke/browser.html`  -  ESM build (`dist/skalex.browser.js`)
+- `tests/smoke/browser-umd.html`  -  UMD/IIFE CDN build (`dist/skalex.umd.min.js`)
 
 ---
 

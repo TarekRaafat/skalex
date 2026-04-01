@@ -23,20 +23,20 @@
 
 # Skalex <!-- {docsify-ignore} -->
 
-> No server. No config. No dependencies. The AI-first JavaScript database — built for AI agents, local-first apps, and every JavaScript runtime. :rocket:
+> No server. No config. No dependencies. The AI-first JavaScript database  -  built for AI agents, local-first apps, and every JavaScript runtime. :rocket:
 
 > [!WARNING]
 > **v4.0.0-alpha**: this is a pre-release. The API may change before the stable `4.0.0` release. Pin the exact version in your `package.json` and review the [CHANGELOG](https://github.com/TarekRaafat/skalex/blob/master/CHANGELOG.md) before upgrading.
 
 ## What is Skalex? <!-- {docsify-ignore} -->
 
-`Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package — no server, no infrastructure, no external services. One `npm install skalex@alpha` on Node.js, Bun, Deno, browsers, and edge runtimes.
+`Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package  -  no server, no infrastructure, no external services. One `npm install skalex@alpha` on Node.js, Bun, Deno, browsers, and edge runtimes.
 
-**What sets it apart:** all AI capabilities are built into the core. Vector search with cosine similarity, semantic agent memory with compression, `db.ask()` natural language queries via any LLM, and a one-line MCP server for Claude Desktop and Cursor — not plugins, not external services, not additional dependencies. OpenAI and Ollama adapters ship in the box.
+**What sets it apart:** all AI capabilities are built into the core. Vector search with cosine similarity, semantic agent memory with compression, `db.ask()` natural language queries via any LLM, and a one-line MCP server for Claude Desktop and Cursor  -  not plugins, not external services, not additional dependencies. OpenAI and Ollama adapters ship in the box.
 
-**How it works:** all data lives in your process's heap. `db.connect()` loads the dataset into memory for instant, zero-overhead access — no connection pool, no round trips, no cold starts. Storage adapters control where data persists and how it is reloaded.
+**How it works:** all data lives in your process's heap. `db.connect()` loads the dataset into memory for instant, zero-overhead access  -  no connection pool, no round trips, no cold starts. Storage adapters control where data persists and how it is reloaded.
 
-**Built for:** single-process, local-first workloads — AI agents, CLI tools, desktop apps, edge workers, and offline-first apps — where the dataset fits in memory.
+**Built for:** single-process, local-first workloads  -  AI agents, CLI tools, desktop apps, edge workers, and offline-first apps  -  where the dataset fits in memory.
 
 **Not the right fit for:** multi-process or distributed deployments, high write concurrency across many clients, or datasets that exceed available RAM. For those, PostgreSQL, MongoDB, or SQLite are better choices.
 
@@ -48,15 +48,15 @@
 - Natural language queries: `db.ask()` translates plain English to structured filters via any LLM
 - MCP server: `db.mcp()` exposes the database as tools to Claude Desktop, Cursor, and any MCP client
 - Embedding adapters: OpenAI (`text-embedding-3-small`) and Ollama (local, zero API cost) ship in the box
-- LLM adapters: OpenAI, Anthropic, and Ollama — configurable at construction time
+- LLM adapters: OpenAI, Anthropic, and Ollama  -  configurable at construction time
 - At-rest encryption: AES-256-GCM via `EncryptedAdapter`, transparent to all callers
 
 **Zero overhead. Maximum reach:**
 - Pure Vanilla JavaScript: zero runtime dependencies
 - Isomorphic: Node.js ≥18, Bun, Deno 2.x, browsers, edge runtimes
 - Full build matrix ships in the box: `dist/skalex.esm.js`, `dist/skalex.esm.min.js`, `dist/skalex.cjs`, `dist/skalex.min.cjs`, `dist/skalex.browser.js`, `dist/skalex.umd.min.js`
-- CDN-ready — **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha"></script>` → `window.Skalex`
-- npm + bundler: `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors'` — single subpackage, fully tree-shakeable; scoped: `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`
+- CDN-ready  -  **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1"></script>` → `window.Skalex`
+- npm + bundler: `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors'`  -  single subpackage, fully tree-shakeable; scoped: `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`
 - Full TypeScript definitions with generics and union types; no `@types/` package needed
 - Pluggable connectors: storage (`FsAdapter`, `LocalStorageAdapter`, `EncryptedAdapter`, `BunSQLiteAdapter`, `D1Adapter`, `LibSQLAdapter`), embedding (`OpenAIEmbeddingAdapter`, `OllamaEmbeddingAdapter`), LLM (`OpenAILLMAdapter`, `AnthropicLLMAdapter`, `OllamaLLMAdapter`)
 
@@ -96,9 +96,9 @@
 2. **Connect once, start immediately:**
    - No server process, no config file, no schema migration to run. `await db.connect()` loads your data. Everything else just works.
 3. **Queries that don't slow you down:**
-   - Declare indexed fields on `createCollection()` and every matching query runs in O(1). Mark fields `unique: true` to enforce constraints automatically — no extra validation code needed.
+   - Declare indexed fields on `createCollection()` and every matching query runs in O(1). Mark fields `unique: true` to enforce constraints automatically  -  no extra validation code needed.
 4. **Bad data never makes it in:**
-   - Define schemas with type checking, required fields, enum constraints, and unique rules. Validation runs at insert and update time with descriptive error messages — before anything touches storage.
+   - Define schemas with type checking, required fields, enum constraints, and unique rules. Validation runs at insert and update time with descriptive error messages  -  before anything touches storage.
 5. **Data that cleans itself:**
    - Pass `ttl: '30m'` on any insert and the document expires automatically. No cron jobs, no cleanup scripts, no stale data.
 6. **Migrations that run themselves:**
@@ -117,7 +117,7 @@
 
 ## What's next <!-- {docsify-ignore} -->
 
-Hybrid search, CRDT collaboration, graph traversal, time-series collections, new storage adapters, and more — see the full [Roadmap](roadmap.md).
+Hybrid search, CRDT collaboration, graph traversal, time-series collections, new storage adapters, and more  -  see the full [Roadmap](roadmap.md).
 
 ## Author <!-- {docsify-ignore} -->
 
