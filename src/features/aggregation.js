@@ -1,5 +1,5 @@
 /**
- * aggregation.js — count / sum / avg / groupBy helpers.
+ * aggregation.js  -  count / sum / avg / groupBy helpers.
  *
  * These are pure functions operating on a filtered doc array returned by
  * _findAllRaw(). They are called by the Collection methods of the same name.

@@ -1,21 +1,21 @@
 /**
- * OpenAILLMAdapter — language model adapter using the OpenAI Chat API.
+ * OpenAILLMAdapter  -  language model adapter using the OpenAI Chat API.
  *
  * Default model: gpt-4o-mini (fast, cheap, supports JSON mode).
- * Uses native fetch — no additional dependencies.
+ * Uses native fetch  -  no additional dependencies.
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   OPENAI_API_KEY      — API key
- *   OPENAI_MODEL        — chat model name
- *   OPENAI_BASE_URL     — full endpoint URL (useful for proxies / OpenAI-compatible APIs)
- *   OPENAI_MAX_TOKENS   — max tokens for responses
- *   OPENAI_TEMPERATURE  — sampling temperature for summarize() (default: 0.3)
- *   OPENAI_TOP_P        — nucleus sampling for summarize()
- *   OPENAI_ORGANIZATION — OpenAI organization ID
- *   OPENAI_TIMEOUT      — request timeout in ms
- *   OPENAI_RETRIES      — number of retry attempts on failure (default: 0)
- *   OPENAI_RETRY_DELAY  — base retry delay in ms, doubles each attempt (default: 1000)
- *   OPENAI_SEED         — seed for deterministic outputs
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   OPENAI_API_KEY       -  API key
+ *   OPENAI_MODEL         -  chat model name
+ *   OPENAI_BASE_URL      -  full endpoint URL (useful for proxies / OpenAI-compatible APIs)
+ *   OPENAI_MAX_TOKENS    -  max tokens for responses
+ *   OPENAI_TEMPERATURE   -  sampling temperature for summarize() (default: 0.3)
+ *   OPENAI_TOP_P         -  nucleus sampling for summarize()
+ *   OPENAI_ORGANIZATION  -  OpenAI organization ID
+ *   OPENAI_TIMEOUT       -  request timeout in ms
+ *   OPENAI_RETRIES       -  number of retry attempts on failure (default: 0)
+ *   OPENAI_RETRY_DELAY   -  base retry delay in ms, doubles each attempt (default: 1000)
+ *   OPENAI_SEED          -  seed for deterministic outputs
  */
 import LLMAdapter from "./base.js";
 import { SYSTEM_GENERATE, SYSTEM_SUMMARIZE } from "./prompts.js";

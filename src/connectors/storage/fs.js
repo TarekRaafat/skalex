@@ -4,7 +4,7 @@ import zlib from "node:zlib";
 import StorageAdapter from "./base.js";
 
 /**
- * FsAdapter — file-system storage for Node.js, Bun, and Deno.
+ * FsAdapter  -  file-system storage for Node.js, Bun, and Deno.
  *
  * Files are stored as `<dir>/<name>.<format>`.
  * format="gz"  → zlib deflate compressed JSON

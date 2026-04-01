@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.1] - 2026-04-01
+
+### Fixed
+
+- **Transaction: `autoSave` suppressed during `fn()`**  -  writes no longer flush to disk mid-transaction when `autoSave: true`; the adapter is only written once on commit. (#1)
+- **Transaction: `structuredClone` replaces `JSON.parse/stringify` for snapshots**  -  Date, TypedArray, Map, Set, RegExp, and other non-JSON types now survive rollback correctly. (#2)
+- **Transaction: `_inTransaction` flag**  -  added to the constructor and toggled around `fn()` so `_saveIfNeeded()` in collection operations correctly detects an active transaction. (#3)
+- **Transaction: event emissions and plugin after-hooks deferred until commit**  -  `watch()` observers and `after*` plugin hooks no longer fire for writes that are subsequently rolled back; they are queued and flushed atomically on commit. (#4)
+- **Transaction: concurrent transactions serialised via promise-chain mutex**  -  a `_txLock` chain ensures only one transaction runs at a time, eliminating lost-update races under `Promise.all`. (#7)
+- **Transaction: `db.collections` blocked inside `fn()` via Proxy**  -  direct mutations to `db.collections` bypass the snapshot; accessing the property inside a transaction callback now throws a descriptive error directing callers to `db.useCollection()`. (#11)
+- **Documentation: transaction guarantees corrected**  -  replaced "atomic" / "snapshot + commit/rollback" with accurate language across README, llms.txt, docs/index.md, and docs/index.html. (#15)
+- **Serializer: BigInt-safe default serializer/deserializer**  -  the default `JSON.stringify`/`JSON.parse` pair is replaced with `_serialize`/`_deserialize`, which encode BigInt as tagged objects and revive them on load; custom serializer options are unaffected. (#16)
+- **Transaction: commit sequence corrected**  -  `saveData()` now runs before the side-effect queue is flushed, so `watch()` callbacks and plugin hooks observe fully persisted state. The `_inTransaction` flag is cleared after `saveData()` and before the flush, so observers can safely trigger further operations without them being re-queued.
+- **Transaction: `restore()` now uses transaction helpers**  -  `restore()` was calling `_changeLog.log()` and `_eventBus.emit()` directly, bypassing the transaction queue. It now uses `_logChange()` and `_emitEvent()` so events and changelog entries are properly deferred until commit.
+
+### Tests
+
+- Added 13 new integration tests covering all transaction fixes: autoSave disk suppression, `_inTransaction` flag lifecycle, Date/TypedArray/Map/Set/RegExp rollback fidelity, BigInt snapshot safety and round-trip, concurrent serialisation, `db.collections` proxy guard, watch() event deferral and rollback suppression, and restore() event deferral.
+
+---
+
 ## [4.0.0-alpha] - 2026-03-31
 
 > **v4 is a ground-up rewrite.** Skalex is no longer just a local document store. It is now the only JavaScript database that ships vector search, agent memory, an MCP server, natural language queries, pluggable storage, and AES-256-GCM encryption in a single zero-dependency package. Runs everywhere: Node.js, Bun, Deno, browsers, edge runtimes. The entire architecture was rebuilt around AI-first use cases. If you are building an AI agent, a local-first app, or anything that needs a database without the infrastructure overhead, this is that release.

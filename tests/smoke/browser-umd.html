@@ -17,12 +17,12 @@
   </style>
 </head>
 <body>
-  <h1>Skalex v4 — UMD / CDN Smoke Test</h1>
+  <h1>Skalex v4  -  UMD / CDN Smoke Test</h1>
   <p id="info">Running…</p>
   <div id="output"></div>
   <div id="summary"></div>
 
-  <!-- Load the IIFE build exactly as a CDN user would — plain <script src>, no type="module" -->
+  <!-- Load the IIFE build exactly as a CDN user would  -  plain <script src>, no type="module" -->
   <script src="../../dist/skalex.umd.min.js"></script>
 
   <script>
@@ -63,7 +63,7 @@
       }
     }
 
-    // Inline LocalStorageAdapter — mirrors what a CDN user would bring themselves
+    // Inline LocalStorageAdapter  -  mirrors what a CDN user would bring themselves
     // or import via npm. Connectors are intentionally not bundled in the IIFE build.
     class LocalStorageAdapter {
       constructor({ namespace = "smoke" } = {}) {
@@ -201,12 +201,12 @@
         Passed: ${passed} &nbsp; Failed: ${failed}<br>
         Browser: ${ua}
       `;
-      document.getElementById("info").textContent = `Finished — ${passed} passed, ${failed} failed.`;
+      document.getElementById("info").textContent = `Finished  -  ${passed} passed, ${failed} failed.`;
     }
 
     run().catch(err => {
       console.error(err);
-      document.getElementById("info").textContent = `Finished — ${passed} passed, ${failed} failed.`;
+      document.getElementById("info").textContent = `Finished  -  ${passed} passed, ${failed} failed.`;
     });
   </script>
 </body>

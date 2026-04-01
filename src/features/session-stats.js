@@ -1,5 +1,5 @@
 /**
- * SessionStats — per-session read/write/lastActive tracking.
+ * SessionStats  -  per-session read/write/lastActive tracking.
  *
  * Sessions are keyed by an arbitrary string ID passed via the `session`
  * option on mutation methods and find/search options.

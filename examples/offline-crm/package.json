@@ -1,7 +1,7 @@
 {
   "name": "skalex-example-offline-crm",
   "version": "1.0.0",
-  "description": "Skalex offline CRM — schema validation, indexes, aggregation, transactions, namespaces, and CSV export. No API key required.",
+  "description": "Skalex offline CRM  -  schema validation, indexes, aggregation, transactions, namespaces, and CSV export. No API key required.",
   "type": "module",
   "main": "index.js",
   "scripts": {

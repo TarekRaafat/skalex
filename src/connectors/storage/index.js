@@ -1,5 +1,5 @@
 /**
- * Connectors barrel — single import for all storage adapters.
+ * Connectors barrel  -  single import for all storage adapters.
  *
  * npm / bundler usage:
  *   import { FsAdapter, LocalStorageAdapter, EncryptedAdapter } from 'skalex/connectors';
@@ -9,7 +9,7 @@
  *     from 'https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha/src/connectors/storage/browser.js';
  *
  * Platform-specific adapters (BunSQLiteAdapter, D1Adapter, LibSQLAdapter) are included
- * here for bundler users — tree-shaking removes any that are not imported. They access
+ * here for bundler users  -  tree-shaking removes any that are not imported. They access
  * platform APIs lazily at runtime, so no static import errors occur in other environments.
  */
 export { default as FsAdapter }          from "./fs.js";

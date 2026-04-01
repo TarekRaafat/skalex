@@ -1,5 +1,5 @@
 /**
- * Skalex MCP Server — stdio transport
+ * Skalex MCP Server  -  stdio transport
  *
  * Exposes a Skalex database as an MCP server for use with
  * Claude Desktop, Cursor, OpenClaw, or any MCP-compatible client.

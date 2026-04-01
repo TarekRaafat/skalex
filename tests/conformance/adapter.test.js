@@ -38,7 +38,7 @@ const TEST_KEY = "a".repeat(64);
  * `cleanup()` is called after each test to remove any temp resources.
  */
 function adapterConformance(label, factory, cleanup = () => {}) {
-  describe(`${label} — conformance`, () => {
+  describe(`${label}  -  conformance`, () => {
     let adapter;
 
     beforeEach(() => { adapter = factory(); });

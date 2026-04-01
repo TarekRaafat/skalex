@@ -1,23 +1,23 @@
 /**
- * tools.js — MCP tool definitions and handlers for Skalex.
+ * tools.js  -  MCP tool definitions and handlers for Skalex.
  *
  * Each tool exposes one Skalex operation to an AI agent.
  * The handler receives (db, args) and returns a plain value that is
  * JSON-serialised into the MCP content text.
  *
  * Tools:
- *   collections — list all collections
- *   schema      — get schema for a collection
- *   find        — find documents
- *   insert      — insert a document
- *   update      — update matching documents
- *   delete      — delete matching documents
- *   search      — semantic similarity search (requires embedding adapter)
- *   ask         — natural-language query (requires AI adapter)
+ *   collections  -  list all collections
+ *   schema       -  get schema for a collection
+ *   find         -  find documents
+ *   insert       -  insert a document
+ *   update       -  update matching documents
+ *   delete       -  delete matching documents
+ *   search       -  semantic similarity search (requires embedding adapter)
+ *   ask          -  natural-language query (requires AI adapter)
  *
  * Scopes:
- *   read  — collections, schema, find, search, ask
- *   write — insert, update, delete
+ *   read   -  collections, schema, find, search, ask
+ *   write  -  insert, update, delete
  */
 
 /**

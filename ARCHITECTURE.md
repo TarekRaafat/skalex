@@ -34,66 +34,66 @@
 
 ```
 src/
-  index.js                  — Skalex class (database entry point)
-  index.d.ts                — TypeScript declarations (source of truth)
+  index.js                   -  Skalex class (database entry point)
+  index.d.ts                 -  TypeScript declarations (source of truth)
   engine/
-    collection.js           — Collection class (per-collection CRUD)
-    query.js                — matchesFilter + presortFilter
-    indexes.js              — IndexEngine (secondary field indexes)
-    validator.js            — parseSchema, validateDoc, inferSchema
-    ttl.js                  — parseTtl, computeExpiry, sweep
-    migrations.js           — MigrationEngine
-    vector.js               — cosineSimilarity, stripVector
-    utils.js                — generateUniqueId, logger
+    collection.js            -  Collection class (per-collection CRUD)
+    query.js                 -  matchesFilter + presortFilter
+    indexes.js               -  IndexEngine (secondary field indexes)
+    validator.js             -  parseSchema, validateDoc, inferSchema
+    ttl.js                   -  parseTtl, computeExpiry, sweep
+    migrations.js            -  MigrationEngine
+    vector.js                -  cosineSimilarity, stripVector
+    utils.js                 -  generateUniqueId, logger
   features/
-    aggregation.js          — count, sum, avg, groupBy
-    changelog.js            — ChangeLog class (append-only mutation log)
-    events.js               — EventBus (cross-runtime pub/sub)
-    memory.js               — Memory class (agent episodic store)
-    ask.js                  — natural language → filter via LLM
-    plugins.js              — PluginEngine (pre/post hooks)
-    session-stats.js        — SessionStats (per-session read/write tracking)
-    query-log.js            — SlowQueryLog (threshold-based ring buffer)
+    aggregation.js           -  count, sum, avg, groupBy
+    changelog.js             -  ChangeLog class (append-only mutation log)
+    events.js                -  EventBus (cross-runtime pub/sub)
+    memory.js                -  Memory class (agent episodic store)
+    ask.js                   -  natural language → filter via LLM
+    plugins.js               -  PluginEngine (pre/post hooks)
+    session-stats.js         -  SessionStats (per-session read/write tracking)
+    query-log.js             -  SlowQueryLog (threshold-based ring buffer)
   connectors/
     storage/
-      base.js               — StorageAdapter abstract class
-      fs.js                 — FsAdapter (Node.js file system, atomic writes, gz/json)
-      local.js              — LocalStorageAdapter (browser localStorage)
-      encrypted.js          — EncryptedAdapter (AES-256-GCM wrapper)
-      bun-sqlite.js         — BunSQLiteAdapter (bun:sqlite)
-      d1.js                 — D1Adapter (Cloudflare D1 / Workers)
-      libsql.js             — LibSQLAdapter (LibSQL / Turso)
+      base.js                -  StorageAdapter abstract class
+      fs.js                  -  FsAdapter (Node.js file system, atomic writes, gz/json)
+      local.js               -  LocalStorageAdapter (browser localStorage)
+      encrypted.js           -  EncryptedAdapter (AES-256-GCM wrapper)
+      bun-sqlite.js          -  BunSQLiteAdapter (bun:sqlite)
+      d1.js                  -  D1Adapter (Cloudflare D1 / Workers)
+      libsql.js              -  LibSQLAdapter (LibSQL / Turso)
     embedding/
-      base.js               — EmbeddingAdapter abstract class
-      openai.js             — OpenAIEmbeddingAdapter (text-embedding-3-small default)
-      ollama.js             — OllamaEmbeddingAdapter (nomic-embed-text default)
+      base.js                -  EmbeddingAdapter abstract class
+      openai.js              -  OpenAIEmbeddingAdapter (text-embedding-3-small default)
+      ollama.js              -  OllamaEmbeddingAdapter (nomic-embed-text default)
     llm/
-      base.js               — LLMAdapter abstract class
-      openai.js             — OpenAILLMAdapter (gpt-4o-mini default)
-      anthropic.js          — AnthropicLLMAdapter (claude-haiku-4-5 default)
-      ollama.js             — OllamaLLMAdapter (llama3.2 default)
+      base.js                -  LLMAdapter abstract class
+      openai.js              -  OpenAILLMAdapter (gpt-4o-mini default)
+      anthropic.js           -  AnthropicLLMAdapter (claude-haiku-4-5 default)
+      ollama.js              -  OllamaLLMAdapter (llama3.2 default)
     mcp/
-      index.js              — SkalexMCPServer (stdio + HTTP/SSE)
-      protocol.js           — JSON-RPC 2.0 helpers
-      tools.js              — MCP tool definitions
+      index.js               -  SkalexMCPServer (stdio + HTTP/SSE)
+      protocol.js            -  JSON-RPC 2.0 helpers
+      tools.js               -  MCP tool definitions
       transports/
-        stdio.js            — StdioTransport
-        http.js             — HttpTransport (HTTP + SSE)
+        stdio.js             -  StdioTransport
+        http.js              -  HttpTransport (HTTP + SSE)
 
-dist/                       — generated by `npm run build`, not committed to git
-  skalex.esm.js             — ESM build (readable)
-  skalex.esm.min.js         — ESM build (minified)
-  skalex.cjs                — CJS build (readable)
-  skalex.min.cjs            — CJS build (minified)
-  skalex.browser.js         — Browser ESM build (node:* built-ins stubbed)
-  skalex.d.ts               — TypeScript declarations (copied from src/index.d.ts)
+dist/                        -  generated by `npm run build`, not committed to git
+  skalex.esm.js              -  ESM build (readable)
+  skalex.esm.min.js          -  ESM build (minified)
+  skalex.cjs                 -  CJS build (readable)
+  skalex.min.cjs             -  CJS build (minified)
+  skalex.browser.js          -  Browser ESM build (node:* built-ins stubbed)
+  skalex.d.ts                -  TypeScript declarations (copied from src/index.d.ts)
 
 tests/
   helpers/
-    MemoryAdapter.js        — In-memory StorageAdapter for CI (no I/O)
-    MockEmbeddingAdapter.js — Deterministic 4-dim vectors for unit tests
-    MockLLMAdapter.js       — Configurable nlQuery → filter map
-    MockTransport.js        — In-memory MCP transport for unit tests
+    MemoryAdapter.js         -  In-memory StorageAdapter for CI (no I/O)
+    MockEmbeddingAdapter.js  -  Deterministic 4-dim vectors for unit tests
+    MockLLMAdapter.js        -  Configurable nlQuery → filter map
+    MockTransport.js         -  In-memory MCP transport for unit tests
   unit/
     query.test.js
     indexes.test.js
@@ -113,18 +113,18 @@ tests/
   integration/
     skalex.test.js
   conformance/
-    adapter.test.js         — Shared read/write/delete/list contract tests
+    adapter.test.js          -  Shared read/write/delete/list contract tests
   smoke/
-    node.test.cjs           — CJS dist smoke test (Node.js ≥18)
-    bun.test.js             — ESM dist smoke test (Bun)
-    bun-sqlite.test.js      — BunSQLiteAdapter smoke test
-    deno.test.js            — ESM dist smoke test (Deno 2.x)
-    browser.test.js         — Headless Chromium runner (Playwright)
-    browser.html            — Browser smoke test page
+    node.test.cjs            -  CJS dist smoke test (Node.js ≥18)
+    bun.test.js              -  ESM dist smoke test (Bun)
+    bun-sqlite.test.js       -  BunSQLiteAdapter smoke test
+    deno.test.js             -  ESM dist smoke test (Deno 2.x)
+    browser.test.js          -  Headless Chromium runner (Playwright)
+    browser.html             -  Browser smoke test page
 
 scripts/
-  mcp-server.js             — Runnable MCP server for Claude Desktop / Cursor
-  run-deno.js               — Cross-platform deno binary resolver
+  mcp-server.js              -  Runnable MCP server for Claude Desktop / Cursor
+  run-deno.js                -  Cross-platform deno binary resolver
 ```
 
 ---
@@ -173,9 +173,9 @@ Every document stored by Skalex has the following reserved fields:
 | `createdAt` | `Date` | `insertOne` / `insertMany` |
 | `updatedAt` | `Date` | `insertOne` / `insertMany` / `applyUpdate` |
 | `_expiresAt` | `Date` \| `undefined` | `insertOne` / `insertMany` when `{ ttl }` or `defaultTtl` is set |
-| `_version` | `number` \| `undefined` | `insertOne` / `insertMany` (starts at `1`); incremented by `applyUpdate` — only when `versioning: true` |
-| `_deletedAt` | `Date` \| `undefined` | `deleteOne` / `deleteMany` — only when `softDelete: true` |
-| `_vector` | `number[]` \| `undefined` | `insertOne` / `insertMany` when `{ embed }` or `defaultEmbed` is set — **never returned to callers** |
+| `_version` | `number` \| `undefined` | `insertOne` / `insertMany` (starts at `1`); incremented by `applyUpdate`  -  only when `versioning: true` |
+| `_deletedAt` | `Date` \| `undefined` | `deleteOne` / `deleteMany`  -  only when `softDelete: true` |
+| `_vector` | `number[]` \| `undefined` | `insertOne` / `insertMany` when `{ embed }` or `defaultEmbed` is set  -  **never returned to callers** |
 
 User-supplied fields spread after `_id`, `createdAt`, `updatedAt`; user values override the defaults only for `_id` (allowing caller-supplied IDs).
 
@@ -285,8 +285,8 @@ File: `src/indexes.js`
 Maintains two parallel index structures for declared fields:
 
 ```
-_fieldIndexes: Map<field, Map<value, Set<doc>>>   — non-unique + unique
-_uniqueIndexes: Map<field, Map<value, doc>>        — unique fields only
+_fieldIndexes: Map<field, Map<value, Set<doc>>>    -  non-unique + unique
+_uniqueIndexes: Map<field, Map<value, doc>>         -  unique fields only
 ```
 
 **Lookup**: `O(1)`; `_fieldIndexes.get(field).get(value)` returns the `Set` of matching documents.
@@ -407,8 +407,8 @@ Iterates the data array backwards (safe splice), removes any document where `_ex
 
 Called in two places:
 
-1. **On `connect()`** — one-shot sweep of every loaded collection to evict documents that expired while the process was not running.
-2. **Periodic sweep via `ttlSweepInterval`** — when `ttlSweepInterval` (ms) is set in the constructor, `connect()` starts a `setInterval` that calls `_sweepTtl()` on every collection at the given cadence. The timer is cleared in `disconnect()`. This keeps long-running processes free of stale documents without requiring a restart.
+1. **On `connect()`**  -  one-shot sweep of every loaded collection to evict documents that expired while the process was not running.
+2. **Periodic sweep via `ttlSweepInterval`**  -  when `ttlSweepInterval` (ms) is set in the constructor, `connect()` starts a `setInterval` that calls `_sweepTtl()` on every collection at the given cadence. The timer is cleared in `disconnect()`. This keeps long-running processes free of stale documents without requiring a restart.
 
 ---
 
@@ -441,7 +441,7 @@ Duplicate version registration throws immediately. Version numbers must be posit
 3. **Commit**: if `fn` resolves, call `saveData()`.
 4. **Rollback**: if `fn` throws, restore `data` and `index` from snapshot and rebuild `fieldIndex` via `buildFromData()`. Re-throw the error.
 
-The snapshot covers all collections present at call time. Collections created inside `fn` are also removed on rollback — they are detected by diffing `this.collections` against the snapshot keys after the error is caught.
+The snapshot covers all collections present at call time. Collections created inside `fn` are also removed on rollback  -  they are detected by diffing `this.collections` against the snapshot keys after the error is caught.
 
 ---
 

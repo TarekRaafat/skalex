@@ -1,5 +1,5 @@
 /**
- * validator.js — lightweight schema validation, zero dependencies.
+ * validator.js  -  lightweight schema validation, zero dependencies.
  *
  * Schema definition:
  *   { field: "type" }

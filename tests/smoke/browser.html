@@ -17,7 +17,7 @@
   </style>
 </head>
 <body>
-  <h1>Skalex v4 — Browser Smoke Test</h1>
+  <h1>Skalex v4  -  Browser Smoke Test</h1>
   <p id="info">Running…</p>
   <div id="output"></div>
   <div id="summary"></div>
@@ -117,7 +117,7 @@
       assert("sum()",                               await col.sum("amount") === 60);
       assert("avg()",                               await col.avg("amount") === 20);
       const groups = await col.groupBy("product");
-      assert("groupBy() — A has 2 docs",            groups.A?.length === 2);
+      assert("groupBy()  -  A has 2 docs",            groups.A?.length === 2);
     });
 
     // ─── Sort & Pagination ───────────────────────────────────────────────────
@@ -282,7 +282,7 @@
       Passed: ${passed} &nbsp; Failed: ${failed}<br>
       Browser: ${ua}
     `;
-    document.getElementById("info").textContent = `Finished — ${passed} passed, ${failed} failed.`;
+    document.getElementById("info").textContent = `Finished  -  ${passed} passed, ${failed} failed.`;
 
     // Clean up localStorage after test
     for (const key of Object.keys(localStorage)) {

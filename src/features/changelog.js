@@ -1,5 +1,5 @@
 /**
- * changelog.js — per-collection append-only mutation log.
+ * changelog.js  -  per-collection append-only mutation log.
  *
  * When a collection is created with { changelog: true }, every insert,
  * update, and delete is recorded in a shared _changelog collection.
@@ -95,7 +95,7 @@ class ChangeLog {
       return;
     }
 
-    // Restore entire collection — replay all entries in order
+    // Restore entire collection  -  replay all entries in order
     const state = new Map(); // docId → { doc, deleted }
 
     for (const entry of relevant) {

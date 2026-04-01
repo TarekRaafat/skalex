@@ -2,16 +2,16 @@
 const CHARS_PER_TOKEN = 4;
 
 /**
- * memory.js — episodic agent memory.
+ * memory.js  -  episodic agent memory.
  *
  * A Memory instance wraps a private _memory_<sessionId> collection and provides:
- *   remember  — store a text entry with an embedding
- *   recall    — semantic search over stored memories
- *   history   — chronological listing
- *   forget    — delete a specific entry
- *   context   — LLM-ready string within a token budget
- *   tokenCount — estimate token usage
- *   compress  — summarise and compact old entries via the language model
+ *   remember   -  store a text entry with an embedding
+ *   recall     -  semantic search over stored memories
+ *   history    -  chronological listing
+ *   forget     -  delete a specific entry
+ *   context    -  LLM-ready string within a token budget
+ *   tokenCount  -  estimate token usage
+ *   compress   -  summarise and compact old entries via the language model
  *
  * Requires:
  *   - An embedding adapter (db._embeddingAdapter) for remember() and recall()

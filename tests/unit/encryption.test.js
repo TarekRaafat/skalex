@@ -1,5 +1,5 @@
 /**
- * Unit tests for EncryptedAdapter — AES-256-GCM at-rest encryption.
+ * Unit tests for EncryptedAdapter  -  AES-256-GCM at-rest encryption.
  */
 import { describe, test, expect } from "vitest";
 import EncryptedAdapter from "../../src/connectors/storage/encrypted.js";
@@ -17,7 +17,7 @@ function makeEncrypted(key = KEY_HEX) {
 
 // ─── Construction ────────────────────────────────────────────────────────────
 
-describe("EncryptedAdapter — construction", () => {
+describe("EncryptedAdapter  -  construction", () => {
   test("accepts a 64-char hex key", () => {
     expect(() => makeEncrypted(KEY_HEX)).not.toThrow();
   });
@@ -40,7 +40,7 @@ describe("EncryptedAdapter — construction", () => {
 
 // ─── Write / Read round-trip ──────────────────────────────────────────────────
 
-describe("EncryptedAdapter — write / read", () => {
+describe("EncryptedAdapter  -  write / read", () => {
   test("read returns null for missing file", async () => {
     const { enc } = makeEncrypted();
     expect(await enc.read("missing")).toBeNull();
@@ -107,7 +107,7 @@ describe("EncryptedAdapter — write / read", () => {
 
 // ─── delete / list ────────────────────────────────────────────────────────────
 
-describe("EncryptedAdapter — delete / list", () => {
+describe("EncryptedAdapter  -  delete / list", () => {
   test("delete() removes file from inner adapter", async () => {
     const { enc } = makeEncrypted();
     await enc.write("to-delete", "data");

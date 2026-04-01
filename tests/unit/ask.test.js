@@ -1,5 +1,5 @@
 /**
- * Unit tests for ask.js — QueryCache, processLLMFilter, validateLLMFilter.
+ * Unit tests for ask.js  -  QueryCache, processLLMFilter, validateLLMFilter.
  */
 import { describe, test, expect } from "vitest";
 import { QueryCache, processLLMFilter, validateLLMFilter } from "../../src/features/ask.js";
@@ -161,7 +161,7 @@ describe("validateLLMFilter", () => {
     expect(w).toHaveLength(0);
   });
 
-  test("handles dotted field names — checks base field", () => {
+  test("handles dotted field names  -  checks base field", () => {
     // 'name.first' → base field 'name' → known → no warning
     const w = validateLLMFilter({ "name.first": "Al" }, schema);
     expect(w).toHaveLength(0);

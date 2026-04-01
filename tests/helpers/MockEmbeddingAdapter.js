@@ -1,5 +1,5 @@
 /**
- * MockEmbeddingAdapter — in-memory embedding adapter for tests.
+ * MockEmbeddingAdapter  -  in-memory embedding adapter for tests.
  *
  * Accepts a `responses` map of text → vector. For unknown text it generates
  * a deterministic 4-dimensional vector from the character codes so tests

@@ -1,20 +1,20 @@
 /**
- * OllamaLLMAdapter — language model adapter using a local Ollama server.
+ * OllamaLLMAdapter  -  language model adapter using a local Ollama server.
  *
  * Default model: llama3.2
  * Default host:  http://localhost:11434
  *
  * Run locally: ollama pull llama3.2
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   OLLAMA_HOST        — Ollama server URL
- *   OLLAMA_MODEL       — model name
- *   OLLAMA_TEMPERATURE — sampling temperature for summarize() (default: 0.3)
- *   OLLAMA_TOP_P       — nucleus sampling for summarize()
- *   OLLAMA_TOP_K       — top-K sampling for summarize()
- *   OLLAMA_TIMEOUT     — request timeout in ms
- *   OLLAMA_RETRIES     — number of retry attempts on failure (default: 0)
- *   OLLAMA_RETRY_DELAY — base retry delay in ms, doubles each attempt (default: 1000)
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   OLLAMA_HOST         -  Ollama server URL
+ *   OLLAMA_MODEL        -  model name
+ *   OLLAMA_TEMPERATURE  -  sampling temperature for summarize() (default: 0.3)
+ *   OLLAMA_TOP_P        -  nucleus sampling for summarize()
+ *   OLLAMA_TOP_K        -  top-K sampling for summarize()
+ *   OLLAMA_TIMEOUT      -  request timeout in ms
+ *   OLLAMA_RETRIES      -  number of retry attempts on failure (default: 0)
+ *   OLLAMA_RETRY_DELAY  -  base retry delay in ms, doubles each attempt (default: 1000)
  */
 import LLMAdapter from "./base.js";
 import { SYSTEM_GENERATE, SYSTEM_SUMMARIZE } from "./prompts.js";

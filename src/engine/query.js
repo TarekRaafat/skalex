@@ -1,5 +1,5 @@
 /**
- * query.js — filter evaluation engine.
+ * query.js  -  filter evaluation engine.
  *
  * matchesFilter(item, filter) → boolean
  * All conditions in filter use AND semantics (every key must match).
@@ -18,7 +18,7 @@ function matchesFilter(item, filter) {
   // Function filter
   if (typeof filter === "function") return filter(item);
 
-  // Empty filter — matches everything
+  // Empty filter  -  matches everything
   if (filter instanceof Object && Object.keys(filter).length === 0) return true;
 
   // AND: every key must pass
@@ -60,7 +60,7 @@ function matchesFilter(item, filter) {
 
 /**
  * Pre-sort filter keys for optimal evaluation order:
- *   1. Indexed exact-match fields (checked by caller — passed as Set)
+ *   1. Indexed exact-match fields (checked by caller  -  passed as Set)
  *   2. Plain equality checks ($eq or raw value)
  *   3. Range operators ($gt, $gte, $lt, $lte, $ne, $in, $nin)
  *   4. Regex / function ($regex, $fn, RegExp value, function filter)

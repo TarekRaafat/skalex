@@ -8,7 +8,7 @@ import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
 // ─── PluginEngine unit tests ──────────────────────────────────────────────────
 
-describe("PluginEngine — register()", () => {
+describe("PluginEngine  -  register()", () => {
   test("throws if plugin is not an object", () => {
     const engine = new PluginEngine();
     expect(() => engine.register(null)).toThrow(TypeError);
@@ -31,7 +31,7 @@ describe("PluginEngine — register()", () => {
   });
 });
 
-describe("PluginEngine — run()", () => {
+describe("PluginEngine  -  run()", () => {
   test("calls matching hook with context", async () => {
     const engine = new PluginEngine();
     const calls = [];
@@ -89,7 +89,7 @@ function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });
 }
 
-describe("db.use() — throws on bad input", () => {
+describe("db.use()  -  throws on bad input", () => {
   test("throws TypeError for non-object plugin", () => {
     const db = makeDb();
     expect(() => db.use(null)).toThrow(TypeError);
@@ -97,7 +97,7 @@ describe("db.use() — throws on bad input", () => {
   });
 });
 
-describe("db.use() — beforeInsert / afterInsert", () => {
+describe("db.use()  -  beforeInsert / afterInsert", () => {
   test("beforeInsert receives collection and doc before insert", async () => {
     const db = makeDb();
     await db.connect();
@@ -128,7 +128,7 @@ describe("db.use() — beforeInsert / afterInsert", () => {
   });
 });
 
-describe("db.use() — beforeUpdate / afterUpdate", () => {
+describe("db.use()  -  beforeUpdate / afterUpdate", () => {
   test("afterUpdate receives the updated document", async () => {
     const db = makeDb();
     await db.connect();
@@ -156,7 +156,7 @@ describe("db.use() — beforeUpdate / afterUpdate", () => {
   });
 });
 
-describe("db.use() — beforeDelete / afterDelete", () => {
+describe("db.use()  -  beforeDelete / afterDelete", () => {
   test("afterDelete receives the deleted document", async () => {
     const db = makeDb();
     await db.connect();
@@ -182,7 +182,7 @@ describe("db.use() — beforeDelete / afterDelete", () => {
   });
 });
 
-describe("db.use() — beforeFind / afterFind", () => {
+describe("db.use()  -  beforeFind / afterFind", () => {
   test("afterFind receives docs array", async () => {
     const db = makeDb();
     await db.connect();
@@ -209,7 +209,7 @@ describe("db.use() — beforeFind / afterFind", () => {
   });
 });
 
-describe("db.use() — multiple plugins", () => {
+describe("db.use()  -  multiple plugins", () => {
   test("multiple plugins all receive hooks", async () => {
     const db = makeDb();
     await db.connect();

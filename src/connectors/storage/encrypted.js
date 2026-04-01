@@ -1,5 +1,5 @@
 /**
- * EncryptedAdapter — wraps any StorageAdapter with AES-256-GCM encryption.
+ * EncryptedAdapter  -  wraps any StorageAdapter with AES-256-GCM encryption.
  *
  * All data written to the underlying adapter is encrypted; reads are decrypted
  * transparently. The encryption layer is completely invisible to callers.
@@ -10,7 +10,7 @@
  * Wire format: base64( iv[12] | ciphertext+tag[n+16] )
  *
  * Uses the Web Crypto API (globalThis.crypto.subtle) which is available in
- * Node.js ≥18, Bun, Deno, and all modern browsers — no extra dependencies.
+ * Node.js ≥18, Bun, Deno, and all modern browsers  -  no extra dependencies.
  *
  * Key formats accepted:
  *   - 64-character hex string  (32 bytes)
@@ -19,8 +19,8 @@
 import StorageAdapter from "./base.js";
 
 const ALGO    = "AES-GCM";
-const IV_LEN  = 12;   // bytes — recommended for GCM
-const KEY_LEN = 32;   // bytes — AES-256
+const IV_LEN  = 12;   // bytes  -  recommended for GCM
+const KEY_LEN = 32;   // bytes  -  AES-256
 
 const _encoder = new TextEncoder();
 const _decoder = new TextDecoder();

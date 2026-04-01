@@ -1,5 +1,5 @@
 /**
- * PluginEngine — pre/post hook system for all database operations.
+ * PluginEngine  -  pre/post hook system for all database operations.
  *
  * Plugins are plain objects with optional async hook methods.
  * All hooks are awaited in registration order.
@@ -13,7 +13,7 @@
  *
  * Context shapes:
  *   beforeInsert  : { collection, doc }
- *   afterInsert   : { collection, doc }           — doc is the fully inserted document
+ *   afterInsert   : { collection, doc }            -  doc is the fully inserted document
  *   beforeUpdate  : { collection, filter, update }
  *   afterUpdate   : { collection, filter, update, result }
  *   beforeDelete  : { collection, filter }

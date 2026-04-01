@@ -1,5 +1,5 @@
 /**
- * ttl.js — document expiry engine.
+ * ttl.js  -  document expiry engine.
  *
  * Documents with a `_expiresAt` field (Date) are auto-deleted
  * when the TTL sweep runs (on connect and optionally on a timer).

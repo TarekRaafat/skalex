@@ -58,10 +58,10 @@ const users = db.useCollection("users");
 // Valid insert
 await users.insertOne({ email: "alice@example.com", role: "admin" });
 
-// Throws — email already exists
+// Throws  -  email already exists
 await users.insertOne({ email: "alice@example.com", role: "user" });
 
-// Throws — role is required
+// Throws  -  role is required
 await users.insertOne({ email: "bob@example.com" });
 
 await db.disconnect();
@@ -139,7 +139,7 @@ await accounts.insertMany([
   { name: "Bob",   balance: 200 },
 ]);
 
-// Transfer 100 from Alice to Bob — rolls back if anything throws
+// Transfer 100 from Alice to Bob  -  rolls back if anything throws
 await db.transaction(async (db) => {
   const accounts = db.useCollection("accounts");
   await accounts.updateOne({ name: "Alice" }, { balance: { $inc: -100 } });
@@ -342,14 +342,14 @@ await db.connect();
 
 const articles = db.useCollection("articles");
 
-// Insert documents — embed the "content" field automatically
+// Insert documents  -  embed the "content" field automatically
 await articles.insertMany([
   { title: "Getting started with Skalex", content: "Skalex is a zero-dependency JS database..." },
   { title: "Vector search explained",     content: "Cosine similarity measures the angle between two vectors..." },
   { title: "Using Ollama locally",         content: "Ollama lets you run embedding models on your own machine..." },
 ], { embed: "content" });
 
-// Search by meaning — returns docs ranked by cosine similarity
+// Search by meaning  -  returns docs ranked by cosine similarity
 const { docs, scores } = await articles.search("how do I set up a local database?", { limit: 2 });
 
 console.log(docs[0].title); // most relevant article
@@ -412,7 +412,7 @@ await db.connect();
 const secrets = db.useCollection("secrets");
 await secrets.insertOne({ apiKey: "sk-...", service: "openai" });
 
-// Files on disk are AES-256-GCM encrypted — unreadable without the key
+// Files on disk are AES-256-GCM encrypted  -  unreadable without the key
 await db.disconnect();
 ```
 
@@ -518,7 +518,7 @@ console.log(log[0].session); // "user-123"
 await db.restore("orders", snapshot);
 
 const { docs } = await orders.find({});
-console.log(docs[0].qty); // 5 — update rolled back
+console.log(docs[0].qty); // 5  -  update rolled back
 
 await db.disconnect();
 ```
@@ -565,7 +565,7 @@ await db.connect();
 
 const tasks = db.useCollection("tasks");
 
-// Callback form — fires on every mutation
+// Callback form  -  fires on every mutation
 const unsub = tasks.watch((event) => {
   console.log(`[${event.op}]`, event.doc.title);
 });
@@ -578,7 +578,7 @@ await tasks.updateOne({ title: "Buy milk" }, { done: true });
 
 unsub(); // stop listening
 
-// Filtered watch — only fires for incomplete tasks
+// Filtered watch  -  only fires for incomplete tasks
 const unsub2 = tasks.watch({ done: false }, (event) => {
   console.log("Incomplete task changed:", event.doc.title);
 });
@@ -619,7 +619,7 @@ await products.insertMany([
   { name: "Gadget", price: 49.99, category: "electronics" },
 ], { embed: "name" });
 
-// stdio transport — for Claude Desktop / Cursor
+// stdio transport  -  for Claude Desktop / Cursor
 const server = db.mcp({
   scopes: {
     "products": ["read"],  // AI agents can only read
@@ -677,7 +677,7 @@ db.createCollection("users", {
 
 await db.connect();
 
-// Typed collection — all methods infer from User
+// Typed collection  -  all methods infer from User
 const users: Collection<User> = db.useCollection<User>("users");
 const orders: Collection<Order> = db.useCollection<Order>("orders");
 
@@ -766,7 +766,7 @@ try {
   });
 } catch (err) {
   console.error(err.message); // "Insufficient funds"
-  // Alice's balance is fully restored — transaction rolled back
+  // Alice's balance is fully restored  -  transaction rolled back
 }
 
 await db.disconnect();
@@ -780,7 +780,7 @@ await db.disconnect();
 import Skalex from "skalex";
 import { writeFile, appendFile } from "node:fs/promises";
 
-// ── Audit plugin — logs every write to a file ──────────────────────────────
+// ── Audit plugin  -  logs every write to a file ──────────────────────────────
 const auditPlugin = {
   async afterInsert({ collection, doc }) {
     const line = `${new Date().toISOString()} INSERT ${collection} ${doc._id}\n`;
@@ -796,7 +796,7 @@ const auditPlugin = {
   },
 };
 
-// ── Validation plugin — block inserts that fail a business rule ────────────
+// ── Validation plugin  -  block inserts that fail a business rule ────────────
 const validationPlugin = {
   async beforeInsert({ collection, doc }) {
     if (collection === "orders" && doc.amount <= 0) {
@@ -805,7 +805,7 @@ const validationPlugin = {
   },
 };
 
-// ── Read-only plugin — log all finds for debugging ─────────────────────────
+// ── Read-only plugin  -  log all finds for debugging ─────────────────────────
 const debugPlugin = {
   async afterFind({ collection, filter, docs }) {
     console.log(`[find] ${collection} matched ${docs.length} doc(s)`, filter);
@@ -821,11 +821,11 @@ db.use(debugPlugin);
 
 const orders = db.useCollection("orders");
 
-// Passes validation — audit entry written
+// Passes validation  -  audit entry written
 await orders.insertOne({ product: "Widget", amount: 9.99 });
 
 try {
-  // Fails beforeInsert — nothing written, no audit entry
+  // Fails beforeInsert  -  nothing written, no audit entry
   await orders.insertOne({ product: "Bad", amount: 0 });
 } catch (err) {
   console.error(err.message); // "Order amount must be greater than zero"
@@ -867,7 +867,7 @@ const bob = db.sessionStats("user-bob");
 console.log(bob.writes);       // 0
 console.log(bob.reads);        // 2
 
-// All sessions — useful for a dashboard or rate-limiter
+// All sessions  -  useful for a dashboard or rate-limiter
 const all = db.sessionStats();
 console.log(all.length);            // 2
 console.log(all.map(s => s.sessionId)); // ["user-alice", "user-bob"]
@@ -902,7 +902,7 @@ await logs.insertMany(
   }))
 );
 
-// Run a query with no index — likely to exceed threshold on large collections
+// Run a query with no index  -  likely to exceed threshold on large collections
 await logs.find({ level: "error", message: { $regex: /entry 1/ } });
 
 // Retrieve slow query entries
@@ -910,7 +910,7 @@ const slow = db.slowQueries({ minDuration: 20, limit: 10 });
 
 for (const entry of slow) {
   console.log(
-    `[${entry.collection}] ${entry.op} — ${entry.duration}ms`,
+    `[${entry.collection}] ${entry.op}  -  ${entry.duration}ms`,
     entry.filter ?? entry.query
   );
 }

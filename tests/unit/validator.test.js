@@ -82,7 +82,7 @@ describe("validateDoc", () => {
   });
 });
 
-describe("validateDoc — strict mode", () => {
+describe("validateDoc  -  strict mode", () => {
   const { fields } = parseSchema({ name: "string", age: "number" });
 
   test("no errors for a valid document containing only schema fields", () => {

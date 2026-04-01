@@ -1,5 +1,5 @@
 /**
- * MockLLMAdapter — in-memory language model adapter for tests.
+ * MockLLMAdapter  -  in-memory language model adapter for tests.
  *
  * Accepts a `responses` map of nlQuery → filter object.
  * Records all generate() and summarize() calls for assertion.

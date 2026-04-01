@@ -3,9 +3,9 @@ import StorageAdapter from "./base.js";
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
 /**
- * LibSQLAdapter — LibSQL / Turso storage backend.
+ * LibSQLAdapter  -  LibSQL / Turso storage backend.
  *
- * Works with any `@libsql/client`-compatible client — local files, embedded
+ * Works with any `@libsql/client`-compatible client  -  local files, embedded
  * replicas, or Turso remote databases.
  * All collections are stored in a single table.
  *
@@ -21,8 +21,8 @@ const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
  * For local-only usage:
  *   const client = createClient({ url: "file:./data.db" });
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   SKALEX_TABLE  — table name (default: "skalex_store")
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   SKALEX_TABLE   -  table name (default: "skalex_store")
  *
  * @param {import("@libsql/client").Client} client - A libsql client instance.
  * @param {object} [opts]

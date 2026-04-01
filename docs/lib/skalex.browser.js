@@ -52,7 +52,7 @@ function resolveDotPath(obj, path) {
 }
 
 /**
- * query.js — filter evaluation engine.
+ * query.js  -  filter evaluation engine.
  *
  * matchesFilter(item, filter) → boolean
  * All conditions in filter use AND semantics (every key must match).
@@ -70,7 +70,7 @@ function matchesFilter(item, filter) {
   // Function filter
   if (typeof filter === "function") return filter(item);
 
-  // Empty filter — matches everything
+  // Empty filter  -  matches everything
   if (filter instanceof Object && Object.keys(filter).length === 0) return true;
 
   // AND: every key must pass
@@ -112,7 +112,7 @@ function matchesFilter(item, filter) {
 
 /**
  * Pre-sort filter keys for optimal evaluation order:
- *   1. Indexed exact-match fields (checked by caller — passed as Set)
+ *   1. Indexed exact-match fields (checked by caller  -  passed as Set)
  *   2. Plain equality checks ($eq or raw value)
  *   3. Range operators ($gt, $gte, $lt, $lte, $ne, $in, $nin)
  *   4. Regex / function ($regex, $fn, RegExp value, function filter)
@@ -157,7 +157,7 @@ function presortFilter(filter, indexedFields = new Set()) {
 }
 
 /**
- * validator.js — lightweight schema validation, zero dependencies.
+ * validator.js  -  lightweight schema validation, zero dependencies.
  *
  * Schema definition:
  *   { field: "type" }
@@ -254,7 +254,7 @@ function inferSchema(doc) {
 }
 
 /**
- * ttl.js — document expiry engine.
+ * ttl.js  -  document expiry engine.
  *
  * Documents with a `_expiresAt` field (Date) are auto-deleted
  * when the TTL sweep runs (on connect and optionally on a timer).
@@ -326,7 +326,7 @@ function sweep(data, idIndex, removeFromIndexes = null) {
 }
 
 /**
- * vector.js — cosine similarity and vector utilities.
+ * vector.js  -  cosine similarity and vector utilities.
  *
  * Vectors are stored inline on documents as `_vector: number[]`.
  * They are stripped from all query results automatically.
@@ -369,7 +369,7 @@ function stripVector(doc) {
 }
 
 /**
- * aggregation.js — count / sum / avg / groupBy helpers.
+ * aggregation.js  -  count / sum / avg / groupBy helpers.
  *
  * These are pure functions operating on a filtered doc array returned by
  * _findAllRaw(). They are called by the Collection methods of the same name.
@@ -636,7 +636,7 @@ class Collection {
       const updateValue = update[field];
 
       if (Array.isArray(updateValue)) {
-        // Direct array assignment — must come before the generic object check
+        // Direct array assignment  -  must come before the generic object check
         // because for...in on [] yields zero iterations and the value would be lost.
         item[field] = updateValue;
       } else if (typeof updateValue === "object" && updateValue !== null) {
@@ -684,11 +684,11 @@ class Collection {
   /**
    * Watch for mutation events on this collection.
    *
-   * Callback form — returns an unsubscribe function:
+   * Callback form  -  returns an unsubscribe function:
    *   const unsub = col.watch({ status: "active" }, event => console.log(event));
    *   unsub(); // stop watching
    *
-   * AsyncIterator form — no callback:
+   * AsyncIterator form  -  no callback:
    *   for await (const event of col.watch({ status: "active" })) { ... }
    *
    * Event shape: { op: "insert"|"update"|"delete", collection, doc, prev? }
@@ -698,11 +698,11 @@ class Collection {
    * @returns {(() => void)|AsyncIterableIterator}
    */
   watch(filter, callback) {
-    // watch(callback) shorthand — no filter
+    // watch(callback) shorthand  -  no filter
     if (typeof filter === "function") { callback = filter; filter = null; }
 
     if (callback) {
-      // Callback-based API — returns unsub fn
+      // Callback-based API  -  returns unsub fn
       return this.database._eventBus.on(this.name, event => {
         if (!filter || matchesFilter(event.doc, filter)) callback(event);
       });
@@ -862,7 +862,7 @@ class Collection {
   // ─── Vector Search ───────────────────────────────────────────────────────
 
   /**
-   * Semantic similarity search — embed a query string and rank all documents
+   * Semantic similarity search  -  embed a query string and rank all documents
    * with a `_vector` field by cosine similarity.
    *
    * @param {string} query
@@ -1200,10 +1200,10 @@ var nodeFs = {};
 var zlib = {};
 
 /**
- * StorageAdapter — interface all storage backends must implement.
+ * StorageAdapter  -  interface all storage backends must implement.
  *
  * All methods are async. `name` is a collection identifier string
- * (no path separators — the adapter maps it to its own storage scheme).
+ * (no path separators  -  the adapter maps it to its own storage scheme).
  */
 class StorageAdapter {
   /**
@@ -1244,7 +1244,7 @@ class StorageAdapter {
 }
 
 /**
- * FsAdapter — file-system storage for Node.js, Bun, and Deno.
+ * FsAdapter  -  file-system storage for Node.js, Bun, and Deno.
  *
  * Files are stored as `<dir>/<name>.<format>`.
  * format="gz"  → zlib deflate compressed JSON
@@ -1345,7 +1345,7 @@ class FsAdapter extends StorageAdapter {
 }
 
 /**
- * migrations.js — versioned schema migrations.
+ * migrations.js  -  versioned schema migrations.
  *
  * Migrations are registered with db.addMigration({ version, up }).
  * On connect(), all pending migrations run in order, then state is saved to _meta.
@@ -1410,7 +1410,7 @@ class MigrationEngine {
 }
 
 /**
- * indexes.js — secondary field index engine.
+ * indexes.js  -  secondary field index engine.
  *
  * Maintains Map-based indexes for declared fields.
  * - Indexed field lookups are O(1) instead of O(n).
@@ -1570,7 +1570,7 @@ class IndexEngine {
 }
 
 /**
- * EmbeddingAdapter — interface all embedding backends must implement.
+ * EmbeddingAdapter  -  interface all embedding backends must implement.
  *
  * embed(text) takes a string and returns a numeric vector (number[]).
  * Vectors are stored inline on documents as the `_vector` field and are
@@ -1588,7 +1588,7 @@ class EmbeddingAdapter {
 }
 
 /**
- * OpenAIEmbeddingAdapter — generates embeddings via the OpenAI API.
+ * OpenAIEmbeddingAdapter  -  generates embeddings via the OpenAI API.
  *
  * Default model: text-embedding-3-small (1536 dimensions, fast and cheap).
  * Requires Node >=18 / Bun / Deno / browser (uses native fetch).
@@ -1628,7 +1628,7 @@ class OpenAIEmbeddingAdapter extends EmbeddingAdapter {
 }
 
 /**
- * OllamaEmbeddingAdapter — generates embeddings via a local Ollama server.
+ * OllamaEmbeddingAdapter  -  generates embeddings via a local Ollama server.
  *
  * Default model: nomic-embed-text (768 dimensions).
  * Default host:  http://localhost:11434
@@ -1666,11 +1666,11 @@ class OllamaEmbeddingAdapter extends EmbeddingAdapter {
 }
 
 /**
- * AIAdapter — interface all language model backends must implement.
+ * AIAdapter  -  interface all language model backends must implement.
  *
  * Used by:
- *   - db.ask(question, collection)  — NL → filter translation
- *   - memory.compress()             — memory summarisation
+ *   - db.ask(question, collection)   -  NL → filter translation
+ *   - memory.compress()              -  memory summarisation
  */
 class AIAdapter {
   /**
@@ -1705,10 +1705,10 @@ Rules:
 - No explanations, no markdown, no code fences`;
 
 /**
- * OpenAIAIAdapter — language model adapter using the OpenAI Chat API.
+ * OpenAIAIAdapter  -  language model adapter using the OpenAI Chat API.
  *
  * Default model: gpt-4o-mini (fast, cheap, supports JSON mode).
- * Uses native fetch — no additional dependencies.
+ * Uses native fetch  -  no additional dependencies.
  */
 
 class OpenAIAIAdapter extends AIAdapter {
@@ -1770,10 +1770,10 @@ class OpenAIAIAdapter extends AIAdapter {
 }
 
 /**
- * AnthropicAIAdapter — language model adapter using the Anthropic Messages API.
+ * AnthropicAIAdapter  -  language model adapter using the Anthropic Messages API.
  *
  * Default model: claude-haiku-4-5 (fast and economical).
- * Uses native fetch — no additional dependencies.
+ * Uses native fetch  -  no additional dependencies.
  */
 
 class AnthropicAIAdapter extends AIAdapter {
@@ -1831,7 +1831,7 @@ class AnthropicAIAdapter extends AIAdapter {
 }
 
 /**
- * OllamaAIAdapter — language model adapter using a local Ollama server.
+ * OllamaAIAdapter  -  language model adapter using a local Ollama server.
  *
  * Default model: llama3.2
  * Default host:  http://localhost:11434
@@ -1881,7 +1881,7 @@ class OllamaAIAdapter extends AIAdapter {
 }
 
 /**
- * EncryptedAdapter — wraps any StorageAdapter with AES-256-GCM encryption.
+ * EncryptedAdapter  -  wraps any StorageAdapter with AES-256-GCM encryption.
  *
  * All data written to the underlying adapter is encrypted; reads are decrypted
  * transparently. The encryption layer is completely invisible to callers.
@@ -1892,7 +1892,7 @@ class OllamaAIAdapter extends AIAdapter {
  * Wire format: base64( iv[12] | ciphertext+tag[n+16] )
  *
  * Uses the Web Crypto API (globalThis.crypto.subtle) which is available in
- * Node.js ≥18, Bun, Deno, and all modern browsers — no extra dependencies.
+ * Node.js ≥18, Bun, Deno, and all modern browsers  -  no extra dependencies.
  *
  * Key formats accepted:
  *   - 64-character hex string  (32 bytes)
@@ -1900,8 +1900,8 @@ class OllamaAIAdapter extends AIAdapter {
  */
 
 const ALGO    = "AES-GCM";
-const IV_LEN  = 12;   // bytes — recommended for GCM
-const KEY_LEN = 32;   // bytes — AES-256
+const IV_LEN  = 12;   // bytes  -  recommended for GCM
+const KEY_LEN = 32;   // bytes  -  AES-256
 
 const _encoder = new TextEncoder();
 const _decoder = new TextDecoder();
@@ -2041,16 +2041,16 @@ function _fromBase64(base64) {
 const CHARS_PER_TOKEN = 4;
 
 /**
- * memory.js — episodic agent memory.
+ * memory.js  -  episodic agent memory.
  *
  * A Memory instance wraps a private _memory_<sessionId> collection and provides:
- *   remember  — store a text entry with an embedding
- *   recall    — semantic search over stored memories
- *   history   — chronological listing
- *   forget    — delete a specific entry
- *   context   — LLM-ready string within a token budget
- *   tokenCount — estimate token usage
- *   compress  — summarise and compact old entries via the language model
+ *   remember   -  store a text entry with an embedding
+ *   recall     -  semantic search over stored memories
+ *   history    -  chronological listing
+ *   forget     -  delete a specific entry
+ *   context    -  LLM-ready string within a token budget
+ *   tokenCount  -  estimate token usage
+ *   compress   -  summarise and compact old entries via the language model
  *
  * Requires:
  *   - An embedding adapter (db._embeddingAdapter) for remember() and recall()
@@ -2196,7 +2196,7 @@ class Memory {
 }
 
 /**
- * changelog.js — per-collection append-only mutation log.
+ * changelog.js  -  per-collection append-only mutation log.
  *
  * When a collection is created with { changelog: true }, every insert,
  * update, and delete is recorded in a shared _changelog collection.
@@ -2292,7 +2292,7 @@ class ChangeLog {
       return;
     }
 
-    // Restore entire collection — replay all entries in order
+    // Restore entire collection  -  replay all entries in order
     const state = new Map(); // docId → { doc, deleted }
 
     for (const entry of relevant) {
@@ -2318,7 +2318,7 @@ class ChangeLog {
 }
 
 /**
- * ask.js — query cache and LLM filter utilities for db.ask().
+ * ask.js  -  query cache and LLM filter utilities for db.ask().
  */
 
 // ─── Hash ─────────────────────────────────────────────────────────────────────
@@ -2339,7 +2339,7 @@ function _djb2(str) {
 // ─── QueryCache ───────────────────────────────────────────────────────────────
 
 /**
- * QueryCache — maps hash(collection + schema + query) → filter object.
+ * QueryCache  -  maps hash(collection + schema + query) → filter object.
  *
  * Persisted in the _meta collection so it survives connect/disconnect cycles.
  * The cache avoids calling the LLM again for the same question on the same schema.
@@ -2425,7 +2425,7 @@ function _isDateString(val) {
 
 /**
  * Validate a filter generated by an LLM against a known schema.
- * Returns warning strings for unknown fields — does not throw.
+ * Returns warning strings for unknown fields  -  does not throw.
  *
  * @param {object} filter
  * @param {object|null} schema  - Plain { field: type } schema object.
@@ -2447,10 +2447,10 @@ function validateLLMFilter(filter, schema) {
 }
 
 /**
- * events.js — lightweight cross-runtime event bus.
+ * events.js  -  lightweight cross-runtime event bus.
  *
  * Provides pub/sub for collection mutation events consumed by watch() and
- * any other internal subscribers. No Node.js EventEmitter dependency —
+ * any other internal subscribers. No Node.js EventEmitter dependency  - 
  * works identically in Node, Bun, Deno, and browsers.
  *
  * Event names are collection names. Subscribers receive a MutationEvent:
@@ -2494,7 +2494,7 @@ class EventBus {
     const fns = this._listeners.get(event);
     if (!fns) return;
     for (const fn of fns) {
-      try { fn(data); } catch (_) { /* swallow — watcher errors must not break writes */ }
+      try { fn(data); } catch (_) { /* swallow  -  watcher errors must not break writes */ }
     }
   }
 
@@ -2520,7 +2520,7 @@ class EventBus {
 }
 
 /**
- * query-log.js — slow query log for find / search operations.
+ * query-log.js  -  slow query log for find / search operations.
  *
  * Queries whose duration exceeds `threshold` ms are recorded.
  * Call db.slowQueries(opts) to retrieve them.
@@ -2548,7 +2548,7 @@ class QueryLog {
     if (filter !== undefined) entry.filter = filter;
     if (query  !== undefined) entry.query  = query;
     this._entries.push(entry);
-    // Ring buffer — drop oldest when full
+    // Ring buffer  -  drop oldest when full
     if (this._entries.length > this._maxEntries) this._entries.shift();
   }
 
@@ -2577,7 +2577,7 @@ class QueryLog {
 }
 
 /**
- * SessionStats — per-session read/write/lastActive tracking.
+ * SessionStats  -  per-session read/write/lastActive tracking.
  *
  * Sessions are keyed by an arbitrary string ID passed via the `session`
  * option on mutation methods and find/search options.
@@ -2661,7 +2661,7 @@ class SessionStats {
 }
 
 /**
- * PluginEngine — pre/post hook system for all database operations.
+ * PluginEngine  -  pre/post hook system for all database operations.
  *
  * Plugins are plain objects with optional async hook methods.
  * All hooks are awaited in registration order.
@@ -2675,7 +2675,7 @@ class SessionStats {
  *
  * Context shapes:
  *   beforeInsert  : { collection, doc }
- *   afterInsert   : { collection, doc }           — doc is the fully inserted document
+ *   afterInsert   : { collection, doc }            -  doc is the fully inserted document
  *   beforeUpdate  : { collection, filter, update }
  *   afterUpdate   : { collection, filter, update, result }
  *   beforeDelete  : { collection, filter }
@@ -2736,25 +2736,25 @@ class PluginEngine {
 }
 
 /**
- * tools.js — MCP tool definitions and handlers for Skalex.
+ * tools.js  -  MCP tool definitions and handlers for Skalex.
  *
  * Each tool exposes one Skalex operation to an AI agent.
  * The handler receives (db, args) and returns a plain value that is
  * JSON-serialised into the MCP content text.
  *
  * Tools:
- *   collections — list all collections
- *   schema      — get schema for a collection
- *   find        — find documents
- *   insert      — insert a document
- *   update      — update matching documents
- *   delete      — delete matching documents
- *   search      — semantic similarity search (requires embedding adapter)
- *   ask         — natural-language query (requires AI adapter)
+ *   collections  -  list all collections
+ *   schema       -  get schema for a collection
+ *   find         -  find documents
+ *   insert       -  insert a document
+ *   update       -  update matching documents
+ *   delete       -  delete matching documents
+ *   search       -  semantic similarity search (requires embedding adapter)
+ *   ask          -  natural-language query (requires AI adapter)
  *
  * Scopes:
- *   read  — collections, schema, find, search, ask
- *   write — insert, update, delete
+ *   read   -  collections, schema, find, search, ask
+ *   write  -  insert, update, delete
  */
 
 /**
@@ -2943,7 +2943,7 @@ async function callTool(name, args, db) {
 }
 
 /**
- * protocol.js — JSON-RPC 2.0 helpers for the MCP server.
+ * protocol.js  -  JSON-RPC 2.0 helpers for the MCP server.
  *
  * MCP (Model Context Protocol) uses JSON-RPC 2.0 as its wire format.
  * These helpers build compliant response/error objects and parse incoming
@@ -3022,13 +3022,13 @@ function toolError(message) {
 var http = {};
 
 /**
- * transports/http.js — HTTP + SSE transport for the MCP server.
+ * transports/http.js  -  HTTP + SSE transport for the MCP server.
  *
  * Implements the MCP HTTP/SSE transport:
- *   GET  /sse      — establishes a persistent SSE stream (server → client)
- *   POST /message  — receives JSON-RPC requests from the client
+ *   GET  /sse       -  establishes a persistent SSE stream (server → client)
+ *   POST /message   -  receives JSON-RPC requests from the client
  *
- * Uses Node's built-in `http` module — zero extra dependencies.
+ * Uses Node's built-in `http` module  -  zero extra dependencies.
  *
  * Multiple simultaneous SSE clients are supported; each receives all
  * server-sent messages (broadcast model).
@@ -3037,7 +3037,7 @@ var http = {};
 class HttpTransport {
   /**
    * @param {{ port?: number, host?: string, allowedOrigin?: string | null }} [opts]
-   *   allowedOrigin — value for Access-Control-Allow-Origin.
+   *   allowedOrigin  -  value for Access-Control-Allow-Origin.
    *   Set to a specific origin (e.g. "http://localhost:5173") or "*" for all origins.
    *   Defaults to null (no CORS header) which is safe for server-to-server use.
    *   Only set to "*" or a broad origin if you explicitly need browser client access.
@@ -3077,7 +3077,7 @@ class HttpTransport {
   start() {
     return new Promise((resolve, reject) => {
       this._server = http.createServer((req, res) => {
-        // CORS headers — only set if allowedOrigin is explicitly configured.
+        // CORS headers  -  only set if allowedOrigin is explicitly configured.
         if (this._allowedOrigin) {
           res.setHeader("Access-Control-Allow-Origin",  this._allowedOrigin);
           res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -3164,7 +3164,7 @@ class HttpTransport {
 }
 
 /**
- * transports/stdio.js — stdio transport for the MCP server.
+ * transports/stdio.js  -  stdio transport for the MCP server.
  *
  * Reads newline-delimited JSON-RPC messages from stdin and writes
  * responses to stdout. This is the standard MCP transport used by
@@ -3237,22 +3237,22 @@ class StdioTransport {
 }
 
 /**
- * mcp/index.js — SkalexMCPServer
+ * mcp/index.js  -  SkalexMCPServer
  *
  * Exposes a Skalex database as a set of MCP tools that AI agents (Claude
  * Desktop, Cursor, OpenClaw, custom agents) can call via the Model Context
  * Protocol.
  *
- * Instantiate via db.mcp(opts) — do not construct directly.
+ * Instantiate via db.mcp(opts)  -  do not construct directly.
  *
  * Transports:
- *   stdio (default) — newline-delimited JSON on stdin/stdout
- *   http            — HTTP server + SSE stream
+ *   stdio (default)  -  newline-delimited JSON on stdin/stdout
+ *   http             -  HTTP server + SSE stream
  *
  * Access control:
  *   scopes: { collectionName | '*': ['read'] | ['read', 'write'] }
- *   'read'  — find, search, ask, schema, collections
- *   'write' — insert, update, delete
+ *   'read'   -  find, search, ask, schema, collections
+ *   'write'  -  insert, update, delete
  *
  * @example
  * // stdio (for Claude Desktop / Cursor tool config)
@@ -3335,7 +3335,7 @@ class SkalexMCPServer {
 
     const { id, method, params } = msg;
 
-    // Notifications (no id) — acknowledge silently
+    // Notifications (no id)  -  acknowledge silently
     if (id === undefined) {
       if (method === "notifications/initialized") return;
       return;
@@ -3453,7 +3453,7 @@ class SkalexMCPServer {
 const META_KEY = "migrations";
 
 /**
- * Skalex — an in-process document database with file-system persistence.
+ * Skalex  -  an in-process document database with file-system persistence.
  *
  * @example
  * const db = new Skalex({ path: "./.db" });
@@ -3766,7 +3766,7 @@ class Skalex {
    * @returns {Skalex}
    */
   namespace(id) {
-    // Strip path separators and traversal sequences — only alphanumeric, dash, and underscore allowed.
+    // Strip path separators and traversal sequences  -  only alphanumeric, dash, and underscore allowed.
     const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
     if (!safeId) throw new Error("namespace: id must contain at least one alphanumeric character");
     return new Skalex({
@@ -4156,7 +4156,7 @@ class Skalex {
       case "ollama":
         return new OllamaAIAdapter({ model, host });
       default:
-        return null; // unknown provider — skip silently (embedding may still work)
+        return null; // unknown provider  -  skip silently (embedding may still work)
     }
   }
 

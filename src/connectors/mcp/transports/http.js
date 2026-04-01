@@ -1,11 +1,11 @@
 /**
- * transports/http.js — HTTP + SSE transport for the MCP server.
+ * transports/http.js  -  HTTP + SSE transport for the MCP server.
  *
  * Implements the MCP HTTP/SSE transport:
- *   GET  /sse      — establishes a persistent SSE stream (server → client)
- *   POST /message  — receives JSON-RPC requests from the client
+ *   GET  /sse       -  establishes a persistent SSE stream (server → client)
+ *   POST /message   -  receives JSON-RPC requests from the client
  *
- * Uses Node's built-in `http` module — zero extra dependencies.
+ * Uses Node's built-in `http` module  -  zero extra dependencies.
  *
  * Multiple simultaneous SSE clients are supported; each receives all
  * server-sent messages (broadcast model).
@@ -16,12 +16,12 @@ import { error as protocolError, PARSE_ERROR } from "../protocol.js";
 class HttpTransport {
   /**
    * @param {{ port?: number, host?: string, allowedOrigin?: string | null, maxBodySize?: number }} [opts]
-   *   allowedOrigin — value for Access-Control-Allow-Origin.
+   *   allowedOrigin  -  value for Access-Control-Allow-Origin.
    *   Set to a specific origin (e.g. "http://localhost:5173") or "*" for all origins.
    *   Defaults to null (no CORS header) which is safe for server-to-server use.
    *   Only set to "*" or a broad origin if you explicitly need browser client access.
    *
-   *   maxBodySize — maximum POST body size in bytes (default: 1 MiB).
+   *   maxBodySize  -  maximum POST body size in bytes (default: 1 MiB).
    *   Increase if MCP tool calls carry large document payloads (e.g. long text fields).
    */
   constructor({ port = 3000, host = "127.0.0.1", allowedOrigin = null, maxBodySize = 1_048_576 } = {}) {
@@ -60,7 +60,7 @@ class HttpTransport {
   start() {
     return new Promise((resolve, reject) => {
       this._server = http.createServer((req, res) => {
-        // CORS headers — only set if allowedOrigin is explicitly configured.
+        // CORS headers  -  only set if allowedOrigin is explicitly configured.
         if (this._allowedOrigin) {
           res.setHeader("Access-Control-Allow-Origin",  this._allowedOrigin);
           res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");

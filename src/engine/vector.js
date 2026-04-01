@@ -1,5 +1,5 @@
 /**
- * vector.js — cosine similarity and vector utilities.
+ * vector.js  -  cosine similarity and vector utilities.
  *
  * Vectors are stored inline on documents as `_vector: number[]`.
  * They are stripped from all query results automatically.

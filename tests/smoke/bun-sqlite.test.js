@@ -47,7 +47,7 @@ async function run() {
 
   // ─── Adapter conformance ───────────────────────────────────────────────────
 
-  await section("BunSQLiteAdapter — raw adapter interface", async () => {
+  await section("BunSQLiteAdapter  -  raw adapter interface", async () => {
     const adapter = new BunSQLiteAdapter(":memory:");
 
     // read missing key
@@ -72,7 +72,7 @@ async function run() {
     assert("delete() removes key",                  await adapter.read("col1") === null);
     assert("list() excludes deleted key",           !(await adapter.list()).includes("col1"));
 
-    // delete missing — should not throw
+    // delete missing  -  should not throw
     await adapter.delete("nonexistent");
     assert("delete() is a no-op for missing key",   true);
 
@@ -83,7 +83,7 @@ async function run() {
 
   // ─── File-based SQLite database ────────────────────────────────────────────
 
-  await section("BunSQLiteAdapter — file-based database", async () => {
+  await section("BunSQLiteAdapter  -  file-based database", async () => {
     const path = `/tmp/skalex-bun-sqlite-smoke-${Date.now()}.db`;
     const adapter = new BunSQLiteAdapter(path);
 
@@ -92,7 +92,7 @@ async function run() {
 
     adapter.close();
 
-    // Re-open same file — data should persist
+    // Re-open same file  -  data should persist
     const adapter2 = new BunSQLiteAdapter(path);
     assert("data persists across close/reopen",     await adapter2.read("test") === "hello");
     adapter2.close();
@@ -135,7 +135,7 @@ async function run() {
   // ─── Summary ───────────────────────────────────────────────────────────────
 
   console.log(`\n${"─".repeat(50)}`);
-  console.log(`Bun ${Bun.version} — BunSQLiteAdapter smoke test`);
+  console.log(`Bun ${Bun.version}  -  BunSQLiteAdapter smoke test`);
   console.log(`Passed: ${passed}  Failed: ${failed}`);
   console.log("─".repeat(50));
 

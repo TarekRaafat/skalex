@@ -1,5 +1,5 @@
 /**
- * Bun 1.x smoke test — exercises the published ESM dist artifact.
+ * Bun 1.x smoke test  -  exercises the published ESM dist artifact.
  *
  * Run:
  *   bun tests/smoke/bun.test.js
@@ -187,18 +187,18 @@ async function run() {
     const llm       = await import("../../src/connectors/llm/index.js");
     const root      = await import("../../src/connectors/index.js");
 
-    assert("connectors/storage — FsAdapter",             typeof storage.FsAdapter === "function");
-    assert("connectors/storage — LocalStorageAdapter",   typeof storage.LocalStorageAdapter === "function");
-    assert("connectors/storage — EncryptedAdapter",      typeof storage.EncryptedAdapter === "function");
-    assert("connectors/storage — BunSQLiteAdapter",      typeof storage.BunSQLiteAdapter === "function");
-    assert("connectors/storage — D1Adapter",             typeof storage.D1Adapter === "function");
-    assert("connectors/storage — LibSQLAdapter",         typeof storage.LibSQLAdapter === "function");
-    assert("connectors/embedding — OpenAIEmbeddingAdapter", typeof embedding.OpenAIEmbeddingAdapter === "function");
-    assert("connectors/embedding — OllamaEmbeddingAdapter", typeof embedding.OllamaEmbeddingAdapter === "function");
-    assert("connectors/llm — OpenAILLMAdapter",          typeof llm.OpenAILLMAdapter === "function");
-    assert("connectors/llm — AnthropicLLMAdapter",       typeof llm.AnthropicLLMAdapter === "function");
-    assert("connectors/llm — OllamaLLMAdapter",          typeof llm.OllamaLLMAdapter === "function");
-    assert("connectors root barrel — all adapter types", typeof root.FsAdapter === "function" &&
+    assert("connectors/storage  -  FsAdapter",             typeof storage.FsAdapter === "function");
+    assert("connectors/storage  -  LocalStorageAdapter",   typeof storage.LocalStorageAdapter === "function");
+    assert("connectors/storage  -  EncryptedAdapter",      typeof storage.EncryptedAdapter === "function");
+    assert("connectors/storage  -  BunSQLiteAdapter",      typeof storage.BunSQLiteAdapter === "function");
+    assert("connectors/storage  -  D1Adapter",             typeof storage.D1Adapter === "function");
+    assert("connectors/storage  -  LibSQLAdapter",         typeof storage.LibSQLAdapter === "function");
+    assert("connectors/embedding  -  OpenAIEmbeddingAdapter", typeof embedding.OpenAIEmbeddingAdapter === "function");
+    assert("connectors/embedding  -  OllamaEmbeddingAdapter", typeof embedding.OllamaEmbeddingAdapter === "function");
+    assert("connectors/llm  -  OpenAILLMAdapter",          typeof llm.OpenAILLMAdapter === "function");
+    assert("connectors/llm  -  AnthropicLLMAdapter",       typeof llm.AnthropicLLMAdapter === "function");
+    assert("connectors/llm  -  OllamaLLMAdapter",          typeof llm.OllamaLLMAdapter === "function");
+    assert("connectors root barrel  -  all adapter types", typeof root.FsAdapter === "function" &&
                                                          typeof root.OpenAIEmbeddingAdapter === "function" &&
                                                          typeof root.OpenAILLMAdapter === "function");
   });

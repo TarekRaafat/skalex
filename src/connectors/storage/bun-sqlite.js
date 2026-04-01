@@ -3,9 +3,9 @@ import StorageAdapter from "./base.js";
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
 /**
- * BunSQLiteAdapter — Bun-native SQLite storage backend via `bun:sqlite`.
+ * BunSQLiteAdapter  -  Bun-native SQLite storage backend via `bun:sqlite`.
  *
- * Uses Bun's built-in SQLite module — zero additional dependencies.
+ * Uses Bun's built-in SQLite module  -  zero additional dependencies.
  * All collections are stored in a single SQLite file (or in-memory).
  *
  * Usage (Bun runtime only):
@@ -15,8 +15,8 @@ const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
  *   const db = new Skalex({ adapter: new BunSQLiteAdapter("./data.db") });
  *   await db.connect();
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   SKALEX_TABLE  — SQLite table name (default: "skalex_store")
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   SKALEX_TABLE   -  SQLite table name (default: "skalex_store")
  *
  * @param {string} [path=":memory:"]  - Path to the SQLite file, or ":memory:" for in-memory.
  * @param {object} [opts]

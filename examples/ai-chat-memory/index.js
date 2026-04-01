@@ -4,16 +4,16 @@
  * Demonstrates Skalex's episodic agent memory API. Exchanges from a
  * simulated multi-turn conversation are stored with semantic embeddings,
  * then recalled and formatted into an LLM-ready context string for the
- * next turn — all persisted across process restarts.
+ * next turn  -  all persisted across process restarts.
  *
  * What this covers:
- *   db.useMemory(sessionId)        — per-session episodic store
- *   memory.remember(text)          — store with automatic embedding
- *   memory.recall(query, opts)     — semantic search over stored memories
- *   memory.context({ tokens })     — token-budgeted context string
- *   memory.history(opts)           — chronological listing
- *   memory.tokenCount()            — estimate token usage
- *   memory.compress({ threshold }) — summarise old entries via LLM
+ *   db.useMemory(sessionId)         -  per-session episodic store
+ *   memory.remember(text)           -  store with automatic embedding
+ *   memory.recall(query, opts)      -  semantic search over stored memories
+ *   memory.context({ tokens })      -  token-budgeted context string
+ *   memory.history(opts)            -  chronological listing
+ *   memory.tokenCount()             -  estimate token usage
+ *   memory.compress({ threshold })  -  summarise old entries via LLM
  *
  * Requirements:
  *   OPENAI_KEY env var (or swap provider to "ollama" for local, zero-cost)
@@ -59,7 +59,7 @@ const exchanges = [
   "Assistant: Got it. Do you want the agent to escalate complex issues to a human?",
   "User: Yes, and it must remember past conversations so users don't repeat themselves.",
   "Assistant: Skalex's episodic memory is exactly built for that. Each session is isolated.",
-  "User: My store sells electronics — laptops, phones, and accessories.",
+  "User: My store sells electronics  -  laptops, phones, and accessories.",
   "Assistant: Noted. I can help you structure product categories and FAQ embeddings.",
 ];
 

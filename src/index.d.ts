@@ -543,10 +543,10 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   avg(field: string, filter?: Filter<T>): Promise<number | null>;
   groupBy(field: string, filter?: Filter<T>): Promise<Record<string, DocOf<T>[]>>;
 
-  // Watch — callback form
+  // Watch  -  callback form
   watch(callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
   watch(filter: Filter<T>, callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
-  // Watch — AsyncIterableIterator form
+  // Watch  -  AsyncIterableIterator form
   watch(filter?: Filter<T>): AsyncIterableIterator<MutationEvent<DocOf<T>>>;
 
   // I/O
@@ -683,7 +683,7 @@ export declare class Skalex {
   // Plugins
   use(plugin: Plugin): void;
 
-  // Global watch — fires for mutations across all collections
+  // Global watch  -  fires for mutations across all collections
   watch(callback: (event: MutationEvent) => void): () => void;
 
   // Session Stats

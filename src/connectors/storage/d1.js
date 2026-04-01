@@ -3,7 +3,7 @@ import StorageAdapter from "./base.js";
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
 /**
- * D1Adapter — Cloudflare D1 (SQLite-compatible) storage backend.
+ * D1Adapter  -  Cloudflare D1 (SQLite-compatible) storage backend.
  *
  * Stores all collections in a single table.
  *
@@ -19,8 +19,8 @@ const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
  *     }
  *   };
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   SKALEX_TABLE  — table name (default: "skalex_store")
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   SKALEX_TABLE   -  table name (default: "skalex_store")
  *
  * @param {D1Database} d1       - The D1 binding from your Worker environment.
  * @param {object}     [opts]

@@ -1,5 +1,5 @@
 /**
- * Unit tests for changelog.js — ChangeLog class.
+ * Unit tests for changelog.js  -  ChangeLog class.
  */
 import { describe, test, expect, beforeEach } from "vitest";
 import Skalex from "../../src/index.js";
@@ -12,7 +12,7 @@ function makeDb() {
 
 // ─── log / query ─────────────────────────────────────────────────────────────
 
-describe("ChangeLog — log / query", () => {
+describe("ChangeLog  -  log / query", () => {
   test("log() records an insert entry", async () => {
     const db = makeDb();
     const cl = db.changelog();
@@ -111,7 +111,7 @@ describe("Collection changelog: true option", () => {
     await db.useCollection("products").insertOne({ name: "Widget", price: 9.99 });
     await db.disconnect();
 
-    // Reconnect — schema must survive without re-calling createCollection
+    // Reconnect  -  schema must survive without re-calling createCollection
     await db.connect();
     const col = db.useCollection("products");
     await expect(col.insertOne({ name: 123, price: 9.99 })).rejects.toThrow(/Validation/);
@@ -127,7 +127,7 @@ describe("Collection changelog: true option", () => {
     await events.insertOne({ type: "login" });
     await db.disconnect();
 
-    // Reconnect — loadData must preserve the changelog:true setting
+    // Reconnect  -  loadData must preserve the changelog:true setting
     await db.connect();
     await db.useCollection("events").insertOne({ type: "logout" });
     const entries = await db.changelog().query("events");
@@ -200,7 +200,7 @@ describe("Collection changelog: true option", () => {
 
 // ─── restore ─────────────────────────────────────────────────────────────────
 
-describe("ChangeLog — restore", () => {
+describe("ChangeLog  -  restore", () => {
   // Helper: backdate the last N changelog entries in _data to a given Date.
   function backdateLastEntries(db, n, ts) {
     const data = db.useCollection("_changelog")._data;
@@ -231,7 +231,7 @@ describe("ChangeLog — restore", () => {
     await cl.log("update", "notes", { ...n2, text: "note B edited" });
     backdateLastEntries(db, 2, T_FUTURE);
 
-    // Restore to T_SNAP — only the two inserts are replayed
+    // Restore to T_SNAP  -  only the two inserts are replayed
     await db.restore("notes", T_SNAP);
 
     const { docs } = await col.find({});
@@ -273,7 +273,7 @@ describe("ChangeLog — restore", () => {
   test("restore() does nothing for empty log", async () => {
     const db = makeDb();
     await db.connect();
-    // No entries logged — restore should not throw
+    // No entries logged  -  restore should not throw
     await expect(db.restore("empty", new Date())).resolves.toBeUndefined();
     await db.disconnect();
   });
@@ -292,7 +292,7 @@ describe("ChangeLog — restore", () => {
 
     await db.restore("notes", T_SNAP);
 
-    // Only the original insert entry should exist — no phantom entries from the restore replay
+    // Only the original insert entry should exist  -  no phantom entries from the restore replay
     const entries = await cl.query("notes");
     expect(entries).toHaveLength(1);
     expect(entries[0].op).toBe("insert");

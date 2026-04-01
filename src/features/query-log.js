@@ -1,5 +1,5 @@
 /**
- * query-log.js — slow query log for find / search operations.
+ * query-log.js  -  slow query log for find / search operations.
  *
  * Queries whose duration exceeds `threshold` ms are recorded.
  * Call db.slowQueries(opts) to retrieve them.
@@ -27,7 +27,7 @@ class QueryLog {
     if (filter !== undefined) entry.filter = filter;
     if (query  !== undefined) entry.query  = query;
     this._entries.push(entry);
-    // Ring buffer — drop oldest when full
+    // Ring buffer  -  drop oldest when full
     if (this._entries.length > this._maxEntries) this._entries.shift();
   }
 

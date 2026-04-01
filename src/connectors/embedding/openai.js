@@ -1,18 +1,18 @@
 /**
- * OpenAIEmbeddingAdapter — generates embeddings via the OpenAI API.
+ * OpenAIEmbeddingAdapter  -  generates embeddings via the OpenAI API.
  *
  * Default model: text-embedding-3-small (1536 dimensions, fast and cheap).
  * Requires Node >=18 / Bun / Deno / browser (uses native fetch).
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   OPENAI_API_KEY           — API key
- *   OPENAI_EMBED_MODEL       — embedding model name
- *   OPENAI_EMBED_BASE_URL    — full endpoint URL (useful for proxies / OpenAI-compatible APIs)
- *   OPENAI_EMBED_DIMENSIONS  — output vector dimensions (text-embedding-3-* only)
- *   OPENAI_ORGANIZATION      — OpenAI organization ID
- *   OPENAI_EMBED_TIMEOUT     — request timeout in ms
- *   OPENAI_EMBED_RETRIES     — number of retry attempts on failure (default: 0)
- *   OPENAI_EMBED_RETRY_DELAY — base retry delay in ms, doubles each attempt (default: 1000)
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   OPENAI_API_KEY            -  API key
+ *   OPENAI_EMBED_MODEL        -  embedding model name
+ *   OPENAI_EMBED_BASE_URL     -  full endpoint URL (useful for proxies / OpenAI-compatible APIs)
+ *   OPENAI_EMBED_DIMENSIONS   -  output vector dimensions (text-embedding-3-* only)
+ *   OPENAI_ORGANIZATION       -  OpenAI organization ID
+ *   OPENAI_EMBED_TIMEOUT      -  request timeout in ms
+ *   OPENAI_EMBED_RETRIES      -  number of retry attempts on failure (default: 0)
+ *   OPENAI_EMBED_RETRY_DELAY  -  base retry delay in ms, doubles each attempt (default: 1000)
  */
 import EmbeddingAdapter from "./base.js";
 

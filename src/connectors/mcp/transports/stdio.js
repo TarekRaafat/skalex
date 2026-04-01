@@ -1,7 +1,7 @@
 import { error as protocolError, PARSE_ERROR } from "../protocol.js";
 
 /**
- * transports/stdio.js — stdio transport for the MCP server.
+ * transports/stdio.js  -  stdio transport for the MCP server.
  *
  * Reads newline-delimited JSON-RPC messages from stdin and writes
  * responses to stdout. This is the standard MCP transport used by

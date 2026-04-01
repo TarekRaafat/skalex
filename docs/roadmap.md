@@ -8,7 +8,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **Sync & multi-device**
 - [ ] Pluggable sync engine: push/pull replication with last-write-wins and custom conflict resolution; built-in adapters for REST, WebSocket, CouchDB/PouchDB, Supabase, and Firebase
-- [ ] Multi-tab sync: BroadcastChannel-based cross-tab reactivity in browsers — writes in one tab reflect instantly in all others, zero extra dependencies
+- [ ] Multi-tab sync: BroadcastChannel-based cross-tab reactivity in browsers  -  writes in one tab reflect instantly in all others, zero extra dependencies
 - [ ] Partial/filtered replication: sync only the documents matching a per-session or per-user filter
 - [ ] Real-time collaboration: CRDT-based field-level merging for conflict-free multi-user writes; presence tracking API
 
@@ -23,19 +23,19 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Zod schema integration: pass a Zod schema to `createCollection` for validation and inference
 
 **AI**
-- [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion — 15–30% better recall than cosine similarity alone
-- [ ] Multimodal embeddings: unified text + image vector space via compatible multimodal models (e.g. CLIP) — search images with natural language
+- [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion  -  15–30% better recall than cosine similarity alone
+- [ ] Multimodal embeddings: unified text + image vector space via compatible multimodal models (e.g. CLIP)  -  search images with natural language
 - [ ] Vector quantization: scalar and product quantization for 4–8× embedding memory reduction on large datasets
 - [ ] Graph-enhanced vector retrieval: traverse relationships during semantic search for contextually richer results
 - [ ] Streaming LLM responses: `db.ask()` and `memory.compress()` as async iterables for real-time output
 - [ ] `collection.similar(doc, options)`: find semantically near-duplicate documents via embedding distance
 - [ ] `db.classify(doc, labels)`: zero-shot document classification via LLM
 - [ ] `db.summarize(collection, options)`: AI-powered collection or result-set summarization
-- [ ] `db.rag(query, options)`: RAG pipeline in one call — vector search → context assembly → LLM answer
+- [ ] `db.rag(query, options)`: RAG pipeline in one call  -  vector search → context assembly → LLM answer
 - [ ] Strict LLM response validation: type-check and operator-validate AI-generated filters before execution; throw on malformed responses instead of silently returning empty results
 
 **Graph**
-- [ ] `collection.traverse(startId, options)`: multi-hop relationship traversal with depth, direction, and filter control — powers knowledge graphs, recommendations, and social graphs
+- [ ] `collection.traverse(startId, options)`: multi-hop relationship traversal with depth, direction, and filter control  -  powers knowledge graphs, recommendations, and social graphs
 - [ ] Shortest-path and neighbor queries across populated collections
 
 **Time-series**
@@ -48,7 +48,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Key rotation for `EncryptedAdapter`: rekey the entire database to a new encryption key without a full decrypt/re-encrypt cycle
 
 **Storage adapters**
-- [ ] `SQLiteWASMAdapter`: browser-native SQLite via the official SQLite WASM build — persistent, faster than `localStorage`, no server needed
+- [ ] `SQLiteWASMAdapter`: browser-native SQLite via the official SQLite WASM build  -  persistent, faster than `localStorage`, no server needed
 - [ ] IndexedDB adapter (browser persistent storage beyond `localStorage`)
 - [ ] `PostgresAdapter`: PostgreSQL via `postgres` / `pg` Node.js driver
 - [ ] `BetterSQLite3Adapter`: synchronous Node.js SQLite via `better-sqlite3`
@@ -62,19 +62,19 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
 - [ ] Write-Ahead Log (WAL): journal mutations before applying so a hard kill or OOM crash never loses committed data
 - [ ] `db.size(collection?)`: report per-collection and total in-memory footprint in bytes
-- [ ] Memory pressure events: `db.on('memoryWarning', cb)` fires when heap usage crosses a configurable threshold — lets apps shed load before OOM
+- [ ] Memory pressure events: `db.on('memoryWarning', cb)` fires when heap usage crosses a configurable threshold  -  lets apps shed load before OOM
 
 **DX & tooling**
-- [ ] `create-skalex`: scaffolding CLI — `npm create skalex@latest` for instant project setup with runtime-specific templates
-- [ ] Interactive playground: browser-based sandbox hosted on the docs site — try Skalex with zero installation
+- [ ] `create-skalex`: scaffolding CLI  -  `npm create skalex@latest` for instant project setup with runtime-specific templates
+- [ ] Interactive playground: browser-based sandbox hosted on the docs site  -  try Skalex with zero installation
 - [ ] Test utilities: `createTestDb(options?)` helper pre-configured with MemoryAdapter for frictionless unit and integration testing
 - [ ] `db.rest(options)`: auto-generate a zero-configuration REST API server for all collections
 - [ ] `db.graphql(options)`: auto-generate a GraphQL API with queries and mutations for all collections
 - [ ] `db.compact()`: reduce on-disk file size by rewriting storage without dead or fragmented entries
-- [ ] OpenTelemetry integration: `db.otel(provider)` — emit traces and metrics for all database operations
+- [ ] OpenTelemetry integration: `db.otel(provider)`  -  emit traces and metrics for all database operations
 - [ ] Actionable error messages: every error includes a unique code, a plain-English explanation, and a suggested fix
 - [ ] Prisma / Drizzle schema import: auto-generate Skalex collections from existing schema files
-- [ ] `@skalex/devtools`: browser DevTools extension — inspect collections, run live queries, visualize schema and indexes
+- [ ] `@skalex/devtools`: browser DevTools extension  -  inspect collections, run live queries, visualize schema and indexes
 - [ ] `npx skalex`: CLI inspector REPL for browsing database files without writing code
 - [ ] Query explain / execution plan debug tool
 - [ ] Automated backup & restore
@@ -91,7 +91,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **Build & distribution**
 - [x] Full build matrix: `dist/skalex.esm.js`, `dist/skalex.esm.min.js`, `dist/skalex.cjs`, `dist/skalex.min.cjs`, `dist/skalex.browser.js` (ESM, `node:*` stubbed), `dist/skalex.umd.min.js` (IIFE, CDN default via jsDelivr / unpkg)
-- [x] Connector subpackage exports: `skalex/connectors` (all adapters), `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm` — fully tree-shakeable named exports
+- [x] Connector subpackage exports: `skalex/connectors` (all adapters), `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`  -  fully tree-shakeable named exports
 - [x] `node:` prefix on all built-in imports: Deno 2.x compatible
 
 **TypeScript & testing**

@@ -1,5 +1,5 @@
 /**
- * Full connectors barrel — all adapter types in one import.
+ * Full connectors barrel  -  all adapter types in one import.
  *
  * import { FsAdapter, LocalStorageAdapter, EncryptedAdapter,
  *           OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter,
@@ -7,12 +7,12 @@
  *
  * Tree-shaking removes any adapters not referenced in your code.
  * Platform-specific adapters (BunSQLiteAdapter, D1Adapter, LibSQLAdapter) access
- * their platform APIs lazily — no static import errors in other environments.
+ * their platform APIs lazily  -  no static import errors in other environments.
  *
  * For scoped imports use the sub-barrel paths:
- *   skalex/connectors/storage   — storage adapters only
- *   skalex/connectors/embedding — embedding adapters only
- *   skalex/connectors/llm       — LLM adapters only
+ *   skalex/connectors/storage    -  storage adapters only
+ *   skalex/connectors/embedding  -  embedding adapters only
+ *   skalex/connectors/llm        -  LLM adapters only
  */
 
 // Storage

@@ -48,7 +48,7 @@ export default [
     external,
     plugins,
   },
-  // ESM browser build — node:* built-ins stubbed out
+  // ESM browser build  -  node:* built-ins stubbed out
   {
     input,
     treeshake,

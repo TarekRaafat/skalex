@@ -1,9 +1,9 @@
 /**
- * LLMAdapter — interface all language model backends must implement.
+ * LLMAdapter  -  interface all language model backends must implement.
  *
  * Used by:
- *   - db.ask(question, collection)  — NL → filter translation
- *   - memory.compress()             — memory summarisation
+ *   - db.ask(question, collection)   -  NL → filter translation
+ *   - memory.compress()              -  memory summarisation
  */
 class LLMAdapter {
   /**

@@ -1,5 +1,5 @@
 /**
- * MockTransport — in-memory MCP transport for unit tests.
+ * MockTransport  -  in-memory MCP transport for unit tests.
  *
  * Usage:
  *   const t = new MockTransport();

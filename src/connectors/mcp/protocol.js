@@ -1,5 +1,5 @@
 /**
- * protocol.js — JSON-RPC 2.0 helpers for the MCP server.
+ * protocol.js  -  JSON-RPC 2.0 helpers for the MCP server.
  *
  * MCP (Model Context Protocol) uses JSON-RPC 2.0 as its wire format.
  * These helpers build compliant response/error objects and parse incoming

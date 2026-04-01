@@ -1,17 +1,17 @@
 /**
- * OllamaEmbeddingAdapter — generates embeddings via a local Ollama server.
+ * OllamaEmbeddingAdapter  -  generates embeddings via a local Ollama server.
  *
  * Default model: nomic-embed-text (768 dimensions).
  * Default host:  http://localhost:11434
  *
  * Run locally with: ollama pull nomic-embed-text
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   OLLAMA_HOST             — Ollama server URL
- *   OLLAMA_EMBED_MODEL      — embedding model name
- *   OLLAMA_EMBED_TIMEOUT    — request timeout in ms
- *   OLLAMA_EMBED_RETRIES    — number of retry attempts on failure (default: 0)
- *   OLLAMA_EMBED_RETRY_DELAY — base retry delay in ms, doubles each attempt (default: 1000)
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   OLLAMA_HOST              -  Ollama server URL
+ *   OLLAMA_EMBED_MODEL       -  embedding model name
+ *   OLLAMA_EMBED_TIMEOUT     -  request timeout in ms
+ *   OLLAMA_EMBED_RETRIES     -  number of retry attempts on failure (default: 0)
+ *   OLLAMA_EMBED_RETRY_DELAY  -  base retry delay in ms, doubles each attempt (default: 1000)
  */
 import EmbeddingAdapter from "./base.js";
 

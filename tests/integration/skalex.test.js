@@ -1,7 +1,7 @@
 /**
  * Integration tests for Skalex + Collection.
  *
- * All I/O is routed through MemoryAdapter — no file system access in CI.
+ * All I/O is routed through MemoryAdapter  -  no file system access in CI.
  */
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import Skalex from "../../src/index.js";
@@ -990,7 +990,7 @@ describe("populate", () => {
     const posts = db.useCollection("posts");
     await posts.insertOne({ title: "Orphan", authors: "nonexistent-id" });
     const { docs } = await posts.find({}, { populate: ["authors"] });
-    // relatedItem not found — field keeps its original value
+    // relatedItem not found  -  field keeps its original value
     expect(docs[0].authors).toBe("nonexistent-id");
     await db.disconnect();
   });
@@ -1055,7 +1055,7 @@ describe("collection.search()", () => {
     await db.disconnect();
   });
 
-  test("respects minScore option — filters low-similarity docs", async () => {
+  test("respects minScore option  -  filters low-similarity docs", async () => {
     const { db } = makeVectorDb({
       "close": [1, 0, 0, 0],
       "far":   [0, 1, 0, 0],
@@ -1072,7 +1072,7 @@ describe("collection.search()", () => {
     await db.disconnect();
   });
 
-  test("hybrid search — filter + vector ranking", async () => {
+  test("hybrid search  -  filter + vector ranking", async () => {
     const { db } = makeVectorDb({
       "apple": [1, 0, 0, 0],
       "apricot": [0.95, 0.05, 0, 0],
@@ -1222,7 +1222,7 @@ describe("db.ask()", () => {
     await db.disconnect();
   });
 
-  test("caches the filter — AI adapter called only once for same query", async () => {
+  test("caches the filter  -  AI adapter called only once for same query", async () => {
     const db = makeAskDbWith({ "find admins": { role: "admin" } });
     await db.connect();
     const users = db.useCollection("users");
@@ -1235,7 +1235,7 @@ describe("db.ask()", () => {
     await db.disconnect();
   });
 
-  test("cache is per-collection — same query on different collections is a cache miss", async () => {
+  test("cache is per-collection  -  same query on different collections is a cache miss", async () => {
     const db = makeAskDbWith({ "q": { name: "x" } });
     await db.connect();
     db.useCollection("a");

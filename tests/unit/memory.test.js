@@ -1,5 +1,5 @@
 /**
- * Unit tests for memory.js — Memory class.
+ * Unit tests for memory.js  -  Memory class.
  */
 import { describe, test, expect, beforeEach } from "vitest";
 import Skalex from "../../src/index.js";
@@ -15,7 +15,7 @@ function makeDb() {
   return db;
 }
 
-describe("Memory — remember / recall / history / forget", () => {
+describe("Memory  -  remember / recall / history / forget", () => {
   test("remember() stores a text entry and returns the doc", async () => {
     const db = makeDb();
     const mem = db.useMemory("session-1");
@@ -93,7 +93,7 @@ describe("Memory — remember / recall / history / forget", () => {
   });
 });
 
-describe("Memory — tokenCount / context", () => {
+describe("Memory  -  tokenCount / context", () => {
   test("tokenCount() returns 0 for empty memory", () => {
     const db = makeDb();
     const mem = db.useMemory("s");
@@ -145,7 +145,7 @@ describe("Memory — tokenCount / context", () => {
   });
 });
 
-describe("Memory — compress", () => {
+describe("Memory  -  compress", () => {
   test("compress() does nothing when under threshold", async () => {
     const db = makeDb();
     const mem = db.useMemory("s");

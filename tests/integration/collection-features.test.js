@@ -668,7 +668,7 @@ describe("ttlSweepInterval", () => {
   });
 });
 
-// ─── db.watch() — global cross-collection observer ───────────────────────────
+// ─── db.watch()  -  global cross-collection observer ───────────────────────────
 
 describe("db.watch()", () => {
   test("fires for insertOne on any collection", async () => {

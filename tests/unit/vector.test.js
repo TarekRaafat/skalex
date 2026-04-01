@@ -60,7 +60,7 @@ describe("stripVector", () => {
     expect(result.name).toBe("Alice");
   });
 
-  test("returns a shallow copy — does not mutate original", () => {
+  test("returns a shallow copy  -  does not mutate original", () => {
     const doc = { _id: "1", _vector: [0.1, 0.2] };
     const result = stripVector(doc);
     expect(doc._vector).toBeDefined();       // original untouched

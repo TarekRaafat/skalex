@@ -5,18 +5,18 @@
  * No API keys, no server, no internet connection required.
  *
  * What this covers:
- *   createCollection(name, { schema, indexes })  — validation + O(1) lookups
- *   insertMany / insertOne                        — bulk and single inserts
- *   find(filter, { sort, page, limit, populate }) — sorted, paginated, populated
- *   findOne(filter)                               — single doc lookup
- *   updateOne(filter, update)                     — field updates + $push
- *   deleteOne / deleteMany                        — removal
- *   upsert(filter, update)                        — insert-or-update
- *   count / sum / avg / groupBy                   — aggregations
- *   db.transaction(fn)                            — atomic multi-collection write
- *   collection.export(filter, { format, dir })    — CSV export
- *   db.namespace(id)                              — per-tenant isolation
- *   collection.watch(callback)                    — reactive mutation events
+ *   createCollection(name, { schema, indexes })   -  validation + O(1) lookups
+ *   insertMany / insertOne                         -  bulk and single inserts
+ *   find(filter, { sort, page, limit, populate })  -  sorted, paginated, populated
+ *   findOne(filter)                                -  single doc lookup
+ *   updateOne(filter, update)                      -  field updates + $push
+ *   deleteOne / deleteMany                         -  removal
+ *   upsert(filter, update)                         -  insert-or-update
+ *   count / sum / avg / groupBy                    -  aggregations
+ *   db.transaction(fn)                             -  atomic multi-collection write
+ *   collection.export(filter, { format, dir })     -  CSV export
+ *   db.namespace(id)                               -  per-tenant isolation
+ *   collection.watch(callback)                     -  reactive mutation events
  *
  * Note on populate:
  *   Skalex populate resolves foreign keys by matching the field name to the
@@ -94,11 +94,11 @@ const carol = await contacts.insertOne({ name: "Carol Singh", email: "carol@vaul
 const david = await contacts.insertOne({ name: "David Kim",   email: "david@acme.io",      companies: acme._id,  role: "Engineer" });
 
 await deals.insertMany([
-  { title: "Acme — Platform license",  contacts: alice._id, companies: acme._id,  value: 24000, stage: "closed-won",  currency: "USD" },
-  { title: "Acme — Add-on seats",      contacts: david._id, companies: acme._id,  value:  4800, stage: "proposal",    currency: "USD" },
-  { title: "Nova — Pilot contract",    contacts: bob._id,   companies: nova._id,  value: 12000, stage: "qualified",   currency: "USD" },
-  { title: "Vault — Enterprise deal",  contacts: carol._id, companies: vault._id, value: 95000, stage: "lead",        currency: "USD" },
-  { title: "Vault — Support plan",     contacts: carol._id, companies: vault._id, value:  8400, stage: "closed-won",  currency: "USD" },
+  { title: "Acme  -  Platform license",  contacts: alice._id, companies: acme._id,  value: 24000, stage: "closed-won",  currency: "USD" },
+  { title: "Acme  -  Add-on seats",      contacts: david._id, companies: acme._id,  value:  4800, stage: "proposal",    currency: "USD" },
+  { title: "Nova  -  Pilot contract",    contacts: bob._id,   companies: nova._id,  value: 12000, stage: "qualified",   currency: "USD" },
+  { title: "Vault  -  Enterprise deal",  contacts: carol._id, companies: vault._id, value: 95000, stage: "lead",        currency: "USD" },
+  { title: "Vault  -  Support plan",     contacts: carol._id, companies: vault._id, value:  8400, stage: "closed-won",  currency: "USD" },
 ]);
 
 console.log(`  companies : ${await companies.count()}`);
@@ -155,12 +155,12 @@ console.log(`  Avg deal size   : $${avgDealSize.toLocaleString()}`);
 console.log("\n─── Advancing Nova pilot to proposal ───");
 
 await deals.updateOne(
-  { title: "Nova — Pilot contract" },
+  { title: "Nova  -  Pilot contract" },
   { stage: "proposal" },
   { session: "user-carol" }
 );
 
-const novaDeal = await deals.findOne({ title: "Nova — Pilot contract" });
+const novaDeal = await deals.findOne({ title: "Nova  -  Pilot contract" });
 console.log(`  New stage: ${novaDeal.stage}`);
 
 // ── Transaction: close a deal and tag the contact ─────────────────────────────
@@ -172,7 +172,7 @@ await db.transaction(async (tx) => {
   const txContacts = tx.useCollection("contacts");
 
   await txDeals.updateOne(
-    { title: "Vault — Enterprise deal" },
+    { title: "Vault  -  Enterprise deal" },
     { stage: "closed-won" }
   );
 

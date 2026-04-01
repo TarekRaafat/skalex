@@ -1,5 +1,5 @@
 /**
- * indexes.js — secondary field index engine.
+ * indexes.js  -  secondary field index engine.
  *
  * Maintains Map-based indexes for declared fields.
  * - Indexed field lookups are O(1) instead of O(n).

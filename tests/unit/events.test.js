@@ -1,10 +1,10 @@
 /**
- * Unit tests for events.js — EventBus.
+ * Unit tests for events.js  -  EventBus.
  */
 import { describe, test, expect, vi } from "vitest";
 import EventBus from "../../src/features/events.js";
 
-describe("EventBus — on / emit / off", () => {
+describe("EventBus  -  on / emit / off", () => {
   test("emits to registered listeners", () => {
     const bus = new EventBus();
     const fn  = vi.fn();
@@ -56,7 +56,7 @@ describe("EventBus — on / emit / off", () => {
     expect(() => bus.emit("nonexistent", {})).not.toThrow();
   });
 
-  test("listener errors are swallowed — other listeners still fire", () => {
+  test("listener errors are swallowed  -  other listeners still fire", () => {
     const bus = new EventBus();
     const bad  = () => { throw new Error("boom"); };
     const good = vi.fn();
@@ -103,7 +103,7 @@ describe("EventBus — on / emit / off", () => {
 
 // ─── Wildcard "*" channel ────────────────────────────────────────────────────
 
-describe("EventBus — wildcard '*' listener", () => {
+describe("EventBus  -  wildcard '*' listener", () => {
   test("'*' listener fires for every emitted event regardless of channel name", () => {
     const bus = new EventBus();
     const fn  = vi.fn();
@@ -142,7 +142,7 @@ describe("EventBus — wildcard '*' listener", () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
-  test("'*' listener is scoped to its registration — removeAll('*') removes it", () => {
+  test("'*' listener is scoped to its registration  -  removeAll('*') removes it", () => {
     const bus = new EventBus();
     const fn  = vi.fn();
     bus.on("*", fn);
@@ -161,7 +161,7 @@ function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });
 }
 
-describe("collection.watch() — callback API", () => {
+describe("collection.watch()  -  callback API", () => {
   test("fires on insertOne", async () => {
     const db  = makeDb();
     await db.connect();
@@ -244,7 +244,7 @@ describe("collection.watch() — callback API", () => {
   });
 });
 
-describe("collection.watch() — AsyncIterator API", () => {
+describe("collection.watch()  -  AsyncIterator API", () => {
   test("yields insert events", async () => {
     const db  = makeDb();
     await db.connect();

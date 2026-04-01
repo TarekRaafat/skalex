@@ -12,7 +12,7 @@ describe("parseTtl validation", () => {
   });
 
   test("rejects negative string TTL", () => {
-    // "-5s" does not match the positive-number regex — invalid format
+    // "-5s" does not match the positive-number regex  -  invalid format
     expect(() => computeExpiry("-5s")).toThrow(/Invalid TTL/);
   });
 

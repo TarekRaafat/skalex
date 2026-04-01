@@ -8,7 +8,7 @@ import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
 // ─── Pure SessionStats ────────────────────────────────────────────────────────
 
-describe("SessionStats — basic tracking", () => {
+describe("SessionStats  -  basic tracking", () => {
   let stats;
   beforeEach(() => { stats = new SessionStats(); });
 
@@ -82,7 +82,7 @@ describe("SessionStats — basic tracking", () => {
   });
 });
 
-describe("SessionStats — clear()", () => {
+describe("SessionStats  -  clear()", () => {
   let stats;
   beforeEach(() => {
     stats = new SessionStats();

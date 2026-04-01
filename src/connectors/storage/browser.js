@@ -1,5 +1,5 @@
 /**
- * Browser connectors barrel — single import for CDN / browser ESM usage.
+ * Browser connectors barrel  -  single import for CDN / browser ESM usage.
  *
  * Usage:
  *   import { LocalStorageAdapter, EncryptedAdapter }

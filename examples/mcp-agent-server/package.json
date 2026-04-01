@@ -1,7 +1,7 @@
 {
   "name": "skalex-example-mcp-agent-server",
   "version": "1.0.0",
-  "description": "Skalex MCP server — exposes a database to Claude Desktop, Cursor, and any MCP-compatible AI agent.",
+  "description": "Skalex MCP server  -  exposes a database to Claude Desktop, Cursor, and any MCP-compatible AI agent.",
   "type": "module",
   "main": "index.js",
   "scripts": {

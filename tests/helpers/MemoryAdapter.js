@@ -1,5 +1,5 @@
 /**
- * MemoryAdapter — in-memory StorageAdapter for testing.
+ * MemoryAdapter  -  in-memory StorageAdapter for testing.
  * Implements the same interface as FsAdapter without touching the file system.
  */
 class MemoryAdapter {
@@ -47,7 +47,7 @@ class MemoryAdapter {
     return this._store.get(`__raw:${filePath}`) ?? null;
   }
 
-  /** Reset all stored data — useful for cleaning up between test cases. */
+  /** Reset all stored data  -  useful for cleaning up between test cases. */
   clear() {
     this._store.clear();
   }

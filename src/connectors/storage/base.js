@@ -1,8 +1,8 @@
 /**
- * StorageAdapter — interface all storage backends must implement.
+ * StorageAdapter  -  interface all storage backends must implement.
  *
  * All methods are async. `name` is a collection identifier string
- * (no path separators — the adapter maps it to its own storage scheme).
+ * (no path separators  -  the adapter maps it to its own storage scheme).
  */
 class StorageAdapter {
   /**

@@ -76,7 +76,7 @@ describe("IndexEngine", () => {
 
   test("update() self-update via shallow copy does not throw (simulates collection.js mutation path)", () => {
     // collection.js does: const oldDoc = { ...item }; applyUpdate(item); update(oldDoc, item)
-    // oldDoc is a COPY — not the same reference as what is stored in the index.
+    // oldDoc is a COPY  -  not the same reference as what is stored in the index.
     // This must not throw even though oldDoc !== the indexed doc by reference.
     const liveDoc = docs[0]; // reference held by the index
     const oldDocCopy = { ...liveDoc }; // shallow copy, as collection.js creates

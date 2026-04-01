@@ -1,7 +1,7 @@
 import StorageAdapter from "./base.js";
 
 /**
- * LocalStorageAdapter — browser localStorage backend.
+ * LocalStorageAdapter  -  browser localStorage backend.
  *
  * Keys are prefixed with `skalex:<namespace>:<name>` to avoid collisions.
  * Data is stored as plain JSON strings (no compression in localStorage).

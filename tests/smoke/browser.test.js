@@ -1,5 +1,5 @@
 /**
- * Browser smoke test runner — headless Chromium via Playwright.
+ * Browser smoke test runner  -  headless Chromium via Playwright.
  *
  * Serves the project root as a static site, opens browser.html in a
  * headless browser, waits for all assertions to finish, then reports
@@ -78,7 +78,7 @@ async function runPage(page, port, path, label) {
   console.log(`\n${label}`);
   result.lines.forEach(l => console.log(l));
   console.log("\n" + "─".repeat(50));
-  console.log(`${result.ua} — ${label}`);
+  console.log(`${result.ua}  -  ${label}`);
   console.log(`Passed: ${result.passed}  Failed: ${result.failed}`);
   console.log("─".repeat(50));
 
@@ -115,7 +115,7 @@ async function run() {
     // ── UMD / CDN build (skalex.umd.min.js) ────────────────────────────────
     const page2 = await browser.newPage();
     attachListeners(page2);
-    const r2 = await runPage(page2, port, "tests/smoke/browser-umd.html", "browser UMD build (skalex.umd.min.js) — CDN path");
+    const r2 = await runPage(page2, port, "tests/smoke/browser-umd.html", "browser UMD build (skalex.umd.min.js)  -  CDN path");
     await page2.close();
     totalFailed += r2.failed;
 

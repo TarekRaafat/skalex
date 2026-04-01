@@ -1,8 +1,8 @@
 /**
- * events.js — lightweight cross-runtime event bus.
+ * events.js  -  lightweight cross-runtime event bus.
  *
  * Provides pub/sub for collection mutation events consumed by watch() and
- * any other internal subscribers. No Node.js EventEmitter dependency —
+ * any other internal subscribers. No Node.js EventEmitter dependency  - 
  * works identically in Node, Bun, Deno, and browsers.
  *
  * Event names are collection names. Subscribers receive a MutationEvent:
@@ -48,7 +48,7 @@ class EventBus {
       const fns = this._listeners.get(key);
       if (!fns) continue;
       for (const fn of fns) {
-        try { fn(data); } catch (_) { /* swallow — watcher errors must not break writes */ }
+        try { fn(data); } catch (_) { /* swallow  -  watcher errors must not break writes */ }
       }
     }
   }

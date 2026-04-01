@@ -1,20 +1,20 @@
 /**
- * mcp/index.js — SkalexMCPServer
+ * mcp/index.js  -  SkalexMCPServer
  *
  * Exposes a Skalex database as a set of MCP tools that AI agents (Claude
  * Desktop, Cursor, OpenClaw, custom agents) can call via the Model Context
  * Protocol.
  *
- * Instantiate via db.mcp(opts) — do not construct directly.
+ * Instantiate via db.mcp(opts)  -  do not construct directly.
  *
  * Transports:
- *   stdio (default) — newline-delimited JSON on stdin/stdout
- *   http            — HTTP server + SSE stream
+ *   stdio (default)  -  newline-delimited JSON on stdin/stdout
+ *   http             -  HTTP server + SSE stream
  *
  * Access control:
  *   scopes: { collectionName | '*': ['read'] | ['read', 'write'] }
- *   'read'  — find, search, ask, schema, collections
- *   'write' — insert, update, delete
+ *   'read'   -  find, search, ask, schema, collections
+ *   'write'  -  insert, update, delete
  *
  * @example
  * // stdio (for Claude Desktop / Cursor tool config)
@@ -103,7 +103,7 @@ class SkalexMCPServer {
 
     const { id, method, params } = msg;
 
-    // Notifications (no id) — acknowledge silently
+    // Notifications (no id)  -  acknowledge silently
     if (id === undefined) {
       if (method === "notifications/initialized") return;
       return;

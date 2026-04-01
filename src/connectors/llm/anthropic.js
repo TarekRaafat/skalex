@@ -1,20 +1,20 @@
 /**
- * AnthropicLLMAdapter — language model adapter using the Anthropic Messages API.
+ * AnthropicLLMAdapter  -  language model adapter using the Anthropic Messages API.
  *
  * Default model: claude-haiku-4-5 (fast and economical).
- * Uses native fetch — no additional dependencies.
+ * Uses native fetch  -  no additional dependencies.
  *
- * Environment variables (all optional — constructor config takes precedence):
- *   ANTHROPIC_API_KEY     — API key
- *   ANTHROPIC_MODEL       — model name
- *   ANTHROPIC_BASE_URL    — full endpoint URL (useful for proxies / Anthropic-compatible APIs)
- *   ANTHROPIC_MAX_TOKENS  — max tokens for responses (default: 1024)
- *   ANTHROPIC_TEMPERATURE — sampling temperature for summarize() (default: 0.3)
- *   ANTHROPIC_TOP_P       — nucleus sampling for summarize()
- *   ANTHROPIC_TOP_K       — top-K sampling for summarize()
- *   ANTHROPIC_TIMEOUT     — request timeout in ms
- *   ANTHROPIC_RETRIES     — number of retry attempts on failure (default: 0)
- *   ANTHROPIC_RETRY_DELAY — base retry delay in ms, doubles each attempt (default: 1000)
+ * Environment variables (all optional  -  constructor config takes precedence):
+ *   ANTHROPIC_API_KEY      -  API key
+ *   ANTHROPIC_MODEL        -  model name
+ *   ANTHROPIC_BASE_URL     -  full endpoint URL (useful for proxies / Anthropic-compatible APIs)
+ *   ANTHROPIC_MAX_TOKENS   -  max tokens for responses (default: 1024)
+ *   ANTHROPIC_TEMPERATURE  -  sampling temperature for summarize() (default: 0.3)
+ *   ANTHROPIC_TOP_P        -  nucleus sampling for summarize()
+ *   ANTHROPIC_TOP_K        -  top-K sampling for summarize()
+ *   ANTHROPIC_TIMEOUT      -  request timeout in ms
+ *   ANTHROPIC_RETRIES      -  number of retry attempts on failure (default: 0)
+ *   ANTHROPIC_RETRY_DELAY  -  base retry delay in ms, doubles each attempt (default: 1000)
  */
 import LLMAdapter from "./base.js";
 import { SYSTEM_GENERATE, SYSTEM_SUMMARIZE } from "./prompts.js";

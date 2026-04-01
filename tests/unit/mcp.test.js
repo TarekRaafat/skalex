@@ -1,6 +1,6 @@
 /**
  * Unit tests for the SkalexMCPServer (MCP protocol + tools + access control).
- * All tests use MockTransport — no real I/O.
+ * All tests use MockTransport  -  no real I/O.
  */
 import { describe, test, expect, beforeEach } from "vitest";
 import Skalex from "../../src/index.js";
@@ -22,7 +22,7 @@ async function makeServer(opts = {}) {
 
 // ─── MCP protocol ─────────────────────────────────────────────────────────────
 
-describe("MCP protocol — initialize", () => {
+describe("MCP protocol  -  initialize", () => {
   test("responds to initialize with protocolVersion and capabilities", async () => {
     const { transport } = await makeServer();
     await transport.receive({
@@ -56,7 +56,7 @@ describe("MCP protocol — initialize", () => {
   });
 });
 
-describe("MCP protocol — tools/list", () => {
+describe("MCP protocol  -  tools/list", () => {
   test("returns a list of tool definitions", async () => {
     const { transport } = await makeServer({ scopes: { "*": ["read", "write"] } });
     await transport.receive({ jsonrpc: "2.0", id: 1, method: "tools/list" });
@@ -90,7 +90,7 @@ describe("MCP protocol — tools/list", () => {
   });
 });
 
-// ─── MCP tools — skalex_collections ──────────────────────────────────────────
+// ─── MCP tools  -  skalex_collections ──────────────────────────────────────────
 
 describe("skalex_collections tool", () => {
   test("returns collection names", async () => {
@@ -111,7 +111,7 @@ describe("skalex_collections tool", () => {
   });
 });
 
-// ─── MCP tools — skalex_schema ────────────────────────────────────────────────
+// ─── MCP tools  -  skalex_schema ────────────────────────────────────────────────
 
 describe("skalex_schema tool", () => {
   test("returns schema for a collection with data", async () => {
@@ -143,7 +143,7 @@ describe("skalex_schema tool", () => {
   });
 });
 
-// ─── MCP tools — skalex_find ─────────────────────────────────────────────────
+// ─── MCP tools  -  skalex_find ─────────────────────────────────────────────────
 
 describe("skalex_find tool", () => {
   test("returns matching documents", async () => {
@@ -177,7 +177,7 @@ describe("skalex_find tool", () => {
   });
 });
 
-// ─── MCP tools — skalex_insert ───────────────────────────────────────────────
+// ─── MCP tools  -  skalex_insert ───────────────────────────────────────────────
 
 describe("skalex_insert tool", () => {
   test("inserts a document and returns it", async () => {
@@ -195,7 +195,7 @@ describe("skalex_insert tool", () => {
   });
 });
 
-// ─── MCP tools — skalex_update ───────────────────────────────────────────────
+// ─── MCP tools  -  skalex_update ───────────────────────────────────────────────
 
 describe("skalex_update tool", () => {
   test("updates the first matching document", async () => {
@@ -216,7 +216,7 @@ describe("skalex_update tool", () => {
   });
 });
 
-// ─── MCP tools — skalex_delete ───────────────────────────────────────────────
+// ─── MCP tools  -  skalex_delete ───────────────────────────────────────────────
 
 describe("skalex_delete tool", () => {
   test("deletes the first matching document", async () => {
@@ -268,7 +268,7 @@ describe("MCP access control", () => {
       scopes: { "*": ["read"], "privileged": ["read", "write"] },
     });
 
-    // Insert into privileged collection — should be allowed
+    // Insert into privileged collection  -  should be allowed
     await transport.receive({
       jsonrpc: "2.0", id: 1, method: "tools/call",
       params: { name: "skalex_insert", arguments: { collection: "privileged", doc: { v: 1 } } },

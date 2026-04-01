@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Playground | Skalex</title>
-  <meta name="description" content="Try Skalex live in your browser — no install required.">
+  <meta name="description" content="Try Skalex live in your browser  -  no install required.">
   <link rel="icon" type="image/svg+xml" href="./imgs/skalex_icon.svg">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -288,12 +288,12 @@ console.log("Admins:", docs.map(d => d.name).join(", "));
 
 // findOne
 const found = await users.findOne({ name: "Bob" });
-console.log("findOne — Bob's score:", found.score);
+console.log("findOne  -  Bob's score:", found.score);
 
 // Update with $inc
 await users.updateOne({ name: "Bob" }, { score: { $inc: 25 } });
 const updated = await users.findOne({ name: "Bob" });
-console.log("After $inc 25 — Bob's score:", updated.score);
+console.log("After $inc 25  -  Bob's score:", updated.score);
 
 // $push
 await users.updateOne({ name: "Alice" }, { tags: { $push: "vip" } });
@@ -333,7 +333,7 @@ const products = db.useCollection("products");
 const laptop = await products.insertOne({
   name: "Laptop Pro", price: 1299, category: "electronics",
 });
-console.log("Valid insert:", laptop.name, "— $" + laptop.price);
+console.log("Valid insert:", laptop.name, " -  $" + laptop.price);
 
 // Missing required field
 try {
@@ -400,7 +400,7 @@ console.log("$nin [pending]:", notPending.docs.map(d => d.product).join(", "));
 const devices = await orders.find({ product: { $regex: /^(Laptop|Phone|Monitor)$/ } });
 console.log("$regex /Laptop|Phone|Monitor/:", devices.docs.map(d => d.product).join(", "));
 
-// $fn — custom filter
+// $fn  -  custom filter
 const bigElec = await orders.find({
   $fn: d => d.amount > 500 && d.tag === "electronics"
 });
@@ -439,7 +439,7 @@ all.docs.forEach(p =>
   console.log("  " + String(p.views).padStart(5) + "  " + p.title)
 );
 
-// Paginated — 3 per page
+// Paginated  -  3 per page
 for (let page = 1; page <= 3; page++) {
   const r = await posts.find({}, { sort: { views: -1 }, page, limit: 3 });
   console.log(\`\\nPage \${page}/\${r.totalPages}  (\${r.totalDocs} total):\`);
@@ -555,7 +555,7 @@ await db.connect();
 
 const tasks = db.useCollection("tasks");
 
-// Subscribe — returns unsub function
+// Subscribe  -  returns unsub function
 const events = [];
 const unsub = tasks.watch(ev => {
   events.push(ev);
@@ -575,7 +575,7 @@ await tasks.updateOne({ title: "Write documentation"  }, { status: "done" });
 
 await tasks.deleteOne({ title: "Set up CI pipeline" });
 
-// Unsubscribe — no more events after this
+// Unsubscribe  -  no more events after this
 unsub();
 console.log("\\n── Unsubscribed ─────────────────────────");
 

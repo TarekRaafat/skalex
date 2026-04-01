@@ -1,5 +1,5 @@
 /**
- * migrations.js — versioned schema migrations.
+ * migrations.js  -  versioned schema migrations.
  *
  * Migrations are registered with db.addMigration({ version, up }).
  * On connect(), all pending migrations run in order, then state is saved to _meta.
