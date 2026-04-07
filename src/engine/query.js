@@ -8,6 +8,7 @@
  * Supported syntax: nested dot-notation, RegExp as direct value, function as filter
  */
 import { resolveDotPath } from "./utils.js";
+import { QueryError } from "./errors.js";
 
 /**
  * @param {object} item
@@ -18,11 +19,28 @@ function matchesFilter(item, filter) {
   // Function filter
   if (typeof filter === "function") return filter(item);
 
-  // Empty filter  -  matches everything
-  if (filter instanceof Object && Object.keys(filter).length === 0) return true;
+  // Null/undefined or empty filter  -  matches everything
+  if (filter == null) return true;
+  if (typeof filter === "object" && Object.keys(filter).length === 0) return true;
+
+  // Logical operators - evaluated before field-level checks
+  if ("$or" in filter) {
+    const branches = filter.$or;
+    if (!Array.isArray(branches)) throw new QueryError("ERR_SKALEX_QUERY_INVALID_OPERATOR", "$or must be an array of filters", { operator: "$or" });
+    if (!branches.some(sub => matchesFilter(item, sub))) return false;
+  }
+  if ("$and" in filter) {
+    const branches = filter.$and;
+    if (!Array.isArray(branches)) throw new QueryError("ERR_SKALEX_QUERY_INVALID_OPERATOR", "$and must be an array of filters", { operator: "$and" });
+    if (!branches.every(sub => matchesFilter(item, sub))) return false;
+  }
+  if ("$not" in filter) {
+    if (matchesFilter(item, filter.$not)) return false;
+  }
 
   // AND: every key must pass
   for (const key in filter) {
+    if (key === "$or" || key === "$and" || key === "$not") continue;
     const filterValue = filter[key];
 
     // Resolve value (supports dot-notation)
@@ -37,19 +55,19 @@ function matchesFilter(item, filter) {
       if (!filterValue.test(String(itemValue))) return false;
     } else if (typeof filterValue === "object" && filterValue !== null) {
       // Query operators
-      if ("$eq"    in filterValue && itemValue !== filterValue.$eq)               return false;
-      if ("$ne"    in filterValue && itemValue === filterValue.$ne)               return false;
-      if ("$gt"    in filterValue && !(itemValue > filterValue.$gt))              return false;
-      if ("$lt"    in filterValue && !(itemValue < filterValue.$lt))              return false;
-      if ("$gte"   in filterValue && !(itemValue >= filterValue.$gte))            return false;
-      if ("$lte"   in filterValue && !(itemValue <= filterValue.$lte))            return false;
-      if ("$in"    in filterValue && !filterValue.$in.includes(itemValue))        return false;
-      if ("$nin"   in filterValue && filterValue.$nin.includes(itemValue))        return false;
+      if ("$eq" in filterValue && itemValue !== filterValue.$eq) return false;
+      if ("$ne" in filterValue && itemValue === filterValue.$ne) return false;
+      if ("$gt" in filterValue && !(itemValue > filterValue.$gt)) return false;
+      if ("$lt" in filterValue && !(itemValue < filterValue.$lt)) return false;
+      if ("$gte" in filterValue && !(itemValue >= filterValue.$gte)) return false;
+      if ("$lte" in filterValue && !(itemValue <= filterValue.$lte)) return false;
+      if ("$in" in filterValue && !filterValue.$in.includes(itemValue)) return false;
+      if ("$nin" in filterValue && filterValue.$nin.includes(itemValue)) return false;
       if ("$regex" in filterValue) {
         const rx = filterValue.$regex instanceof RegExp ? filterValue.$regex : new RegExp(filterValue.$regex);
         if (!rx.test(String(itemValue))) return false;
       }
-      if ("$fn"    in filterValue && !filterValue.$fn(itemValue))                 return false;
+      if ("$fn" in filterValue && !filterValue.$fn(itemValue)) return false;
     } else {
       if (itemValue !== filterValue) return false;
     }
@@ -79,8 +97,13 @@ function presortFilter(filter, indexedFields = new Set()) {
   const equality = [];
   const range = [];
   const expensive = [];
+  const logical = [];
 
   for (const key in filter) {
+    if (key === "$or" || key === "$and" || key === "$not") {
+      logical.push(key);
+      continue;
+    }
     const val = filter[key];
     if (indexedFields.has(key)) {
       indexed.push(key);
@@ -98,7 +121,7 @@ function presortFilter(filter, indexedFields = new Set()) {
   }
 
   const sorted = {};
-  for (const k of [...indexed, ...equality, ...range, ...expensive]) {
+  for (const k of [...indexed, ...equality, ...range, ...expensive, ...logical]) {
     sorted[k] = filter[k];
   }
   return sorted;

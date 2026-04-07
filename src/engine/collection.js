@@ -4,6 +4,8 @@ import { validateDoc, stripInvalidFields } from "./validator.js";
 import { computeExpiry } from "./ttl.js";
 import { cosineSimilarity, stripVector } from "./vector.js";
 import { count as aggCount, sum as aggSum, avg as aggAvg, groupBy as aggGroupBy } from "../features/aggregation.js";
+import { ValidationError, UniqueConstraintError, PersistenceError, QueryError, AdapterError } from "./errors.js";
+import MutationPipeline from "./pipeline.js";
 
 /**
  * Collection represents a collection of documents in the database.
@@ -16,10 +18,18 @@ class Collection {
   constructor(collectionData, database) {
     this.name = collectionData.collectionName;
     this.database = database;
+
+    /** @type {CollectionContext} Narrow dependency surface for Collection operations. */
+    this._ctx = database._buildCollectionContext();
+
     this._store = collectionData;
+    this._pipeline = new MutationPipeline(this);
+
+    /** @type {number|null} If created inside a transaction, the tx ID. */
+    this._createdInTxId = database._txManager.context?.id ?? null;
   }
 
-  get _data()  { return this._store.data; }
+  get _data() { return this._store.data; }
   set _data(val) { this._store.data = val; }
   get _index() { return this._store.index; }
 
@@ -33,25 +43,25 @@ class Collection {
   get _changelogEnabled() { return this._store.changelog === true; }
 
   /** @returns {boolean} Whether soft-delete is enabled for this collection. */
-  get _softDelete()    { return this._store.softDelete    === true; }
+  get _softDelete() { return this._store.softDelete === true; }
 
   /** @returns {boolean} Whether document versioning is enabled for this collection. */
-  get _versioning()    { return this._store.versioning    === true; }
+  get _versioning() { return this._store.versioning === true; }
 
   /** @returns {boolean} Whether strict mode (reject unknown fields) is enabled. */
-  get _strict()        { return this._store.strict        === true; }
+  get _strict() { return this._store.strict === true; }
 
   /** @returns {"throw"|"warn"|"strip"} Schema error handling strategy. */
   get _onSchemaError() { return this._store.onSchemaError ?? "throw"; }
 
   /** @returns {number|string|null} Default TTL applied to every inserted document. */
-  get _defaultTtl()    { return this._store.defaultTtl   || null; }
+  get _defaultTtl() { return this._store.defaultTtl || null; }
 
   /** @returns {string|null} Default field to embed on every inserted document. */
-  get _defaultEmbed()  { return this._store.defaultEmbed || null; }
+  get _defaultEmbed() { return this._store.defaultEmbed || null; }
 
   /** @returns {number|null} Maximum number of documents (capped collection). */
-  get _maxDocs()       { return this._store.maxDocs       || null; }
+  get _maxDocs() { return this._store.maxDocs || null; }
 
   // ─── Insert ──────────────────────────────────────────────────────────────
 
@@ -62,38 +72,16 @@ class Collection {
    * @returns {Promise<object>}
    */
   async insertOne(item, options = {}) {
-    await this.database._ensureConnected();
     const { save, ifNotExists, ttl, embed, session } = options;
 
     if (ifNotExists) {
+      await this._ctx.ensureConnected();
       const existing = this._findRaw(item);
       if (existing) return existing;
     }
 
-    const validated = this._applyValidation(item);
-
-    await this.database._plugins.run("beforeInsert", { collection: this.name, doc: validated });
-
-    const newItem = await this._buildDoc(validated, { ttl, embed });
-
-    this._addToIndex(newItem);
-    this._data.push(newItem);
-    this._index.set(newItem._id, newItem);
-
-    this._enforceCapAfterInsert();
-
-    await this._saveIfNeeded(save);
-
-    if (this._changelogEnabled) {
-      await this.database._logChange("insert", this.name, newItem, null, session || null);
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    this.database._emitEvent(this.name, { op: "insert", collection: this.name, doc: stripVector(newItem) });
-
-    const doc = stripVector(newItem);
-    await this.database._runAfterHook("afterInsert", { collection: this.name, doc });
-    return doc;
+    const { docs } = await this._insertCore([item], { ttl, embed, session, save });
+    return stripVector(docs[0]);
   }
 
   /**
@@ -103,39 +91,48 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async insertMany(items, options = {}) {
-    await this.database._ensureConnected();
     const { save, ttl, embed, session } = options;
+    const { docs } = await this._insertCore(items, { ttl, embed, session, save });
+    return docs.map(stripVector);
+  }
 
-    const newItems = [];
-    for (const item of items) {
-      const validated = this._applyValidation(item);
-      await this.database._plugins.run("beforeInsert", { collection: this.name, doc: validated });
-      newItems.push(await this._buildDoc(validated, { ttl, embed }));
-    }
+  /**
+   * Shared insert implementation for one or many documents.
+   * @param {object[]} items
+   * @param {{ ttl?, embed?, session?, save? }} opts
+   * @returns {Promise<{ docs: object[] }>}
+   */
+  async _insertCore(items, { ttl, embed, session, save }) {
+    return this._pipeline.execute({
+      op: "insert",
+      beforeHook: null, // handled per-item inside mutate
+      afterHook: "afterInsert",
+      hookPayload: null,
+      save,
+      session,
+      mutate: async (assertTxAlive) => {
+        const newItems = [];
+        const batchIds = new Set();
+        for (const item of items) {
+          const validated = this._applyValidation(item);
+          await this._ctx.plugins.run("beforeInsert", { collection: this.name, doc: validated });
+          const newItem = await this._buildDoc(validated, { ttl, embed });
+          if (this._index.has(newItem._id) || batchIds.has(newItem._id)) {
+            throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newItem._id}" in collection "${this.name}"`, { id: newItem._id, collection: this.name });
+          }
+          batchIds.add(newItem._id);
+          newItems.push(newItem);
+        }
 
-    for (const newItem of newItems) this._addToIndex(newItem);
+        assertTxAlive(); // guard before first in-memory state change
+        for (const newItem of newItems) this._addToIndex(newItem);
+        this._data.push(...newItems);
+        for (const newItem of newItems) this._index.set(newItem._id, newItem);
+        this._enforceCapAfterInsert();
 
-    this._data.push(...newItems);
-    for (const newItem of newItems) this._index.set(newItem._id, newItem);
-
-    this._enforceCapAfterInsert();
-
-    await this._saveIfNeeded(save);
-
-    if (this._changelogEnabled) {
-      for (const newItem of newItems) {
-        await this.database._logChange("insert", this.name, newItem, null, session || null);
-      }
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    for (const newItem of newItems) {
-      const stripped = stripVector(newItem);
-      this.database._emitEvent(this.name, { op: "insert", collection: this.name, doc: stripped });
-      await this.database._runAfterHook("afterInsert", { collection: this.name, doc: stripped });
-    }
-
-    return newItems.map(stripVector);
+        return { docs: newItems };
+      },
+    });
   }
 
   // ─── Update ──────────────────────────────────────────────────────────────
@@ -148,30 +145,13 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async updateOne(filter, update, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
+    const oldDoc = this._findRaw(filter);
+    if (!oldDoc) return null;
+
     const { save, session } = options;
-    await this.database._plugins.run("beforeUpdate", { collection: this.name, filter, update });
-
-    const item = this._findRaw(filter);
-    if (!item) return null;
-
-    const prev = this._changelogEnabled ? { ...item } : null;
-    const oldDoc = this._fieldIndex ? { ...item } : null;
-
-    this.applyUpdate(item, update);
-    this._updateInIndex(oldDoc, item);
-
-    await this._saveIfNeeded(save);
-
-    if (this._changelogEnabled) {
-      await this.database._logChange("update", this.name, item, prev, session || null);
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    this.database._emitEvent(this.name, { op: "update", collection: this.name, doc: stripVector(item), prev });
-
-    await this.database._runAfterHook("afterUpdate", { collection: this.name, filter, update, result: item });
-    return stripVector(item);
+    const { docs } = await this._updateCore([oldDoc], filter, update, { save, session });
+    return stripVector(docs[0]);
   }
 
   /**
@@ -182,40 +162,54 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async updateMany(filter, update, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
+    const oldDocs = this._findAllRaw(filter);
+    if (oldDocs.length === 0) return [];
+
     const { save, session } = options;
-    await this.database._plugins.run("beforeUpdate", { collection: this.name, filter, update });
+    const { docs } = await this._updateCore(oldDocs, filter, update, { save, session });
+    return docs.map(stripVector);
+  }
 
-    const items = this._findAllRaw(filter);
-    const prevs = this._changelogEnabled ? items.map(d => ({ ...d })) : null;
-    const oldDocs = this._fieldIndex ? items.map(d => ({ ...d })) : null;
+  /**
+   * Shared update implementation for one or many documents.
+   */
+  async _updateCore(oldDocs, filter, update, { save, session }) {
+    return this._pipeline.execute({
+      op: "update",
+      beforeHook: "beforeUpdate",
+      afterHook: "afterUpdate",
+      hookPayload: { collection: this.name, filter, update },
+      save,
+      session,
+      afterHookPayload: (docs) => ({ collection: this.name, filter, update, result: docs.length === 1 ? docs[0] : docs }),
+      mutate: async (assertTxAlive) => {
+        const prevDocs = this._changelogEnabled ? oldDocs.map(doc => structuredClone(doc)) : oldDocs.map(() => null);
+        const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update));
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      this.applyUpdate(item, update);
-      this._updateInIndex(oldDocs?.[i], item);
-    }
+        this._assertUniqueCandidates(oldDocs, nextDocs);
 
-    await this._saveIfNeeded(save);
+        assertTxAlive(); // guard before first in-memory state change
+        // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
+        const targets = new Set(oldDocs);
+        const positions = new Map();
+        for (let i = 0; i < this._data.length; i++) {
+          if (targets.has(this._data[i])) positions.set(this._data[i], i);
+        }
+        for (let i = 0; i < oldDocs.length; i++) {
+          this._commitUpdatedDoc(oldDocs[i], nextDocs[i], positions);
+        }
 
-    if (this._changelogEnabled) {
-      for (let i = 0; i < items.length; i++) {
-        await this.database._logChange("update", this.name, items[i], prevs[i], session || null);
-      }
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    for (const item of items) {
-      this.database._emitEvent(this.name, { op: "update", collection: this.name, doc: stripVector(item) });
-    }
-
-    await this.database._runAfterHook("afterUpdate", { collection: this.name, filter, update, result: items });
-    return items.map(stripVector);
+        return { docs: nextDocs, prevDocs };
+      },
+    });
   }
 
   /**
    * Apply an update descriptor to a document in place.
    * Supports $inc, $push, and direct assignment. Increments _version when versioning is on.
+   * Skips _id and createdAt (immutable). Does NOT update indexes - the caller
+   * is responsible for index maintenance (see _commitUpdatedDoc).
    * @param {object} item
    * @param {object} update
    * @returns {object} The mutated document.
@@ -223,6 +217,7 @@ class Collection {
   applyUpdate(item, update) {
     for (const field in update) {
       if (field === "__proto__" || field === "constructor" || field === "prototype") continue;
+      if (field === "_id" || field === "createdAt") continue;
       const updateValue = update[field];
 
       if (Array.isArray(updateValue)) {
@@ -230,16 +225,26 @@ class Collection {
         // because for...in on [] yields zero iterations and the value would be lost.
         item[field] = updateValue;
       } else if (typeof updateValue === "object" && updateValue !== null) {
-        for (const key in updateValue) {
-          if (key === "$inc" && typeof item[field] === "number") {
-            item[field] += updateValue[key];
-          } else if (key === "$push") {
-            // Auto-initialise the field as an array if it doesn't exist yet.
-            if (!Array.isArray(item[field])) item[field] = [];
-            item[field].push(updateValue[key]);
-          } else if (!key.startsWith("$")) {
-            item[field] = updateValue;
+        // Determine whether this is an operator object ($inc, $push) or a
+        // plain nested value to assign directly. If ANY key starts with $,
+        // treat the entire object as operators — plain keys are ignored to
+        // prevent overwriting the field with the operator descriptor.
+        const keys = Object.keys(updateValue);
+        const hasOperators = keys.some(k => k.startsWith("$"));
+
+        if (hasOperators) {
+          for (const key of keys) {
+            if (key === "$inc" && typeof item[field] === "number") {
+              item[field] += updateValue[key];
+            } else if (key === "$push") {
+              if (!Array.isArray(item[field])) item[field] = [];
+              item[field].push(updateValue[key]);
+            }
+            // Non-$ keys inside an operator object are silently ignored.
           }
+        } else {
+          // Plain nested object — direct assignment.
+          item[field] = updateValue;
         }
       } else {
         item[field] = updateValue;
@@ -248,9 +253,84 @@ class Collection {
 
     item.updatedAt = new Date();
     if (this._versioning) item._version = (item._version ?? 0) + 1;
-    this._index.set(item._id, item);
-
     return item;
+  }
+
+  /**
+   * Build the next persisted document state without mutating the live document.
+   * Validation runs against the candidate so updateMany() can remain all-or-nothing.
+   * @param {object} currentDoc
+   * @param {object} update
+   * @returns {object}
+   */
+  _prepareUpdatedDoc(currentDoc, update) {
+    const prev = structuredClone(currentDoc);
+    const next = structuredClone(currentDoc);
+
+    this.applyUpdate(next, update);
+
+    if (!this._schema) return next;
+
+    const errors = validateDoc(next, this._schema, this._strict);
+    if (!errors.length) return next;
+
+    switch (this._onSchemaError) {
+      case "throw":
+        throw new ValidationError("ERR_SKALEX_VALIDATION_UPDATE", `Update validation failed on doc "${currentDoc._id}": ${errors.join("; ")}`, { id: currentDoc._id, errors });
+      case "strip":
+        return this._stripCandidateToValid(next, prev);
+      default:
+        this._ctx.logger(`[${this.name}] Update validation warning: ${errors.join("; ")}`, "warn");
+        return next;
+    }
+  }
+
+  /**
+   * Keep valid changes from a candidate doc while preserving prior values for
+   * invalid fields.
+   * @param {object} next
+   * @param {object} prev
+   * @returns {object}
+   */
+  _stripCandidateToValid(next, prev) {
+    const stripped = stripInvalidFields(next, this._schema);
+    const merged = structuredClone(prev);
+
+    for (const [key, val] of Object.entries(stripped)) {
+      if (key.startsWith("_")) continue;
+      merged[key] = val;
+    }
+
+    merged.updatedAt = next.updatedAt;
+    if (this._versioning) merged._version = next._version;
+    return merged;
+  }
+
+  /**
+   * Replace a live document with a prepared document and update all indexes.
+   * @param {object} oldDoc
+   * @param {object} newDoc
+   * @param {Map<object, number>} [positions] - Pre-computed _data index positions
+   *   to avoid O(n) indexOf per call. When omitted, falls back to indexOf.
+   */
+  _commitUpdatedDoc(oldDoc, newDoc, positions) {
+    const idx = positions ? positions.get(oldDoc) : this._data.indexOf(oldDoc);
+    if (idx === undefined || idx === -1) {
+      throw new PersistenceError("ERR_SKALEX_PERSISTENCE_DOC_MISSING", `Document "${oldDoc._id}" no longer exists in collection "${this.name}"`, { id: oldDoc._id, collection: this.name });
+    }
+    this._data[idx] = newDoc;
+    this._index.set(newDoc._id, newDoc);
+    this._updateInIndex(oldDoc, newDoc);
+  }
+
+  /**
+   * Validate unique constraints for a batch of prepared updates before any live
+   * document or index state is mutated.
+   * @param {object[]} oldDocs
+   * @param {object[]} nextDocs
+   */
+  _assertUniqueCandidates(oldDocs, nextDocs) {
+    this._fieldIndex?.assertUniqueCandidates(oldDocs, nextDocs);
   }
 
   // ─── Upsert ──────────────────────────────────────────────────────────────
@@ -263,6 +343,7 @@ class Collection {
    * @returns {Promise<object>}
    */
   async upsert(filter, doc, options = {}) {
+    await this._ctx.ensureConnected();
     const existing = this._findRaw(filter);
     if (existing) {
       return this.updateOne(filter, doc, options);
@@ -279,7 +360,7 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async upsertMany(docs, matchKey, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const { save, ...rest } = options;
 
     const results = [];
@@ -301,26 +382,29 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async restore(filter, options = {}) {
-    if (!this._softDelete) throw new Error(`restore() requires softDelete on "${this.name}"`);
-    await this.database._ensureConnected();
+    if (!this._softDelete) throw new QueryError("ERR_SKALEX_QUERY_SOFT_DELETE_REQUIRED", `restore() requires softDelete on "${this.name}"`, { collection: this.name });
+    await this._ctx.ensureConnected();
     const { save, session } = options;
 
     const item = this._findRaw(filter, { includeDeleted: true });
     if (!item || !item._deletedAt) return null;
 
-    delete item._deletedAt;
-    item.updatedAt = new Date();
-    this._index.set(item._id, item);
-
-    await this._saveIfNeeded(save);
-
-    if (this._changelogEnabled) {
-      await this.database._logChange("restore", this.name, item, null, session || null);
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    this.database._emitEvent(this.name, { op: "restore", collection: this.name, doc: stripVector(item) });
-    return stripVector(item);
+    const { docs } = await this._pipeline.execute({
+      op: "restore",
+      beforeHook: null,
+      afterHook: null,
+      hookPayload: null,
+      save,
+      session,
+      mutate: async (assertTxAlive) => {
+        assertTxAlive();
+        delete item._deletedAt;
+        item.updatedAt = new Date();
+        this._index.set(item._id, item);
+        return { docs: [item] };
+      },
+    });
+    return stripVector(docs[0]);
   }
 
   // ─── Watch ───────────────────────────────────────────────────────────────
@@ -347,7 +431,7 @@ class Collection {
 
     if (callback) {
       // Callback-based API  -  returns unsub fn
-      return this.database._eventBus.on(this.name, event => {
+      return this._ctx.eventBus.on(this.name, event => {
         if (!filter || matchesFilter(event.doc, filter)) callback(event);
       });
     }
@@ -357,11 +441,11 @@ class Collection {
   }
 
   _watchIterator(filter) {
-    const queue   = [];
-    let   resolve = null;
-    let   done    = false;
+    const queue = [];
+    let resolve = null;
+    let done = false;
 
-    const unsub = this.database._eventBus.on(this.name, event => {
+    const unsub = this._ctx.eventBus.on(this.name, event => {
       if (filter && !matchesFilter(event.doc, filter)) return;
       if (resolve) {
         const r = resolve; resolve = null;
@@ -375,7 +459,7 @@ class Collection {
       [Symbol.asyncIterator]() { return this; },
       next() {
         if (queue.length > 0) return Promise.resolve({ value: queue.shift(), done: false });
-        if (done)             return Promise.resolve({ value: undefined, done: true });
+        if (done) return Promise.resolve({ value: undefined, done: true });
         return new Promise(res => { resolve = res; });
       },
       return() {
@@ -438,7 +522,7 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async findOne(filter, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const { populate, select, includeDeleted = false } = options;
     const item = this._findRaw(filter, { includeDeleted });
     if (!item) return null;
@@ -455,11 +539,11 @@ class Collection {
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
   async find(filter, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const _t0 = Date.now();
     const { populate, select, sort, page = 1, limit, session, includeDeleted = false } = options;
 
-    await this.database._plugins.run("beforeFind", { collection: this.name, filter, options });
+    await this._ctx.plugins.run("beforeFind", { collection: this.name, filter, options });
 
     const candidates = this._getCandidates(filter);
     const sortedFilter = presortFilter(
@@ -498,9 +582,9 @@ class Collection {
       extra = { page, totalDocs, totalPages };
     }
 
-    this.database._queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
-    this.database._sessionStats.recordRead(session);
-    await this.database._plugins.run("afterFind", { collection: this.name, filter, options, docs: results });
+    this._ctx.queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
+    this._ctx.sessionStats.recordRead(session);
+    await this._ctx.plugins.run("afterFind", { collection: this.name, filter, options, docs: results });
     return extra ? { docs: results, ...extra } : { docs: results };
   }
 
@@ -515,10 +599,10 @@ class Collection {
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
   async search(query, { filter, limit = 10, minScore = 0, session } = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const _t0 = Date.now();
-    await this.database._plugins.run("beforeSearch", { collection: this.name, query, options: { filter, limit, minScore } });
-    const queryVector = await this.database.embed(query);
+    await this._ctx.plugins.run("beforeSearch", { collection: this.name, query, options: { filter, limit, minScore } });
+    const queryVector = await this._ctx.embed(query);
 
     const candidates = filter ? this._findAllRaw(filter) : this._data;
 
@@ -532,12 +616,12 @@ class Collection {
     scored.sort((a, b) => b.score - a.score);
     const top = scored.slice(0, limit);
 
-    this.database._queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: top.length });
-    this.database._sessionStats.recordRead(session);
+    this._ctx.queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: top.length });
+    this._ctx.sessionStats.recordRead(session);
 
     const docs = top.map(r => stripVector(r.doc));
     const scores = top.map(r => r.score);
-    await this.database._plugins.run("afterSearch", { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
+    await this._ctx.plugins.run("afterSearch", { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
 
     return { docs, scores };
   }
@@ -550,7 +634,7 @@ class Collection {
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
   async similar(id, { limit = 10, minScore = 0 } = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const source = this._index.get(id);
     if (!source || !source._vector) return { docs: [], scores: [] };
 
@@ -580,49 +664,21 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async deleteOne(filter, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const { save, session } = options;
-    await this.database._plugins.run("beforeDelete", { collection: this.name, filter });
 
     if (this._softDelete) {
       const item = this._findRaw(filter);
       if (!item) return null;
-
-      item._deletedAt = new Date();
-      item.updatedAt  = new Date();
-      this._index.set(item._id, item);
-
-      await this._saveIfNeeded(save);
-
-      if (this._changelogEnabled) {
-        await this.database._logChange("delete", this.name, item, null, session || null);
-      }
-
-      this.database._sessionStats.recordWrite(session);
-      this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(item) });
-
-      await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: item });
-      return stripVector(item);
+      const { docs } = await this._deleteCore("soft", [item], filter, { save, session });
+      return stripVector(docs[0]);
     }
 
-    const index = this._findIndex(filter);
-    if (index === -1) return null;
-
-    const deletedItem = this._data.splice(index, 1)[0];
-    this._index.delete(deletedItem._id);
-    this._removeFromIndex(deletedItem);
-
-    await this._saveIfNeeded(save);
-
-    if (this._changelogEnabled) {
-      await this.database._logChange("delete", this.name, deletedItem, null, session || null);
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(deletedItem) });
-
-    await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: deletedItem });
-    return stripVector(deletedItem);
+    // Defer _findIndex to inside the mutate callback so beforeDelete hooks
+    // cannot invalidate the index position between lookup and splice.
+    const { docs } = await this._deleteCore("hard", null, filter, { save, session });
+    if (docs.length === 0) return null;
+    return stripVector(docs[0]);
   }
 
   /**
@@ -633,66 +689,71 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async deleteMany(filter, options = {}) {
-    await this.database._ensureConnected();
+    await this._ctx.ensureConnected();
     const { save, session } = options;
-    await this.database._plugins.run("beforeDelete", { collection: this.name, filter });
 
     if (this._softDelete) {
       const items = this._findAllRaw(filter);
-      const now = new Date();
-      for (const item of items) {
-        item._deletedAt = now;
-        item.updatedAt  = now;
-        this._index.set(item._id, item);
-      }
+      if (items.length === 0) return [];
+      const { docs } = await this._deleteCore("soft", items, filter, { save, session });
+      return docs.map(stripVector);
+    }
 
-      await this._saveIfNeeded(save);
+    // For hard delete many, collect items in one pass
+    const { docs } = await this._deleteCore("hardMany", null, filter, { save, session });
+    return docs.map(stripVector);
+  }
 
-      if (this._changelogEnabled) {
-        for (const item of items) {
-          await this.database._logChange("delete", this.name, item, null, session || null);
+  /**
+   * Shared delete implementation.
+   * @param {"soft"|"hard"|"hardMany"} mode
+   */
+  async _deleteCore(mode, items, filter, { save, session }) {
+    return this._pipeline.execute({
+      op: "delete",
+      beforeHook: "beforeDelete",
+      afterHook: "afterDelete",
+      hookPayload: { collection: this.name, filter },
+      save,
+      session,
+      afterHookPayload: (docs) => ({ collection: this.name, filter, result: docs.length === 1 ? docs[0] : docs }),
+      mutate: async (assertTxAlive) => {
+        assertTxAlive(); // guard before first in-memory state change
+        if (mode === "soft") {
+          const now = new Date();
+          for (const item of items) {
+            item._deletedAt = now;
+            item.updatedAt = now;
+            this._index.set(item._id, item);
+          }
+          return { docs: items };
         }
-      }
 
-      this.database._sessionStats.recordWrite(session);
-      for (const item of items) {
-        this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(item) });
-      }
+        if (mode === "hard") {
+          const idx = this._findIndex(filter);
+          if (idx === -1) return { docs: [] };
+          const deletedItem = this._data.splice(idx, 1)[0];
+          this._index.delete(deletedItem._id);
+          this._removeFromIndex(deletedItem);
+          return { docs: [deletedItem] };
+        }
 
-      await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: items });
-      return items.map(stripVector);
-    }
-
-    const deletedItems = [];
-    const remainingItems = [];
-
-    for (const item of this._data) {
-      if (matchesFilter(item, filter)) {
-        deletedItems.push(item);
-        this._index.delete(item._id);
-        this._removeFromIndex(item);
-      } else {
-        remainingItems.push(item);
-      }
-    }
-
-    this._data = remainingItems;
-
-    await this._saveIfNeeded(save);
-
-    if (this._changelogEnabled) {
-      for (const deletedItem of deletedItems) {
-        await this.database._logChange("delete", this.name, deletedItem, null, session || null);
-      }
-    }
-
-    this.database._sessionStats.recordWrite(session);
-    for (const deletedItem of deletedItems) {
-      this.database._emitEvent(this.name, { op: "delete", collection: this.name, doc: stripVector(deletedItem) });
-    }
-
-    await this.database._runAfterHook("afterDelete", { collection: this.name, filter, result: deletedItems });
-    return deletedItems.map(stripVector);
+        // hardMany
+        const deletedItems = [];
+        const remainingItems = [];
+        for (const item of this._data) {
+          if (matchesFilter(item, filter)) {
+            deletedItems.push(item);
+            this._index.delete(item._id);
+            this._removeFromIndex(item);
+          } else {
+            remainingItems.push(item);
+          }
+        }
+        this._data = remainingItems;
+        return { docs: deletedItems };
+      },
+    });
   }
 
   // ─── Export ──────────────────────────────────────────────────────────────
@@ -709,42 +770,58 @@ class Collection {
       const filteredData = this._data.filter(item => matchesFilter(item, filter));
 
       if (filteredData.length === 0) {
-        throw new Error(`export(): no documents matched the filter in "${this.name}"`);
+        throw new QueryError("ERR_SKALEX_QUERY_EXPORT_EMPTY", `export(): no documents matched the filter in "${this.name}"`, { collection: this.name });
       }
 
       let content;
       if (format === "json") {
         content = JSON.stringify(filteredData, null, 2);
       } else {
-        const header = Object.keys(filteredData[0]).join(",");
+        const escapeCsv = (v) => {
+          if (v == null) return "";
+          const s = (typeof v === "object") ? JSON.stringify(v) : String(v);
+          // Escape if value contains comma, quote, or newline (RFC 4180)
+          return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
+            ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const header = Object.keys(filteredData[0]).map(escapeCsv).join(",");
         const rows = filteredData.map(item =>
-          Object.values(item).map(v =>
-            typeof v === "string" && v.includes(",") ? `"${v}"` : v
-          ).join(",")
+          Object.values(item).map(escapeCsv).join(",")
         );
         content = [header, ...rows].join("\n");
       }
 
-      if (typeof this.database.fs.writeRaw !== "function") {
-        throw new Error(
-          `export() requires a file-system adapter (FsAdapter). ` +
-          `The current adapter does not support raw file writes.`
+      if (typeof this._ctx.fs.writeRaw !== "function") {
+        throw new AdapterError(
+          "ERR_SKALEX_ADAPTER_NO_RAW_WRITE",
+          `export() requires a file-system adapter (FsAdapter). The current adapter does not support raw file writes.`
         );
       }
 
-      const exportDir = dir || `${this.database.dataDirectory}/exports`;
+      const exportDir = dir || `${this._ctx.dataDirectory}/exports`;
       const fileName = `${name || this.name}.${format}`;
-      const filePath = this.database.fs.join(exportDir, fileName);
+      const filePath = this._ctx.fs.join(exportDir, fileName);
 
-      this.database.fs.ensureDir(exportDir);
-      await this.database.fs.writeRaw(filePath, content);
+      this._ctx.fs.ensureDir(exportDir);
+      await this._ctx.fs.writeRaw(filePath, content);
     } catch (error) {
-      this.database._logger(`Error exporting "${this.name}": ${error.message}`, "error");
+      this._ctx.logger(`Error exporting "${this.name}": ${error.message}`, "error");
       throw error;
     }
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Lazy snapshot for transactions: snapshot this collection on first write.
+   * Also asserts the transaction is not aborted.
+   */
+  _txSnapshotIfNeeded() {
+    const txm = this._ctx.txManager;
+    if (txm.active) {
+      txm.snapshotIfNeeded(this.name, this._store, (col) => this._ctx.snapshotCollection(col));
+    }
+  }
 
   /**
    * Save if `save` is explicitly true, or if database-level autoSave is on.
@@ -754,8 +831,8 @@ class Collection {
    * @param {boolean|undefined} save
    */
   async _saveIfNeeded(save) {
-    if (this.database._inTransaction) return;
-    if (save ?? this.database._autoSave) await this.database.saveData(this.name);
+    if (this._ctx.txManager.active) return;
+    if (save ?? this._ctx.autoSave) await this._ctx.saveCollection(this.name);
   }
 
   /**
@@ -771,12 +848,12 @@ class Collection {
     if (!errors.length) return item;
     switch (this._onSchemaError) {
       case "warn":
-        this.database._logger(`[${this.name}] Validation warning: ${errors.join("; ")}`, "warn");
+        this._ctx.logger(`[${this.name}] Validation warning: ${errors.join("; ")}`, "warn");
         return item;
       case "strip":
         return stripInvalidFields(item, this._schema);
       default:
-        throw new Error(`Validation failed: ${errors.join("; ")}`);
+        throw new ValidationError("ERR_SKALEX_VALIDATION_FAILED", `Validation failed: ${errors.join("; ")}`, { errors });
     }
   }
 
@@ -815,9 +892,10 @@ class Collection {
     // Try O(1) indexed field lookup first
     if (this._fieldIndex) {
       for (const key in filter) {
+        if (key === "$or" || key === "$and" || key === "$not") continue;
         const val = filter[key];
         if (typeof val !== "object" || val === null) {
-          const candidates = this._fieldIndex.lookup(key, val);
+          const candidates = this._fieldIndex._lookupIterable(key, val);
           if (candidates !== null) {
             for (const doc of candidates) {
               if (this._softDelete && doc._deletedAt && !includeDeleted) continue;
@@ -853,10 +931,27 @@ class Collection {
 
   _getCandidates(filter) {
     if (!this._fieldIndex) return this._data;
+
+    // Try compound index first — matches more fields in one lookup
+    if (this._fieldIndex._compoundIndexes.size > 0) {
+      const eqFields = {};
+      for (const key in filter) {
+        if (key === "$or" || key === "$and" || key === "$not") continue;
+        const val = filter[key];
+        if (typeof val !== "object" || val === null) eqFields[key] = val;
+      }
+      if (Object.keys(eqFields).length >= 2) {
+        const candidates = this._fieldIndex.lookupCompound(eqFields);
+        if (candidates !== null) return candidates;
+      }
+    }
+
+    // Fall back to single-field index
     for (const key in filter) {
+      if (key === "$or" || key === "$and" || key === "$not") continue;
       const val = filter[key];
       if (typeof val !== "object" || val === null) {
-        const candidates = this._fieldIndex.lookup(key, val);
+        const candidates = this._fieldIndex._lookupIterable(key, val);
         if (candidates !== null) return candidates;
       }
     }
@@ -895,7 +990,7 @@ class Collection {
    */
   async _buildDoc(item, { ttl, embed } = {}) {
     const newItem = {
-      _id: (this.database._idGenerator ?? generateUniqueId)(),
+      _id: (this._ctx.idGenerator ?? generateUniqueId)(),
       createdAt: new Date(),
       updatedAt: new Date(),
       ...item,
@@ -907,7 +1002,7 @@ class Collection {
     const resolvedEmbed = embed ?? this._defaultEmbed;
     if (resolvedEmbed) {
       const text = typeof resolvedEmbed === "function" ? resolvedEmbed(newItem) : newItem[resolvedEmbed];
-      newItem._vector = await this.database.embed(String(text));
+      newItem._vector = await this._ctx.embed(String(text));
     }
 
     if (this._versioning) newItem._version = 1;
@@ -945,7 +1040,7 @@ class Collection {
    */
   async _populateDoc(out, source, fields) {
     for (const field of fields) {
-      const related = this.database.useCollection(field);
+      const related = this._ctx.getCollection(field);
       const item = await related.findOne({ _id: source[field] });
       if (item) out[field] = item;
     }

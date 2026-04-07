@@ -40,6 +40,16 @@ class StorageAdapter {
   async list() {
     throw new Error("StorageAdapter.list() not implemented");
   }
+
+  /**
+   * Batch write multiple collections. Default: sequential fallback.
+   * Adapters that support atomic batches should override this.
+   * @param {{ name: string, data: string }[]} entries
+   * @returns {Promise<void>}
+   */
+  async writeAll(entries) {
+    for (const { name, data } of entries) await this.write(name, data);
+  }
 }
 
 export default StorageAdapter;

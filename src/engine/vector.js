@@ -5,6 +5,8 @@
  * They are stripped from all query results automatically.
  */
 
+import { QueryError } from "./errors.js";
+
 /**
  * Compute cosine similarity between two numeric vectors.
  * Returns a value in [-1, 1]; 1 = identical direction, 0 = orthogonal.
@@ -14,7 +16,7 @@
  */
 function cosineSimilarity(a, b) {
   if (a.length !== b.length) {
-    throw new Error(`Vector dimension mismatch: ${a.length} vs ${b.length}`);
+    throw new QueryError("ERR_SKALEX_QUERY_VECTOR_MISMATCH", `Vector dimension mismatch: ${a.length} vs ${b.length}`, { expected: a.length, got: b.length });
   }
 
   let dot = 0, magA = 0, magB = 0;

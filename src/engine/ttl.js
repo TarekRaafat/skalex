@@ -12,6 +12,7 @@
  *   "Nh"     → hours       (e.g. "24h")
  *   "Nd"     → days        (e.g. "7d")
  */
+import { ValidationError } from "./errors.js";
 
 /**
  * Parse a TTL value into milliseconds.
@@ -20,20 +21,20 @@
  */
 function parseTtl(ttl) {
   if (typeof ttl === "number") {
-    if (ttl <= 0) throw new Error(`TTL must be positive, got ${ttl}`);
+    if (ttl <= 0) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL must be positive, got ${ttl}`, { ttl });
     return ttl * 1000;
   }
-  if (typeof ttl !== "string") throw new Error(`Invalid TTL value: ${ttl}`);
+  if (typeof ttl !== "string") throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `Invalid TTL value: ${ttl}`, { ttl });
 
   const match = ttl.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/);
-  if (!match) throw new Error(`Invalid TTL format: "${ttl}". Use e.g. 300 (seconds), "30m", "24h", "7d"`);
+  if (!match) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL_FORMAT", `Invalid TTL format: "${ttl}". Use e.g. 300 (seconds), "30m", "24h", "7d"`, { ttl });
 
   const val = parseFloat(match[1]);
-  if (val <= 0) throw new Error(`TTL must be positive, got "${ttl}"`);
+  if (val <= 0) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL must be positive, got "${ttl}"`, { ttl });
   const unit = match[2];
   const multipliers = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
   const ms = val * multipliers[unit];
-  if (!isFinite(ms)) throw new Error(`TTL value "${ttl}" is too large`);
+  if (!isFinite(ms)) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL value "${ttl}" is too large`, { ttl });
   return ms;
 }
 

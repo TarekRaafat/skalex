@@ -93,6 +93,30 @@ describe("transaction()", () => {
     await db.disconnect();
   });
 
+  test("transaction on a disconnected instance snapshots loaded state before rollback", async () => {
+    const adapter = new MemoryAdapter();
+
+    const db1 = new Skalex({ adapter });
+    await db1.connect();
+    await db1.useCollection("users").insertOne({ name: "Alice" }, { save: true });
+    await db1.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await expect(
+      db2.transaction(async (tx) => {
+        const users = tx.useCollection("users");
+        expect((await users.findOne({ name: "Alice" }))?.name).toBe("Alice");
+        await users.insertOne({ name: "Bob" });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    const users = db2.useCollection("users");
+    expect((await users.findOne({ name: "Alice" }))?.name).toBe("Alice");
+    expect(await users.findOne({ name: "Bob" })).toBeNull();
+    await db2.disconnect();
+  });
+
   test("autoSave: true does not flush to disk during a failed transaction", async () => {
     class CountingAdapter extends MemoryAdapter {
       constructor() { super(); this.writeCount = 0; }

@@ -91,6 +91,73 @@ describe("matchesFilter", () => {
   });
 });
 
+describe("logical operators", () => {
+  const docs = [
+    { name: "Alice", age: 30, role: "admin" },
+    { name: "Bob", age: 25, role: "user" },
+    { name: "Carol", age: 35, role: "admin" },
+    { name: "Dave", age: 20, role: "user" },
+  ];
+
+  test("$or matches if any sub-filter matches", () => {
+    const filter = { $or: [{ name: "Alice" }, { name: "Bob" }] };
+    const matches = docs.filter(d => matchesFilter(d, filter));
+    expect(matches).toHaveLength(2);
+    expect(matches.map(d => d.name).sort()).toEqual(["Alice", "Bob"]);
+  });
+
+  test("$or returns false when no sub-filter matches", () => {
+    expect(matchesFilter(docs[0], { $or: [{ name: "X" }, { name: "Y" }] })).toBe(false);
+  });
+
+  test("$and matches only if all sub-filters match", () => {
+    const filter = { $and: [{ role: "admin" }, { age: { $gte: 35 } }] };
+    const matches = docs.filter(d => matchesFilter(d, filter));
+    expect(matches).toHaveLength(1);
+    expect(matches[0].name).toBe("Carol");
+  });
+
+  test("$not negates a filter", () => {
+    const filter = { $not: { role: "admin" } };
+    const matches = docs.filter(d => matchesFilter(d, filter));
+    expect(matches).toHaveLength(2);
+    expect(matches.every(d => d.role === "user")).toBe(true);
+  });
+
+  test("$or combined with field-level conditions", () => {
+    const filter = { role: "admin", $or: [{ age: 30 }, { age: 35 }] };
+    const matches = docs.filter(d => matchesFilter(d, filter));
+    expect(matches).toHaveLength(2);
+  });
+
+  test("$not combined with $or", () => {
+    const filter = { $not: { $or: [{ name: "Alice" }, { name: "Bob" }] } };
+    const matches = docs.filter(d => matchesFilter(d, filter));
+    expect(matches).toHaveLength(2);
+    expect(matches.map(d => d.name).sort()).toEqual(["Carol", "Dave"]);
+  });
+
+  test("nested $and inside $or", () => {
+    const filter = {
+      $or: [
+        { $and: [{ role: "admin" }, { age: { $lt: 32 } }] },
+        { name: "Dave" },
+      ]
+    };
+    const matches = docs.filter(d => matchesFilter(d, filter));
+    expect(matches).toHaveLength(2);
+    expect(matches.map(d => d.name).sort()).toEqual(["Alice", "Dave"]);
+  });
+
+  test("$or with non-array throws QueryError", () => {
+    expect(() => matchesFilter(docs[0], { $or: "invalid" })).toThrow("$or must be an array");
+  });
+
+  test("$and with non-array throws QueryError", () => {
+    expect(() => matchesFilter(docs[0], { $and: "invalid" })).toThrow("$and must be an array");
+  });
+});
+
 describe("presortFilter", () => {
   test("indexed fields come first", () => {
     const filter = { role: "admin", name: /alice/i, age: { $gt: 20 } };

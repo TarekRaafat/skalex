@@ -17,6 +17,7 @@
  *   - Uint8Array / Buffer      (32 bytes)
  */
 import StorageAdapter from "./base.js";
+import { AdapterError } from "../../engine/errors.js";
 
 const ALGO    = "AES-GCM";
 const IV_LEN  = 12;   // bytes  -  recommended for GCM
@@ -36,7 +37,8 @@ class EncryptedAdapter extends StorageAdapter {
     this._rawKey = typeof key === "string" ? _hexToBytes(key) : Uint8Array.from(key);
 
     if (this._rawKey.length !== KEY_LEN) {
-      throw new Error(
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_INVALID_KEY",
         `EncryptedAdapter: key must be ${KEY_LEN} bytes (${KEY_LEN * 2} hex chars), got ${this._rawKey.length}`
       );
     }
@@ -60,6 +62,14 @@ class EncryptedAdapter extends StorageAdapter {
 
   async list() {
     return this._adapter.list();
+  }
+
+  async writeAll(entries) {
+    const encrypted = [];
+    for (const { name, data } of entries) {
+      encrypted.push({ name, data: await this._encrypt(data) });
+    }
+    return this._adapter.writeAll(encrypted);
   }
 
   // ─── FsAdapter extension passthrough ────────────────────────────────────────
@@ -132,12 +142,13 @@ class EncryptedAdapter extends StorageAdapter {
 
 function _hexToBytes(hex) {
   if (hex.length !== KEY_LEN * 2) {
-    throw new Error(
+    throw new AdapterError(
+      "ERR_SKALEX_ADAPTER_INVALID_KEY",
       `EncryptedAdapter: hex key must be ${KEY_LEN * 2} characters (${KEY_LEN} bytes)`
     );
   }
   if (!/^[0-9a-fA-F]+$/.test(hex)) {
-    throw new Error("EncryptedAdapter: hex key contains invalid characters");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_INVALID_KEY", "EncryptedAdapter: hex key contains invalid characters");
   }
   const bytes = new Uint8Array(KEY_LEN);
   for (let i = 0; i < KEY_LEN; i++) {

@@ -67,6 +67,16 @@ class D1Adapter extends StorageAdapter {
       .run();
   }
 
+  async writeAll(entries) {
+    await this._ensureTable();
+    const stmts = entries.map(({ name, data }) =>
+      this._d1
+        .prepare(`INSERT OR REPLACE INTO ${this._table} (name, data) VALUES (?, ?)`)
+        .bind(name, data)
+    );
+    await this._d1.batch(stmts);
+  }
+
   async delete(name) {
     await this._ensureTable();
     await this._d1

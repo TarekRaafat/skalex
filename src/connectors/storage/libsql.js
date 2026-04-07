@@ -65,6 +65,16 @@ class LibSQLAdapter extends StorageAdapter {
     });
   }
 
+  async writeAll(entries) {
+    await this._ensureTable();
+    await this._client.batch(
+      entries.map(({ name, data }) => ({
+        sql: `INSERT OR REPLACE INTO ${this._table} (name, data) VALUES (?, ?)`,
+        args: [name, data],
+      }))
+    );
+  }
+
   async delete(name) {
     await this._ensureTable();
     await this._client.execute({

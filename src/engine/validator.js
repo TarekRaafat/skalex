@@ -8,6 +8,8 @@
  * Supported types: "string", "number", "boolean", "object", "array", "date", "any"
  */
 
+import { ValidationError } from "./errors.js";
+
 const SUPPORTED_TYPES = new Set(["string", "number", "boolean", "object", "array", "date", "any"]);
 
 /**
@@ -24,18 +26,18 @@ function parseSchema(schema) {
 
     if (typeof def === "string") {
       if (!SUPPORTED_TYPES.has(def)) {
-        throw new Error(`Unknown schema type "${def}" for field "${key}"`);
+        throw new ValidationError("ERR_SKALEX_VALIDATION_UNKNOWN_TYPE", `Unknown schema type "${def}" for field "${key}"`, { field: key, type: def });
       }
       fieldDef = { type: def, required: false, unique: false };
     } else if (typeof def === "object" && def !== null) {
       const { type = "any", required = false, unique = false, enum: enumVals } = def;
       if (!SUPPORTED_TYPES.has(type)) {
-        throw new Error(`Unknown schema type "${type}" for field "${key}"`);
+        throw new ValidationError("ERR_SKALEX_VALIDATION_UNKNOWN_TYPE", `Unknown schema type "${type}" for field "${key}"`, { field: key, type });
       }
       fieldDef = { type, required, unique, enum: enumVals };
       if (unique) uniqueFields.push(key);
     } else {
-      throw new Error(`Invalid schema definition for field "${key}"`);
+      throw new ValidationError("ERR_SKALEX_VALIDATION_INVALID_SCHEMA", `Invalid schema definition for field "${key}"`, { field: key });
     }
 
     fields.set(key, fieldDef);

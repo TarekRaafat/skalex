@@ -14,7 +14,11 @@ class ChangeLog {
   constructor(db) {
     this._db = db;
     this._restoring = false;
-    this._col = db.useCollection("_changelog");
+  }
+
+  /** Lazily resolved so it always reflects the current registry state. */
+  get _col() {
+    return this._db.useCollection("_changelog");
   }
 
   /**
@@ -77,10 +81,16 @@ class ChangeLog {
       if (docEntries.length === 0) return;
 
       const last = docEntries[docEntries.length - 1];
-      if (last.op === "delete") return; // was deleted at that point
 
       this._restoring = true;
       try {
+        if (last.op === "delete") {
+          // Document should not exist at this point in time
+          const existing = await col.findOne({ _id });
+          if (existing) await col.deleteOne({ _id });
+          return;
+        }
+
         const existing = await col.findOne({ _id });
         if (existing) {
           // Overwrite with the snapshotted doc (excluding system timestamps)

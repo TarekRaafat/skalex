@@ -3,13 +3,13 @@ import { logger as _defaultLogger } from "./engine/utils.js";
 import FsAdapter from "./connectors/storage/fs.js";
 import MigrationEngine from "./engine/migrations.js";
 import IndexEngine from "./engine/indexes.js";
-import { parseSchema, inferSchema } from "./engine/validator.js";
+import { parseSchema } from "./engine/validator.js";
 import { sweep } from "./engine/ttl.js";
-import OpenAIEmbeddingAdapter from "./connectors/embedding/openai.js";
-import OllamaEmbeddingAdapter from "./connectors/embedding/ollama.js";
-import OpenAILLMAdapter from "./connectors/llm/openai.js";
-import AnthropicLLMAdapter from "./connectors/llm/anthropic.js";
-import OllamaLLMAdapter from "./connectors/llm/ollama.js";
+import { SkalexError, PersistenceError, TransactionError, AdapterError, ValidationError, UniqueConstraintError, QueryError } from "./engine/errors.js";
+import PersistenceManager from "./engine/persistence.js";
+import TransactionManager from "./engine/transaction.js";
+import CollectionRegistry from "./engine/registry.js";
+import { createEmbeddingAdapter, createLLMAdapter } from "./engine/adapters.js";
 import EncryptedAdapter from "./connectors/storage/encrypted.js";
 import Memory from "./features/memory.js";
 import ChangeLog from "./features/changelog.js";
@@ -24,27 +24,34 @@ import SkalexMCPServer from "./connectors/mcp/index.js";
 const META_KEY = "migrations";
 
 /**
- * BigInt-safe JSON serializer. Encodes BigInt values as tagged objects so they
- * survive the serialize → deserialize round-trip without throwing.
+ * BigInt- and Date-safe JSON serializer. Encodes BigInt values as tagged objects
+ * and Date instances as tagged ISO strings so they survive the round-trip.
+ * Uses `function` (not arrow) so `this` is the holder object - needed because
+ * JSON.stringify calls Date.toJSON() before the replacer sees the value.
  * @param {any} value
  * @returns {string}
  */
 const _serialize = (value) =>
-  JSON.stringify(value, (_, v) =>
-    typeof v === "bigint" ? { __skalex_bigint__: v.toString() } : v
-  );
+  JSON.stringify(value, function (key, v) {
+    const raw = this[key];
+    if (raw instanceof Date) return { __skalex_date__: raw.toISOString() };
+    if (typeof v === "bigint") return { __skalex_bigint__: v.toString() };
+    return v;
+  });
 
 /**
- * Counterpart to `_serialize`. Revives tagged BigInt objects back to BigInt.
+ * Counterpart to `_serialize`. Revives tagged BigInt and Date objects.
  * @param {string} text
  * @returns {any}
  */
 const _deserialize = (text) =>
-  JSON.parse(text, (_, v) =>
-    v && typeof v === "object" && "__skalex_bigint__" in v
-      ? BigInt(v.__skalex_bigint__)
-      : v
-  );
+  JSON.parse(text, (_, v) => {
+    if (v && typeof v === "object") {
+      if ("__skalex_bigint__" in v) return BigInt(v.__skalex_bigint__);
+      if ("__skalex_date__" in v) return new Date(v.__skalex_date__);
+    }
+    return v;
+  });
 
 /**
  * Skalex  -  an in-process document database with file-system persistence.
@@ -94,13 +101,29 @@ class Skalex {
     this.dataFormat = format;
     this.debug = debug;
 
+    // Expose error types as static properties for CJS/UMD consumers.
+    // Uses direct references (not a namespace) so tree-shaking cannot remove
+    // them — these bindings are already used in throw statements throughout
+    // the engine, so Rollup considers them live.
+    if (!Skalex._errorsAttached) {
+      Skalex.SkalexError = SkalexError;
+      Skalex.ValidationError = ValidationError;
+      Skalex.UniqueConstraintError = UniqueConstraintError;
+      Skalex.TransactionError = TransactionError;
+      Skalex.PersistenceError = PersistenceError;
+      Skalex.AdapterError = AdapterError;
+      Skalex.QueryError = QueryError;
+      Skalex._errorsAttached = true;
+    }
+
     this._adapterConfig = adapter ?? null; // track whether a custom adapter was explicitly provided
     let fs = adapter || new FsAdapter({ dir: path, format });
     if (encrypt) fs = new EncryptedAdapter(fs, encrypt.key);
     this.fs = fs;
 
-    this.collections = {};
-    this._collectionInstances = {};
+    this._registry = new CollectionRegistry(Collection);
+    this.collections = this._registry.stores;
+    this._collectionInstances = this._registry._instances;
     this._migrations = new MigrationEngine();
     this._autoConnectPromise = null;
     this.isConnected = false;
@@ -114,17 +137,22 @@ class Skalex {
     this._serializer = serializer ?? _serialize;
     this._deserializer = deserializer ?? _deserialize;
     this._autoSave = autoSave ?? false;
-    this._inTransaction = false;
-    this._txLock = Promise.resolve();
-    this._txQueue = [];
+    this._txManager = new TransactionManager();
     this._ttlSweepInterval = ttlSweepInterval ?? 0;
     this._ttlTimer = null;
-    this._embeddingAdapter = embeddingAdapter ?? (ai ? this._createEmbeddingAdapter(ai) : null);
-    this._aiAdapter = llmAdapter ?? (ai ? this._createAIAdapter(ai) : null);
+    this._logger = logger ?? _defaultLogger;
+    this._embeddingAdapter = embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null);
+    this._aiAdapter = llmAdapter ?? (ai ? createLLMAdapter(ai) : null);
+    this._persistence = new PersistenceManager({
+      adapter: this.fs,
+      serializer: this._serializer,
+      deserializer: this._deserializer,
+      logger: this._logger,
+      debug: this.debug,
+    });
     this._changeLog = new ChangeLog(this);
     this._queryCache = new QueryCache(queryCache || {});
     this._eventBus = new EventBus();
-    this._logger = logger ?? _defaultLogger;
     this._queryLog = slowQueryLog ? new QueryLog(slowQueryLog) : null;
     this._sessionStats = new SessionStats();
     this._plugins = new PluginEngine();
@@ -185,8 +213,9 @@ class Skalex {
         this._ttlTimer = null;
       }
       await this.saveData();
-      this.collections = {};
-      this._collectionInstances = {};
+      this._registry.clear();
+      this.collections = this._registry.stores;
+      this._collectionInstances = this._registry._instances;
       this._autoConnectPromise = null;
       this.isConnected = false;
       this._log("> - Disconnected from the database (√)");
@@ -217,74 +246,23 @@ class Skalex {
    * @returns {Collection}
    */
   useCollection(collectionName) {
-    if (this._collectionInstances[collectionName]) {
-      return this._collectionInstances[collectionName];
-    }
-    if (!this.collections[collectionName]) {
-      this._createCollectionStore(collectionName);
-    }
-    const instance = new Collection(this.collections[collectionName], this);
-    this._collectionInstances[collectionName] = instance;
-    return instance;
+    return this._registry.get(collectionName, this);
   }
 
   /**
    * Define a collection with optional schema, indexes, and behaviour options.
    * Must be called before connect() so configuration is available when loading data.
    * @param {string} collectionName
-   * @param {{ schema?: object, indexes?: string[], changelog?: boolean, softDelete?: boolean, versioning?: boolean, strict?: boolean, onSchemaError?: "throw"|"warn"|"strip", defaultTtl?: number|string, defaultEmbed?: string, maxDocs?: number }} [options]
+   * @param {object} [options]
    * @returns {Collection}
    */
   createCollection(collectionName, options = {}) {
-    this._createCollectionStore(collectionName, options);
-    const instance = new Collection(this.collections[collectionName], this);
-    this._collectionInstances[collectionName] = instance;
-    return instance;
+    return this._registry.create(collectionName, options, this);
   }
 
-  _createCollectionStore(collectionName, {
-    schema,
-    indexes      = [],
-    changelog    = false,
-    softDelete   = false,
-    versioning   = false,
-    strict       = false,
-    onSchemaError = "throw",
-    defaultTtl   = null,
-    defaultEmbed = null,
-    maxDocs      = null,
-  } = {}) {
-    let parsedSchema = null;
-    let fieldIndex = null;
-
-    if (schema) {
-      parsedSchema = parseSchema(schema);
-      const uniqueFields = parsedSchema.uniqueFields;
-      if (indexes.length || uniqueFields.length) {
-        fieldIndex = new IndexEngine(indexes, uniqueFields);
-      }
-    } else if (indexes.length) {
-      fieldIndex = new IndexEngine(indexes, []);
-    }
-
-    this.collections[collectionName] = {
-      collectionName,
-      data: [],
-      index: new Map(),
-      isSaving: false,
-      _pendingSave: false,
-      schema: parsedSchema,
-      rawSchema: schema || null,
-      fieldIndex,
-      changelog,
-      softDelete,
-      versioning,
-      strict,
-      onSchemaError,
-      defaultTtl,
-      defaultEmbed,
-      maxDocs,
-    };
+  /** @private Create a bare collection store (used internally by persistence). */
+  _createCollectionStore(collectionName, options = {}) {
+    this._registry.createStore(collectionName, options);
   }
 
   /**
@@ -295,21 +273,7 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async renameCollection(from, to) {
-    if (!this.collections[from]) throw new Error(`Collection "${from}" not found`);
-    if (this.collections[to])   throw new Error(`Collection "${to}" already exists`);
-
-    const store = this.collections[from];
-    store.collectionName = to;
-    this.collections[to] = store;
-    delete this.collections[from];
-
-    if (this._collectionInstances[from]) {
-      const inst = this._collectionInstances[from];
-      inst.name = to;
-      this._collectionInstances[to] = inst;
-      delete this._collectionInstances[from];
-    }
-
+    this._registry.rename(from, to);
     await this.saveData(to);
     await this.fs.delete(from);
   }
@@ -321,69 +285,11 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async loadData() {
-    try {
-      const names = await this.fs.list();
-
-      await Promise.all(names.map(async (name) => {
-        try {
-          const raw = await this.fs.read(name);
-          if (!raw) return;
-
-          const parsed = this._deserializer(raw);
-          const { collectionName, data } = parsed;
-          if (!collectionName) return;
-
-          // Prefer config from createCollection over persisted values
-          const existing = this.collections[collectionName];
-          const rawSchema   = existing?.rawSchema   ?? parsed.rawSchema   ?? null;
-          const parsedSchema = existing?.schema     ?? (rawSchema ? parseSchema(rawSchema) : null);
-          const changelog    = existing?.changelog  ?? parsed.changelog   ?? false;
-          const softDelete   = existing?.softDelete ?? parsed.softDelete  ?? false;
-          const versioning   = existing?.versioning ?? parsed.versioning  ?? false;
-          const strict       = existing?.strict     ?? parsed.strict      ?? false;
-          const onSchemaError = existing?.onSchemaError ?? parsed.onSchemaError ?? "throw";
-          const defaultTtl   = existing?.defaultTtl   ?? parsed.defaultTtl   ?? null;
-          const defaultEmbed = existing?.defaultEmbed ?? parsed.defaultEmbed ?? null;
-          const maxDocs      = existing?.maxDocs      ?? parsed.maxDocs      ?? null;
-
-          let fieldIndex = existing ? existing.fieldIndex : null;
-          if (!fieldIndex && parsedSchema?.uniqueFields?.length) {
-            fieldIndex = new IndexEngine([], parsedSchema.uniqueFields);
-          }
-
-          const idIndex = this.buildIndex(data, "_id");
-          if (fieldIndex) fieldIndex.buildFromData(data);
-
-          this.collections[collectionName] = {
-            collectionName,
-            data,
-            index: idIndex,
-            isSaving: false,
-            _pendingSave: false,
-            schema: parsedSchema,
-            rawSchema,
-            fieldIndex,
-            changelog,
-            softDelete,
-            versioning,
-            strict,
-            onSchemaError,
-            defaultTtl,
-            defaultEmbed,
-            maxDocs,
-          };
-        } catch (error) {
-          if (error.code !== "ENOENT") {
-            this._logger(`WARNING: Could not load collection "${name}": ${error.message}. Collection will be empty.`, "error");
-          }
-        }
-      }));
-    } catch (error) {
-      if (error.code !== "ENOENT") {
-        this._logger(`Error loading data: ${error}`, "error");
-        throw error;
-      }
-    }
+    await this._persistence.loadAll(this.collections, {
+      parseSchema,
+      buildIndex: this._registry.buildIndex,
+      IndexEngine,
+    });
   }
 
   /**
@@ -395,44 +301,7 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async saveData(collectionName) {
-    const saveOne = async (name) => {
-      const col = this.collections[name];
-      if (!col) return;
-      if (col.isSaving) {
-        col._pendingSave = true;
-        return;
-      }
-      col.isSaving = true;
-      col._pendingSave = false;
-      try {
-        const payload = { collectionName: name, data: col.data };
-        if (col.rawSchema)                   payload.rawSchema    = col.rawSchema;
-        if (col.changelog)                   payload.changelog    = col.changelog;
-        if (col.softDelete)                  payload.softDelete   = col.softDelete;
-        if (col.versioning)                  payload.versioning   = col.versioning;
-        if (col.strict)                      payload.strict       = col.strict;
-        if (col.onSchemaError !== "throw")   payload.onSchemaError = col.onSchemaError;
-        if (col.defaultTtl)                  payload.defaultTtl   = col.defaultTtl;
-        if (col.defaultEmbed)                payload.defaultEmbed = col.defaultEmbed;
-        if (col.maxDocs)                     payload.maxDocs      = col.maxDocs;
-        await this.fs.write(name, this._serializer(payload));
-      } catch (error) {
-        this._logger(`Error saving "${name}": ${error.message}`, "error");
-        throw error;
-      } finally {
-        col.isSaving = false;
-      }
-      if (col._pendingSave) {
-        col._pendingSave = false;
-        await saveOne(name);
-      }
-    };
-
-    if (collectionName) {
-      await saveOne(collectionName);
-    } else {
-      await Promise.all(Object.keys(this.collections).map(saveOne));
-    }
+    await this._persistence.save(this.collections, collectionName);
   }
 
   /**
@@ -442,9 +311,7 @@ class Skalex {
    * @returns {Map}
    */
   buildIndex(data, keyField) {
-    const index = new Map();
-    for (const item of data) index.set(item[keyField], item);
-    return index;
+    return this._registry.buildIndex(data, keyField);
   }
 
   // ─── Migrations ──────────────────────────────────────────────────────────
@@ -475,14 +342,14 @@ class Skalex {
    */
   namespace(id) {
     if (this._adapterConfig) {
-      throw new Error(
-        "namespace() requires the default FsAdapter. " +
-        "When a custom storage adapter is configured, create a separate Skalex instance with your adapter instead."
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_NAMESPACE_REQUIRES_FS",
+        "namespace() requires the default FsAdapter. When a custom storage adapter is configured, create a separate Skalex instance with your adapter instead."
       );
     }
     // Strip path separators and traversal sequences  -  only alphanumeric, dash, and underscore allowed.
     const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
-    if (!safeId) throw new Error("namespace: id must contain at least one alphanumeric character");
+    if (!safeId) throw new ValidationError("ERR_SKALEX_VALIDATION_NAMESPACE_ID", "namespace: id must contain at least one alphanumeric character", { id });
     return new Skalex({
       path: `${this.dataDirectory}/${safeId}`,
       format: this.dataFormat,
@@ -490,6 +357,7 @@ class Skalex {
       ai: this._aiConfig || undefined,
       encrypt: this._encryptConfig || undefined,
       slowQueryLog: this._queryLog ? { threshold: this._queryLog._threshold, maxEntries: this._queryLog._maxEntries } : undefined,
+      queryCache: this._queryCache ? { maxSize: this._queryCache._maxSize, ttl: this._queryCache._ttl } : undefined,
       plugins: this._pluginsConfig || undefined,
       memory: this._memoryConfig || undefined,
       logger: this._logger !== _defaultLogger ? this._logger : undefined,
@@ -544,36 +412,35 @@ class Skalex {
     return this._sessionStats.all();
   }
 
+  /** Whether a transaction is currently active. */
+  get _inTransaction() { return this._txManager.active; }
+
   // ─── Transaction helpers ─────────────────────────────────────────────────
 
   /**
-   * Emit a collection event, or queue it for after-commit if inside a transaction.
+   * Emit a collection event, or defer for after-commit if inside a transaction.
    * @param {string} collectionName
    * @param {object} data
    */
   _emitEvent(collectionName, data) {
-    if (this._inTransaction) {
-      this._txQueue.push(() => this._eventBus.emit(collectionName, data));
-      return;
+    if (!this._txManager.defer(() => this._eventBus.emit(collectionName, data))) {
+      this._eventBus.emit(collectionName, data);
     }
-    this._eventBus.emit(collectionName, data);
   }
 
   /**
-   * Run an after-* plugin hook, or queue it for after-commit if inside a transaction.
+   * Run an after-* plugin hook, or defer for after-commit if inside a transaction.
    * @param {string} hook
    * @param {object} data
    */
   async _runAfterHook(hook, data) {
-    if (this._inTransaction) {
-      this._txQueue.push(() => this._plugins.run(hook, data));
-      return;
+    if (!this._txManager.defer(() => this._plugins.run(hook, data))) {
+      await this._plugins.run(hook, data);
     }
-    await this._plugins.run(hook, data);
   }
 
   /**
-   * Append a changelog entry, or queue it for after-commit if inside a transaction.
+   * Append a changelog entry, or defer for after-commit if inside a transaction.
    * @param {string} op
    * @param {string} collectionName
    * @param {object} doc
@@ -581,19 +448,9 @@ class Skalex {
    * @param {string|null} session
    */
   async _logChange(op, collectionName, doc, prev, session) {
-    if (this._inTransaction) {
-      this._txQueue.push(() => this._changeLog.log(op, collectionName, doc, prev, session));
-      return;
+    if (!this._txManager.defer(() => this._changeLog.log(op, collectionName, doc, prev, session))) {
+      await this._changeLog.log(op, collectionName, doc, prev, session);
     }
-    await this._changeLog.log(op, collectionName, doc, prev, session);
-  }
-
-  /**
-   * Drain and execute all queued transaction side-effects in order.
-   */
-  async _flushTxQueue() {
-    const queue = this._txQueue.splice(0);
-    for (const fn of queue) await fn();
   }
 
   // ─── Transaction ─────────────────────────────────────────────────────────
@@ -601,82 +458,18 @@ class Skalex {
   /**
    * Run a callback inside a transaction.
    *
-   * Takes an in-memory snapshot of all collections before calling fn().
-   * If fn() throws, in-memory state is restored from the snapshot.
-   * All writes made through the collection API during fn() are suppressed
-   * from flushing to disk  -  a single saveData() runs only on success.
+   * Lazy snapshots: only collections that receive a write are snapshotted,
+   * on first mutation - not all collections upfront.
    *
    * Side effects (watch() callbacks, after-* plugin hooks, changelog entries)
-   * are queued during fn() and flushed in a batch on commit, after the data
-   * is persisted to disk. Plugin hooks that previously fired after each
-   * individual operation now fire together at the end of the transaction.
-   *
-   * Limitations:
-   * - Snapshot cost is O(total data size): all collections are deep-copied at
-   *   the start of every transaction, even ones the transaction does not touch.
-   *   Avoid transactions on very large datasets where snapshot overhead matters.
-   * - No timeout: if fn() hangs, the internal lock is held indefinitely and
-   *   all subsequent transactions queue behind it.
-   * - External side effects (HTTP calls, third-party integrations) inside fn()
-   *   are not rolled back on failure.
-   * - Crash-safe atomicity across multiple collection files requires WAL
-   *   (on the roadmap).
-   * - Direct access to db.collections inside fn() throws  -  use
-   *   db.useCollection() instead.
+   * are deferred during fn() and flushed after successful commit.
    *
    * @param {(db: Skalex) => Promise<any>} fn
+   * @param {{ timeout?: number }} [opts] - timeout in ms (0 = no timeout).
    * @returns {Promise<any>} The return value of fn.
    */
-  async transaction(fn) {
-    const run = async (db) => {
-      const snapshot = {};
-      for (const name in this.collections) {
-        snapshot[name] = this._snapshotCollection(this.collections[name]);
-      }
-
-      this._inTransaction = true;
-      try {
-        const result = await fn(db);
-        await this.saveData();
-        this._inTransaction = false;
-        await this._flushTxQueue();
-        return result;
-      } catch (error) {
-        this._inTransaction = false;
-        this._txQueue = [];
-        // Rollback: restore snapshotted collections
-        for (const name in snapshot) this._applySnapshot(name, snapshot[name]);
-        // Remove collections created during the failed transaction
-        for (const name in this.collections) {
-          if (!(name in snapshot)) {
-            delete this.collections[name];
-            delete this._collectionInstances[name];
-          }
-        }
-        throw error;
-      }
-    };
-
-    // Serialise concurrent transactions via a promise-chain lock.
-    // Pass a proxy instead of `this` so direct mutations to db.collections
-    // inside fn() are detected and rejected  -  they bypass the snapshot.
-    const proxy = new Proxy(this, {
-      get(target, prop) {
-        if (prop === "collections") throw new Error(
-          "Direct access to db.collections inside transaction() is not covered by rollback. " +
-          "Use the collection API (db.useCollection) instead."
-        );
-        const value = Reflect.get(target, prop);
-        // Bind methods to the real instance so internal this.collections
-        // access within useCollection() and other methods is not intercepted.
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-
-    const runWithProxy = () => run(proxy);
-    const next = this._txLock.then(runWithProxy);
-    this._txLock = next.catch(() => {});
-    return next;
+  async transaction(fn, opts = {}) {
+    return this._txManager.run(fn, this, opts);
   }
 
   // ─── Seed ────────────────────────────────────────────────────────────────
@@ -706,11 +499,7 @@ class Skalex {
    * @returns {object} Map of collectionName → docs[].
    */
   dump() {
-    const result = {};
-    for (const name in this.collections) {
-      if (!name.startsWith("_")) result[name] = [...this.collections[name].data];
-    }
-    return result;
+    return this._registry.dump();
   }
 
   // ─── Inspect ─────────────────────────────────────────────────────────────
@@ -721,26 +510,7 @@ class Skalex {
    * @returns {object|null}
    */
   inspect(collectionName) {
-    if (collectionName) {
-      const col = this.collections[collectionName];
-      if (!col) return null;
-      return {
-        name:         collectionName,
-        count:        col.data.length,
-        schema:       col.schema ? Object.fromEntries(col.schema.fields) : null,
-        indexes:      col.fieldIndex ? [...col.fieldIndex.indexedFields] : [],
-        softDelete:   col.softDelete   ?? false,
-        versioning:   col.versioning   ?? false,
-        strict:       col.strict       ?? false,
-        onSchemaError: col.onSchemaError ?? "throw",
-        maxDocs:      col.maxDocs      ?? null,
-      };
-    }
-    const result = {};
-    for (const name in this.collections) {
-      result[name] = this.inspect(name);
-    }
-    return result;
+    return this._registry.inspect(collectionName);
   }
 
   // ─── Import ──────────────────────────────────────────────────────────────
@@ -758,7 +528,7 @@ class Skalex {
     try {
       docs = JSON.parse(content);
     } catch {
-      throw new Error(`import: invalid JSON in file "${filePath}"`);
+      throw new PersistenceError("ERR_SKALEX_PERSISTENCE_INVALID_JSON", `import: invalid JSON in file "${filePath}"`, { filePath });
     }
     const name = filePath.split("/").pop().replace(/\.[^.]+$/, "");
     const col = this.useCollection(name);
@@ -774,7 +544,8 @@ class Skalex {
    */
   async embed(text) {
     if (!this._embeddingAdapter) {
-      throw new Error(
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED",
         "db.embed() requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor."
       );
     }
@@ -794,7 +565,8 @@ class Skalex {
    */
   async ask(collectionName, nlQuery, { limit = 20 } = {}) {
     if (!this._aiAdapter) {
-      throw new Error(
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_LLM_REQUIRED",
         'db.ask() requires a language model adapter. Configure { ai: { provider, model: "..." } }.'
       );
     }
@@ -826,15 +598,7 @@ class Skalex {
    * @returns {object|null}
    */
   schema(collectionName) {
-    const store = this.collections[collectionName];
-    if (!store) return null;
-    if (store.schema) {
-      return Object.fromEntries(
-        [...store.schema.fields.entries()].map(([k, v]) => [k, v.type])
-      );
-    }
-    if (store.data.length > 0) return inferSchema(store.data[0]);
-    return null;
+    return this._registry.schema(collectionName);
   }
 
   // ─── Agent Memory ─────────────────────────────────────────────────────────
@@ -877,24 +641,7 @@ class Skalex {
    * @returns {object|object[]}
    */
   stats(collectionName) {
-    const calc = (name) => {
-      const col = this.collections[name];
-      if (!col) return null;
-      const count = col.data.length;
-      let estimatedSize = 0;
-      for (const doc of col.data) {
-        try { estimatedSize += JSON.stringify(doc).length; } catch (_) {}
-      }
-      return {
-        collection:    name,
-        count,
-        estimatedSize,
-        avgDocSize:    count > 0 ? Math.round(estimatedSize / count) : 0,
-      };
-    };
-
-    if (collectionName) return calc(collectionName);
-    return Object.keys(this.collections).map(calc);
+    return this._registry.stats(collectionName);
   }
 
   // ─── Slow Query Log ───────────────────────────────────────────────────────
@@ -961,6 +708,7 @@ class Skalex {
       col.data.push(doc);
       col.index.set(META_KEY, doc);
     }
+    this._persistence.markDirty(this.collections, "_meta");
   }
 
   /** Sweep expired TTL documents from all collections. */
@@ -968,90 +716,43 @@ class Skalex {
     for (const name in this.collections) {
       const col = this.collections[name];
       const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
-      if (removed > 0) this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+      if (removed > 0) {
+        this._persistence.markDirty(this.collections, name);
+        this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+      }
     }
   }
 
-  _createEmbeddingAdapter({ provider, apiKey, embedModel, model, host, embedBaseUrl, dimensions, organization, embedTimeout, embedRetries, embedRetryDelay }) {
-    const resolvedModel = embedModel || model;
-    switch (provider) {
-      case "openai":
-        return new OpenAIEmbeddingAdapter({
-          apiKey,
-          model: resolvedModel,
-          baseUrl: embedBaseUrl,
-          ...(dimensions      !== undefined && { dimensions }),
-          ...(organization    !== undefined && { organization }),
-          ...(embedTimeout    !== undefined && { timeout:    embedTimeout }),
-          ...(embedRetries    !== undefined && { retries:    embedRetries }),
-          ...(embedRetryDelay !== undefined && { retryDelay: embedRetryDelay }),
-        });
-      case "ollama":
-        return new OllamaEmbeddingAdapter({
-          model: resolvedModel,
-          host,
-          ...(embedTimeout    !== undefined && { timeout:    embedTimeout }),
-          ...(embedRetries    !== undefined && { retries:    embedRetries }),
-          ...(embedRetryDelay !== undefined && { retryDelay: embedRetryDelay }),
-        });
-      default:
-        throw new Error(
-          `Unknown AI provider: "${provider}". Supported: "openai", "ollama".`
-        );
-    }
-  }
-
-  _createAIAdapter({ provider, apiKey, model, host, baseUrl, apiVersion, temperature, maxTokens, topP, topK, organization, timeout, retries, retryDelay, seed, generatePrompt, summarizePrompt }) {
-    if (!model) return null; // LLM adapter is optional
-    switch (provider) {
-      case "openai":
-        return new OpenAILLMAdapter({
-          apiKey,
-          model,
-          baseUrl,
-          ...(maxTokens    !== undefined && { maxTokens }),
-          ...(temperature  !== undefined && { temperature }),
-          ...(topP         !== undefined && { topP }),
-          ...(organization !== undefined && { organization }),
-          ...(timeout      !== undefined && { timeout }),
-          ...(retries         !== undefined && { retries }),
-          ...(retryDelay      !== undefined && { retryDelay }),
-          ...(seed            !== undefined && { seed }),
-          ...(generatePrompt  !== undefined && { generatePrompt }),
-          ...(summarizePrompt !== undefined && { summarizePrompt }),
-        });
-      case "anthropic":
-        return new AnthropicLLMAdapter({
-          apiKey,
-          model,
-          baseUrl,
-          apiVersion,
-          ...(maxTokens       !== undefined && { maxTokens }),
-          ...(temperature     !== undefined && { temperature }),
-          ...(topP            !== undefined && { topP }),
-          ...(topK            !== undefined && { topK }),
-          ...(timeout         !== undefined && { timeout }),
-          ...(retries         !== undefined && { retries }),
-          ...(retryDelay      !== undefined && { retryDelay }),
-          ...(generatePrompt  !== undefined && { generatePrompt }),
-          ...(summarizePrompt !== undefined && { summarizePrompt }),
-        });
-      case "ollama":
-        return new OllamaLLMAdapter({
-          model,
-          host,
-          ...(temperature     !== undefined && { temperature }),
-          ...(topP            !== undefined && { topP }),
-          ...(topK            !== undefined && { topK }),
-          ...(timeout         !== undefined && { timeout }),
-          ...(retries         !== undefined && { retries }),
-          ...(retryDelay      !== undefined && { retryDelay }),
-          ...(generatePrompt  !== undefined && { generatePrompt }),
-          ...(summarizePrompt !== undefined && { summarizePrompt }),
-        });
-      default:
-        return null; // unknown provider  -  skip silently (embedding may still work)
-    }
+  /**
+   * Build a lazy context that resolves properties at call time.
+   * This is safe to call during the constructor before all fields are
+   * initialised, because the getters defer resolution until first use.
+   * @returns {CollectionContext}
+   */
+  _buildCollectionContext() {
+    const db = this;
+    return {
+      ensureConnected: () => db._ensureConnected(),
+      get txManager() { return db._txManager; },
+      get plugins() { return db._plugins; },
+      get eventBus() { return db._eventBus; },
+      get sessionStats() { return db._sessionStats; },
+      get queryLog() { return db._queryLog; },
+      get logger() { return db._logger; },
+      get persistence() { return db._persistence; },
+      get collections() { return db.collections; },
+      embed: (text) => db.embed(text),
+      get idGenerator() { return db._idGenerator; },
+      get autoSave() { return db._autoSave; },
+      saveCollection: (name) => db.saveData(name),
+      snapshotCollection: (col) => db._snapshotCollection(col),
+      getCollection: (name) => db.useCollection(name),
+      emitEvent: (name, data) => db._emitEvent(name, data),
+      runAfterHook: (hook, data) => db._runAfterHook(hook, data),
+      logChange: (op, col, doc, prev, session) => db._logChange(op, col, doc, prev, session),
+      get fs() { return db.fs; },
+      get dataDirectory() { return db.dataDirectory; },
+    };
   }
 
   _log(msg) {
@@ -1062,14 +763,13 @@ class Skalex {
    * Return a deep snapshot of a collection's mutable state.
    * Uses structuredClone to correctly preserve Date, BigInt, TypedArray,
    * Map, Set, and RegExp values  -  unlike JSON.parse/JSON.stringify.
-   * @param {{ data: object[], index: Map }} col
-   * @returns {{ data: object[], index: Map }}
+   * Only data is snapshotted - the _id index and field indexes are rebuilt
+   * from the cloned data during _applySnapshot().
+   * @param {{ data: object[] }} col
+   * @returns {{ data: object[] }}
    */
   _snapshotCollection(col) {
-    return {
-      data: structuredClone(col.data),
-      index: new Map(col.index),
-    };
+    return { data: structuredClone(col.data) };
   }
 
   /**

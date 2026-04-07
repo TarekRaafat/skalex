@@ -62,6 +62,14 @@ class BunSQLiteAdapter extends StorageAdapter {
     this._stmts.write.run(name, data);
   }
 
+  async writeAll(entries) {
+    await this._open();
+    const tx = this._db.transaction((items) => {
+      for (const { name, data } of items) this._stmts.write.run(name, data);
+    });
+    tx(entries);
+  }
+
   async delete(name) {
     await this._open();
     this._stmts.delete.run(name);

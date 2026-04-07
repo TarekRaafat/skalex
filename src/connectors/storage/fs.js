@@ -60,6 +60,41 @@ class FsAdapter extends StorageAdapter {
     await nodeFs.promises.rename(tmp, fp);
   }
 
+  /**
+   * Batch write: stage all entries to temp files, then rename atomically.
+   * If any rename fails, best-effort cleanup of staged temps.
+   * @param {{ name: string, data: string }[]} entries
+   * @returns {Promise<void>}
+   */
+  async writeAll(entries) {
+    // Stage phase: write all entries to temp files
+    const staged = [];
+    try {
+      for (const { name, data } of entries) {
+        const fp = this._filePath(name);
+        const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
+        if (this.format === "gz") {
+          const compressed = zlib.deflateSync(data);
+          await nodeFs.promises.writeFile(tmp, compressed);
+        } else {
+          await nodeFs.promises.writeFile(tmp, data, "utf8");
+        }
+        staged.push({ tmp, fp });
+      }
+
+      // Commit phase: rename all temp files to final paths
+      for (const { tmp, fp } of staged) {
+        await nodeFs.promises.rename(tmp, fp);
+      }
+    } catch (error) {
+      // Best-effort cleanup of staged temp files
+      for (const { tmp } of staged) {
+        try { await nodeFs.promises.unlink(tmp); } catch { /* ignore */ }
+      }
+      throw error;
+    }
+  }
+
   async delete(name) {
     const fp = this._filePath(name);
     try {

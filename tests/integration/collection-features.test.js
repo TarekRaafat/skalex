@@ -152,7 +152,7 @@ describe("defaultTtl per collection", () => {
     await db.connect();
     const col = db.useCollection("tmp");
     const short = await col.insertOne({ name: "short" }, { ttl: "1m" });
-    const dflt  = await col.insertOne({ name: "dflt" });
+    const dflt = await col.insertOne({ name: "dflt" });
     // default TTL (1h) should expire later than the explicit 1m TTL
     expect(dflt._expiresAt.getTime()).toBeGreaterThan(short._expiresAt.getTime());
     await db.disconnect();
@@ -785,6 +785,179 @@ describe("write queue", () => {
     const parsed = JSON.parse(stored);
     // Both documents must be reflected in the final persisted snapshot
     expect(parsed.data.length).toBeGreaterThanOrEqual(2);
+    await db.disconnect();
+  });
+});
+
+// ─── Schema enforcement on updates ──────────────────────────────────────────
+
+describe("schema enforcement on updates", () => {
+  test("updateOne rejects invalid type when onSchemaError: 'throw'", async () => {
+    const { db } = makeDb();
+    db.createCollection("users", { schema: { name: "string", score: "number" } });
+    await db.connect();
+    const users = db.useCollection("users");
+    const doc = await users.insertOne({ name: "Alice", score: 10 });
+    await expect(users.updateOne({ _id: doc._id }, { score: "not-a-number" })).rejects.toThrow(/validation/i);
+    // Verify document is unchanged after rollback
+    const found = await users.findOne({ _id: doc._id });
+    expect(found.score).toBe(10);
+    await db.disconnect();
+  });
+
+  test("updateOne rejects unknown field in strict mode", async () => {
+    const { db } = makeDb();
+    db.createCollection("users", { schema: { name: "string" }, strict: true });
+    await db.connect();
+    const users = db.useCollection("users");
+    const doc = await users.insertOne({ name: "Alice" });
+    await expect(users.updateOne({ _id: doc._id }, { rogue: "field" })).rejects.toThrow(/validation/i);
+    const found = await users.findOne({ _id: doc._id });
+    expect(found.rogue).toBeUndefined();
+    await db.disconnect();
+  });
+
+  test("updateOne allows valid update", async () => {
+    const { db } = makeDb();
+    db.createCollection("users", { schema: { name: "string", score: "number" } });
+    await db.connect();
+    const users = db.useCollection("users");
+    const doc = await users.insertOne({ name: "Alice", score: 10 });
+    const updated = await users.updateOne({ _id: doc._id }, { score: 20 });
+    expect(updated.score).toBe(20);
+    await db.disconnect();
+  });
+
+  test("updateOne warns but proceeds when onSchemaError: 'warn'", async () => {
+    const warnings = [];
+    const { db } = makeDb({
+      logger: (msg, level) => { if (level === "warn") warnings.push(msg); },
+    });
+    db.createCollection("users", {
+      schema: { name: "string", score: "number" },
+      onSchemaError: "warn",
+    });
+    await db.connect();
+    const users = db.useCollection("users");
+    const doc = await users.insertOne({ name: "Alice", score: 10 });
+    const updated = await users.updateOne({ _id: doc._id }, { score: "bad" });
+    expect(updated.score).toBe("bad");
+    expect(warnings.some(w => w.includes("validation"))).toBe(true);
+    await db.disconnect();
+  });
+
+  test("updateMany stops on first validation error with throw mode", async () => {
+    const { db } = makeDb();
+    db.createCollection("users", { schema: { name: "string", score: "number" } });
+    await db.connect();
+    const users = db.useCollection("users");
+    await users.insertOne({ name: "A", score: 1 });
+    await users.insertOne({ name: "B", score: 2 });
+    await expect(users.updateMany({}, { score: "bad" })).rejects.toThrow(/validation/i);
+    await db.disconnect();
+  });
+
+  test("updateMany rolls back ALL docs when a later doc fails validation", async () => {
+    const { db } = makeDb();
+    db.createCollection("items", { schema: { name: "string", score: "number" } });
+    await db.connect();
+    const col = db.useCollection("items");
+    const a = await col.insertOne({ name: "A", score: 1 });
+    const b = await col.insertOne({ name: "B", score: 2 });
+    // Both docs will fail, but the first one is mutated before the second is checked.
+    // After throw, ALL docs must be rolled back.
+    await expect(col.updateMany({}, { score: "bad" })).rejects.toThrow(/validation/i);
+    const foundA = await col.findOne({ _id: a._id });
+    const foundB = await col.findOne({ _id: b._id });
+    expect(foundA.score).toBe(1);
+    expect(foundB.score).toBe(2);
+    await db.disconnect();
+  });
+
+  test("updateMany rollback also reverts field indexes", async () => {
+    const { db } = makeDb();
+    db.createCollection("items", {
+      schema: { name: "string", score: "number" },
+      indexes: ["name"],
+    });
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "A", score: 1 });
+    await col.insertOne({ name: "B", score: 2 });
+    // Try to update name (indexed) + score (will fail validation)
+    await expect(col.updateMany({}, { name: "Z", score: "bad" })).rejects.toThrow(/validation/i);
+    // Original indexed values must still be queryable
+    const foundA = await col.findOne({ name: "A" });
+    const foundB = await col.findOne({ name: "B" });
+    expect(foundA).not.toBeNull();
+    expect(foundB).not.toBeNull();
+    // Transient value must NOT be in the index
+    const foundZ = await col.findOne({ name: "Z" });
+    expect(foundZ).toBeNull();
+    await db.disconnect();
+  });
+
+  test("updateMany rollback reverts in-place $push mutations", async () => {
+    const { db } = makeDb();
+    db.createCollection("items", { schema: { tags: "array", score: "number" } });
+    await db.connect();
+    const col = db.useCollection("items");
+    const a = await col.insertOne({ tags: ["a"], score: 1 });
+    const b = await col.insertOne({ tags: ["b"], score: 2 });
+    // $push mutates the array in place; score: "bad" will fail validation
+    await expect(col.updateMany({}, { tags: { $push: "new" }, score: "bad" })).rejects.toThrow(/validation/i);
+    const foundA = await col.findOne({ _id: a._id });
+    const foundB = await col.findOne({ _id: b._id });
+    // Arrays must be restored to original - $push must be undone
+    expect(foundA.tags).toEqual(["a"]);
+    expect(foundB.tags).toEqual(["b"]);
+    await db.disconnect();
+  });
+
+  test("updateOne with onSchemaError: 'strip' keeps only valid fields", async () => {
+    const { db } = makeDb();
+    db.createCollection("users", {
+      schema: { name: "string", score: "number" },
+      onSchemaError: "strip",
+    });
+    await db.connect();
+    const users = db.useCollection("users");
+    const doc = await users.insertOne({ name: "Alice", score: 10 });
+    // score: "bad" is invalid (wrong type), name: "Bob" is valid
+    const updated = await users.updateOne({ _id: doc._id }, { name: "Bob", score: "bad" });
+    expect(updated.name).toBe("Bob");    // valid change kept
+    expect(updated.score).toBe(10);      // invalid change stripped, original preserved
+    await db.disconnect();
+  });
+
+  test("updateMany with onSchemaError: 'strip' keeps only valid fields", async () => {
+    const { db } = makeDb();
+    db.createCollection("items", {
+      schema: { name: "string", score: "number" },
+      onSchemaError: "strip",
+    });
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "A", score: 1 });
+    await col.insertOne({ name: "B", score: 2 });
+    const results = await col.updateMany({}, { name: "Z", score: "bad" });
+    for (const r of results) {
+      expect(r.name).toBe("Z");
+    }
+    // Original scores preserved - invalid change stripped
+    const all = (await col.find({})).docs;
+    expect(all[0].score).toBe(1);
+    expect(all[1].score).toBe(2);
+    await db.disconnect();
+  });
+
+  test("upsert update path validates schema", async () => {
+    const { db } = makeDb();
+    db.createCollection("users", { schema: { name: "string", score: "number" } });
+    await db.connect();
+    const users = db.useCollection("users");
+    await users.insertOne({ name: "Alice", score: 10 });
+    await expect(users.upsert({ name: "Alice" }, { score: "bad" })).rejects.toThrow(/validation/i);
     await db.disconnect();
   });
 });

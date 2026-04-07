@@ -98,3 +98,58 @@ describe("IndexEngine", () => {
     expect(engine.lookup("role", "mod")).toHaveLength(1);
   });
 });
+
+describe("Compound Indexes", () => {
+  let engine;
+  const docs = [
+    { _id: "1", tenantId: "t1", email: "a@test.com", role: "admin" },
+    { _id: "2", tenantId: "t1", email: "b@test.com", role: "user" },
+    { _id: "3", tenantId: "t2", email: "a@test.com", role: "admin" },
+  ];
+
+  beforeEach(() => {
+    engine = new IndexEngine([["tenantId", "email"]], []);
+    engine.buildFromData(docs);
+  });
+
+  test("lookupCompound returns matching docs for exact multi-field match", () => {
+    const result = engine.lookupCompound({ tenantId: "t1", email: "a@test.com" });
+    expect(result).not.toBeNull();
+    expect([...result]).toHaveLength(1);
+    expect([...result][0]._id).toBe("1");
+  });
+
+  test("lookupCompound returns empty iterable when no match", () => {
+    const result = engine.lookupCompound({ tenantId: "t1", email: "z@test.com" });
+    expect(result).not.toBeNull();
+    expect([...result]).toHaveLength(0);
+  });
+
+  test("lookupCompound returns null for unindexed field combination", () => {
+    expect(engine.lookupCompound({ role: "admin" })).toBeNull();
+  });
+
+  test("compound index updates when documents are added/removed", () => {
+    const newDoc = { _id: "4", tenantId: "t2", email: "b@test.com", role: "mod" };
+    engine.add(newDoc);
+    expect([...engine.lookupCompound({ tenantId: "t2", email: "b@test.com" })]).toHaveLength(1);
+
+    engine.remove(newDoc);
+    expect([...engine.lookupCompound({ tenantId: "t2", email: "b@test.com" })]).toHaveLength(0);
+  });
+
+  test("compound key handles mixed types without collisions", () => {
+    const e = new IndexEngine([["a", "b"]], []);
+    const d1 = { _id: "1", a: "1", b: 2 };
+    const d2 = { _id: "2", a: 1, b: "2" };
+    e.buildFromData([d1, d2]);
+    // String "1" + number 2 should NOT collide with number 1 + string "2"
+    expect([...e.lookupCompound({ a: "1", b: 2 })]).toHaveLength(1);
+    expect([...e.lookupCompound({ a: 1, b: "2" })]).toHaveLength(1);
+  });
+
+  test("buildFromData resets compound indexes", () => {
+    engine.buildFromData([]);
+    expect([...engine.lookupCompound({ tenantId: "t1", email: "a@test.com" })]).toHaveLength(0);
+  });
+});

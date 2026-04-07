@@ -29,7 +29,7 @@ describe("ChangeLog  -  log / query", () => {
     const db = makeDb();
     const cl = db.changelog();
     const prev = { _id: "1", name: "Alice", createdAt: new Date(), updatedAt: new Date() };
-    const doc  = { _id: "1", name: "Alicia", createdAt: new Date(), updatedAt: new Date() };
+    const doc = { _id: "1", name: "Alicia", createdAt: new Date(), updatedAt: new Date() };
     await cl.log("update", "users", doc, prev);
     const entries = await cl.query("users");
     expect(entries[0].op).toBe("update");
@@ -215,8 +215,8 @@ describe("ChangeLog  -  restore", () => {
     const cl = db.changelog();
     const col = db.useCollection("notes");
 
-    const T_PAST   = new Date("2020-01-01");
-    const T_SNAP   = new Date("2020-06-01");
+    const T_PAST = new Date("2020-01-01");
+    const T_SNAP = new Date("2020-06-01");
     const T_FUTURE = new Date("2020-12-01");
 
     // Simulate two inserts that happened before the snapshot
@@ -248,8 +248,8 @@ describe("ChangeLog  -  restore", () => {
     const cl = db.changelog();
     const col = db.useCollection("docs");
 
-    const T_PAST   = new Date("2020-01-01");
-    const T_SNAP   = new Date("2020-06-01");
+    const T_PAST = new Date("2020-01-01");
+    const T_SNAP = new Date("2020-06-01");
     const T_FUTURE = new Date("2020-12-01");
 
     const doc = { _id: "d1", value: "original", createdAt: T_PAST, updatedAt: T_PAST };
@@ -275,6 +275,59 @@ describe("ChangeLog  -  restore", () => {
     await db.connect();
     // No entries logged  -  restore should not throw
     await expect(db.restore("empty", new Date())).resolves.toBeUndefined();
+    await db.disconnect();
+  });
+
+  test("restore() single doc removes re-inserted doc when snapshot shows deleted", async () => {
+    const db = makeDb();
+    await db.connect();
+    const cl = db.changelog();
+    const col = db.useCollection("docs");
+
+    const T1 = new Date("2020-01-01");
+    const T2 = new Date("2020-06-01");
+    const T_SNAP = new Date("2020-09-01");
+
+    // Log insert at T1
+    const doc = { _id: "d1", value: "original", createdAt: T1, updatedAt: T1 };
+    await cl.log("insert", "docs", doc);
+    backdateLastEntries(db, 1, T1);
+
+    // Log delete at T2
+    await cl.log("delete", "docs", doc);
+    backdateLastEntries(db, 1, T2);
+
+    // Re-insert the doc into the live collection (simulating post-snapshot activity)
+    await col.insertOne({ _id: "d1", value: "re-inserted" });
+    const before = await col.findOne({ _id: "d1" });
+    expect(before).not.toBeNull();
+
+    // Restore to T_SNAP (after delete) - doc should be removed
+    await db.restore("docs", T_SNAP, { _id: "d1" });
+
+    const after = await col.findOne({ _id: "d1" });
+    expect(after).toBeNull();
+
+    await db.disconnect();
+  });
+
+  test("restore() single doc deleted state is a no-op when doc does not exist", async () => {
+    const db = makeDb();
+    await db.connect();
+    const cl = db.changelog();
+
+    const T1 = new Date("2020-01-01");
+    const T2 = new Date("2020-06-01");
+    const T_SNAP = new Date("2020-09-01");
+
+    const doc = { _id: "d2", value: "v", createdAt: T1, updatedAt: T1 };
+    await cl.log("insert", "docs", doc);
+    backdateLastEntries(db, 1, T1);
+    await cl.log("delete", "docs", doc);
+    backdateLastEntries(db, 1, T2);
+
+    // Don't insert into live collection - restore should not throw
+    await expect(db.restore("docs", T_SNAP, { _id: "d2" })).resolves.toBeUndefined();
     await db.disconnect();
   });
 

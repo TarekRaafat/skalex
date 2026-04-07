@@ -19,6 +19,7 @@ class MemoryAdapter {
   constructor() { this._store = new Map(); }
   async read(name) { return this._store.get(name) ?? null; }
   async write(name, data) { this._store.set(name, data); }
+  async writeAll(entries) { for (const { name, data } of entries) this._store.set(name, data); }
   async delete(name) { this._store.delete(name); }
   async list() { return [...this._store.keys()]; }
   join(...parts) { return parts.join("/"); }

@@ -72,6 +72,7 @@
       _key(n) { return this._prefix + n; }
       async read(n)     { const v = localStorage.getItem(this._key(n)); return v ?? null; }
       async write(n, d) { localStorage.setItem(this._key(n), d); }
+      async writeAll(entries) { for (const { name, data } of entries) localStorage.setItem(this._key(name), data); }
       async delete(n)   { localStorage.removeItem(this._key(n)); }
       async list() {
         return Object.keys(localStorage)

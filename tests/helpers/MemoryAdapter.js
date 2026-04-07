@@ -1,9 +1,12 @@
+import StorageAdapter from "../../src/connectors/storage/base.js";
+
 /**
  * MemoryAdapter  -  in-memory StorageAdapter for testing.
- * Implements the same interface as FsAdapter without touching the file system.
+ * Extends StorageAdapter so instanceof checks and inherited methods work.
  */
-class MemoryAdapter {
+class MemoryAdapter extends StorageAdapter {
   constructor() {
+    super();
     this._store = new Map();
     // Expose join/ensureDir/writeRaw stubs for export() compatibility
     this.dir = "/memory";
@@ -15,6 +18,10 @@ class MemoryAdapter {
 
   async write(name, data) {
     this._store.set(name, typeof data === "string" ? data : JSON.stringify(data));
+  }
+
+  async writeAll(entries) {
+    for (const { name, data } of entries) await this.write(name, data);
   }
 
   async delete(name) {

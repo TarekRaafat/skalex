@@ -7,6 +7,8 @@
  * _meta collection stores: { _id: "migrations", appliedVersions: number[] }
  */
 
+import { ValidationError } from "./errors.js";
+
 class MigrationEngine {
   constructor() {
     /** @type {Array<{version: number, description?: string, up: Function}>} */
@@ -20,13 +22,13 @@ class MigrationEngine {
   add(migration) {
     const { version, up } = migration;
     if (typeof version !== "number" || version < 1) {
-      throw new Error(`Migration version must be a positive integer, got ${version}`);
+      throw new ValidationError("ERR_SKALEX_VALIDATION_MIGRATION", `Migration version must be a positive integer, got ${version}`, { version });
     }
     if (typeof up !== "function") {
-      throw new Error(`Migration version ${version} must have an "up" function`);
+      throw new ValidationError("ERR_SKALEX_VALIDATION_MIGRATION", `Migration version ${version} must have an "up" function`, { version });
     }
     if (this._migrations.some(m => m.version === version)) {
-      throw new Error(`Migration version ${version} is already registered`);
+      throw new ValidationError("ERR_SKALEX_VALIDATION_MIGRATION_DUPLICATE", `Migration version ${version} is already registered`, { version });
     }
     this._migrations.push({ ...migration });
     this._migrations.sort((a, b) => a.version - b.version);

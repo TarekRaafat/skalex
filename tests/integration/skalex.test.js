@@ -449,6 +449,28 @@ describe("unique index constraints", () => {
     await db.disconnect();
   });
 
+  test("updateMany unique conflict does not partially commit", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("users", {
+      schema: {
+        email: { type: "string", unique: true },
+        group: "string",
+      },
+    });
+    const users = db.useCollection("users");
+    const alice = await users.insertOne({ email: "alice@test.com", group: "x" });
+    const bob = await users.insertOne({ email: "bob@test.com", group: "x" });
+
+    await expect(
+      users.updateMany({ group: "x" }, { email: "shared@test.com" })
+    ).rejects.toThrow(/Unique constraint/);
+
+    expect((await users.findOne({ _id: alice._id })).email).toBe("alice@test.com");
+    expect((await users.findOne({ _id: bob._id })).email).toBe("bob@test.com");
+    await db.disconnect();
+  });
+
   test("updateMany keeps the field index consistent", async () => {
     const { db } = makeDb();
     await db.connect();
@@ -764,6 +786,148 @@ describe("migrations", () => {
     expect(status.applied).toContain(2);
     expect(status.pending).toHaveLength(0);
     await db.disconnect();
+  });
+});
+
+// ─── _id integrity ──────────────────────────────────────────────────────────
+
+describe("_id integrity", () => {
+  test("insertOne with duplicate _id throws", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ _id: "abc", name: "A" });
+    await expect(col.insertOne({ _id: "abc", name: "B" })).rejects.toThrow("Duplicate _id");
+    await db.disconnect();
+  });
+
+  test("insertMany with duplicate _id in batch throws", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await expect(col.insertMany([{ _id: "x" }, { _id: "x" }])).rejects.toThrow("Duplicate _id");
+    await db.disconnect();
+  });
+
+  test("insertMany with _id already in collection throws", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ _id: "y", name: "A" });
+    await expect(col.insertMany([{ _id: "y", name: "B" }])).rejects.toThrow("Duplicate _id");
+    await db.disconnect();
+  });
+
+  test("insertOne with user-supplied unique _id succeeds", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ _id: "custom-123", name: "A" });
+    expect(doc._id).toBe("custom-123");
+    const found = await col.findOne({ _id: "custom-123" });
+    expect(found.name).toBe("A");
+    await db.disconnect();
+  });
+
+  test("updateOne cannot mutate _id", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ name: "A" });
+    await col.updateOne({ _id: doc._id }, { _id: "hacked", name: "B" });
+    const found = await col.findOne({ _id: doc._id });
+    expect(found).not.toBeNull();
+    expect(found._id).toBe(doc._id);
+    expect(found.name).toBe("B");
+    await db.disconnect();
+  });
+
+  test("updateOne cannot mutate createdAt", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ name: "A" });
+    const originalCreatedAt = doc.createdAt;
+    await col.updateOne({ _id: doc._id }, { createdAt: new Date(0) });
+    const found = await col.findOne({ _id: doc._id });
+    expect(found.createdAt.getTime()).toBe(originalCreatedAt.getTime());
+    await db.disconnect();
+  });
+});
+
+// ─── Date round-trip ────────────────────────────────────────────────────────
+
+describe("Date round-trip", () => {
+  test("Date fields survive save/load round-trip", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ name: "A" }, { save: true });
+    expect(doc.createdAt).toBeInstanceOf(Date);
+    await db.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await db2.connect();
+    const col2 = db2.useCollection("items");
+    const loaded = await col2.findOne({ _id: doc._id });
+    expect(loaded.createdAt).toBeInstanceOf(Date);
+    expect(loaded.updatedAt).toBeInstanceOf(Date);
+    expect(loaded.createdAt.getTime()).toBe(doc.createdAt.getTime());
+    await db2.disconnect();
+  });
+
+  test("User Date fields survive round-trip", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    const col = db.useCollection("items");
+    const birthday = new Date("1990-01-15T00:00:00.000Z");
+    const doc = await col.insertOne({ birthday }, { save: true });
+    await db.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await db2.connect();
+    const col2 = db2.useCollection("items");
+    const loaded = await col2.findOne({ _id: doc._id });
+    expect(loaded.birthday).toBeInstanceOf(Date);
+    expect(loaded.birthday.getTime()).toBe(birthday.getTime());
+    await db2.disconnect();
+  });
+
+  test("BigInt still works after Date fix", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ big: 123456789012345678901234n }, { save: true });
+    await db.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await db2.connect();
+    const col2 = db2.useCollection("items");
+    const loaded = await col2.findOne({ _id: doc._id });
+    expect(typeof loaded.big).toBe("bigint");
+    expect(loaded.big).toBe(123456789012345678901234n);
+    await db2.disconnect();
+  });
+
+  test("Nested Date objects survive round-trip", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    const col = db.useCollection("items");
+    const lastSeen = new Date("2025-06-15T10:30:00.000Z");
+    const doc = await col.insertOne({ meta: { lastSeen } }, { save: true });
+    await db.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await db2.connect();
+    const col2 = db2.useCollection("items");
+    const loaded = await col2.findOne({ _id: doc._id });
+    expect(loaded.meta.lastSeen).toBeInstanceOf(Date);
+    expect(loaded.meta.lastSeen.getTime()).toBe(lastSeen.getTime());
+    await db2.disconnect();
   });
 });
 
