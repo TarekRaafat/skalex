@@ -102,6 +102,7 @@ class ChangeLog {
       } finally {
         this._restoring = false;
       }
+      await this._db.saveData(collection);
       return;
     }
 
@@ -127,6 +128,7 @@ class ChangeLog {
     } finally {
       this._restoring = false;
     }
+    await this._db.saveData(collection);
   }
 }
 

@@ -8,6 +8,30 @@ import { ValidationError, UniqueConstraintError, PersistenceError, QueryError, A
 import MutationPipeline from "./pipeline.js";
 
 /**
+ * Resolve a query filter into plain key-value pairs suitable for insertion.
+ * Strips logical operators ($or, $and, $not) and range operators ($gt, $in, etc.)
+ * that have no single insert value. Resolves $eq to its wrapped value.
+ * @param {object} filter
+ * @returns {object}
+ */
+function resolveFilterToValues(filter) {
+  const resolved = {};
+  for (const key in filter) {
+    if (key.startsWith("$")) continue;
+    const val = filter[key];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const keys = Object.keys(val);
+      if (keys.length === 1 && keys[0] === "$eq") {
+        resolved[key] = val.$eq;
+      }
+    } else {
+      resolved[key] = val;
+    }
+  }
+  return resolved;
+}
+
+/**
  * Collection represents a collection of documents in the database.
  */
 class Collection {
@@ -27,6 +51,9 @@ class Collection {
 
     /** @type {number|null} If created inside a transaction, the tx ID. */
     this._createdInTxId = database._txManager.context?.id ?? null;
+
+    /** @type {number|null} Set by the tx proxy when obtained via tx.useCollection(). */
+    this._activeTxId = null;
   }
 
   get _data() { return this._store.data; }
@@ -125,6 +152,7 @@ class Collection {
         }
 
         assertTxAlive(); // guard before first in-memory state change
+        if (this._fieldIndex) this._fieldIndex.assertUniqueBatch(newItems);
         for (const newItem of newItems) this._addToIndex(newItem);
         this._data.push(...newItems);
         for (const newItem of newItems) this._index.set(newItem._id, newItem);
@@ -348,7 +376,7 @@ class Collection {
     if (existing) {
       return this.updateOne(filter, doc, options);
     }
-    return this.insertOne({ ...filter, ...doc }, options);
+    return this.insertOne({ ...resolveFilterToValues(filter), ...doc }, options);
   }
 
   /**
@@ -814,24 +842,28 @@ class Collection {
 
   /**
    * Lazy snapshot for transactions: snapshot this collection on first write.
-   * Also asserts the transaction is not aborted.
+   * Only participates if the Collection was obtained through the transaction
+   * proxy (_activeTxId matches the active context). Non-transactional writes
+   * (Collection obtained via real db) skip the snapshot path entirely.
    */
   _txSnapshotIfNeeded() {
     const txm = this._ctx.txManager;
-    if (txm.active) {
-      txm.snapshotIfNeeded(this.name, this._store, (col) => this._ctx.snapshotCollection(col));
-    }
+    if (!txm.active) return;
+    if (this._activeTxId !== txm.context?.id) return;
+    txm.snapshotIfNeeded(this.name, this._store, (col) => this._ctx.snapshotCollection(col));
   }
 
   /**
    * Save if `save` is explicitly true, or if database-level autoSave is on.
    * Pass `save: false` to opt out even when autoSave is enabled.
-   * Suppressed while a transaction is in progress  -  the transaction
-   * is responsible for the single flush after fn() resolves.
+   * Suppressed for transactional writes (_activeTxId matches active tx) -
+   * the transaction is responsible for the single flush after fn() resolves.
+   * Non-transactional writes save immediately even during an active transaction.
    * @param {boolean|undefined} save
    */
   async _saveIfNeeded(save) {
-    if (this._ctx.txManager.active) return;
+    const txm = this._ctx.txManager;
+    if (txm.active && this._activeTxId === txm.context?.id) return;
     if (save ?? this._ctx.autoSave) await this._ctx.saveCollection(this.name);
   }
 

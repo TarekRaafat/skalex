@@ -214,10 +214,16 @@ class PersistenceManager {
   async _saveOne(collections, name) {
     const col = collections[name];
     if (!col) return;
+
+    // Write coalescing: if a save is in-flight, queue this caller and
+    // resolve only when the coalesced re-save actually completes.
     if (col.isSaving) {
       col._pendingSave = true;
-      return;
+      return new Promise((resolve, reject) => {
+        (col._saveWaiters ??= []).push({ resolve, reject });
+      });
     }
+
     col.isSaving = true;
     col._pendingSave = false;
     try {
@@ -225,13 +231,33 @@ class PersistenceManager {
       col._dirty = false;
     } catch (error) {
       this._logger(`Error saving "${name}": ${error.message}`, "error");
+      this._flushSaveWaiters(col, error);
       throw error;
     } finally {
       col.isSaving = false;
     }
+
     if (col._pendingSave) {
       col._pendingSave = false;
-      await this._saveOne(collections, name);
+      try {
+        await this._saveOne(collections, name);
+      } catch (error) {
+        this._flushSaveWaiters(col, error);
+        throw error;
+      }
+    }
+    this._flushSaveWaiters(col, null);
+  }
+
+  /**
+   * Resolve or reject all queued save waiters for a collection.
+   * @param {object} col
+   * @param {Error|null} error - null on success, Error on failure.
+   */
+  _flushSaveWaiters(col, error) {
+    const waiters = col._saveWaiters?.splice(0) ?? [];
+    for (const w of waiters) {
+      error ? w.reject(error) : w.resolve();
     }
   }
 

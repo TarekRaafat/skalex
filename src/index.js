@@ -290,6 +290,16 @@ class Skalex {
       buildIndex: this._registry.buildIndex,
       IndexEngine,
     });
+
+    // Sync cached Collection instances with reloaded stores.
+    // loadAll() replaces store objects in this.collections - any pre-existing
+    // Collection instance still points to the old (empty) store.
+    for (const name in this._collectionInstances) {
+      const store = this.collections[name];
+      if (store && this._collectionInstances[name]._store !== store) {
+        this._collectionInstances[name]._store = store;
+      }
+    }
   }
 
   /**

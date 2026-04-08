@@ -75,13 +75,31 @@ class TransactionManager {
         })
         : null;
 
-      // Proxy to intercept direct collections access
+      // Proxy to intercept direct collections access and brand with txId.
+      // useCollection calls through the proxy stamp the returned Collection
+      // with _activeTxId so pipeline/collection can distinguish transactional
+      // from non-transactional writes. Liveness check prevents stale proxy use.
+      const self = this;
       const proxy = new Proxy(db, {
         get(target, prop) {
+          if (prop === "_txId") return ctx.id;
+          if (ctx !== self._ctx) {
+            throw new TransactionError(
+              "ERR_SKALEX_TX_STALE_PROXY",
+              `Transaction ${ctx.id} has ended. This proxy is no longer usable.`
+            );
+          }
           if (prop === "collections") throw new TransactionError(
             "ERR_SKALEX_TX_DIRECT_ACCESS",
             "Direct access to db.collections inside transaction() is not covered by rollback. Use the collection API (db.useCollection) instead."
           );
+          if (prop === "useCollection") {
+            return (name) => {
+              const col = target.useCollection(name);
+              col._activeTxId = ctx.id;
+              return col;
+            };
+          }
           const value = Reflect.get(target, prop);
           return typeof value === "function" ? value.bind(target) : value;
         },
@@ -132,11 +150,12 @@ class TransactionManager {
         if (ctx.aborted) this._abortedIds.add(ctx.id);
         this._ctx = null;
 
-        // Clear _createdInTxId on any cached Collection instances stamped
-        // with this transaction, so they are not permanently poisoned.
+        // Clear tx stamps on any cached Collection instances so they are
+        // not permanently poisoned after the transaction ends.
         for (const name in db._collectionInstances) {
           const inst = db._collectionInstances[name];
           if (inst._createdInTxId === ctx.id) inst._createdInTxId = null;
+          if (inst._activeTxId === ctx.id) inst._activeTxId = null;
         }
       }
     };

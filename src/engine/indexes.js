@@ -258,6 +258,42 @@ class IndexEngine {
     }
   }
 
+  /**
+   * Preflight unique constraints for an insert batch before any index
+   * mutation. Checks both against the existing index and within the batch
+   * itself for intra-batch duplicates.
+   * @param {object[]} newDocs
+   */
+  assertUniqueBatch(newDocs) {
+    if (this._uniqueFields.size === 0) return;
+
+    for (const field of this._uniqueFields) {
+      const uniqueMap = this._uniqueIndexes.get(field);
+      const seen = new Set();
+
+      for (const doc of newDocs) {
+        const val = doc[field];
+        if (val === undefined) continue;
+
+        if (uniqueMap && uniqueMap.has(val)) {
+          throw new UniqueConstraintError(
+            "ERR_SKALEX_UNIQUE_VIOLATION",
+            `Unique constraint violation: field "${field}" value "${val}" already exists`,
+            { field, value: val }
+          );
+        }
+        if (seen.has(val)) {
+          throw new UniqueConstraintError(
+            "ERR_SKALEX_UNIQUE_VIOLATION",
+            `Unique constraint violation: duplicate "${field}" value "${val}" within batch`,
+            { field, value: val }
+          );
+        }
+        seen.add(val);
+      }
+    }
+  }
+
   // ─── private ─────────────────────────────────────────────────────────────
 
   _indexDoc(doc) {

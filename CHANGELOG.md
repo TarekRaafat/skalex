@@ -7,6 +7,166 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.2] - Unreleased
+
+### Breaking Changes
+
+- **Serializer: Date objects now persist as tagged objects** - `Date` values are encoded as `{ __skalex_date__: "ISO-8601" }` during persistence and revived as `Date` on load. Alpha.1 stored dates as raw JSON strings via `JSON.stringify` (which calls `.toJSON()` / `.toISOString()`), meaning they loaded back as plain strings, not `Date` instances. Databases written by alpha.1 that contain `Date` fields will continue to load the raw ISO string; a re-save will convert them to the new tagged format automatically.
+- **Export: `inferSchema` is no longer exported from the root module** - the named export `inferSchema` has been removed. The function still exists internally in `src/engine/validator.js` but is no longer part of the public API surface. If you were importing it directly, use `parseSchema` with an explicit schema definition instead.
+- **Error type: `restore()` throws `QueryError` instead of generic `Error`** - calling `restore()` on a collection without `softDelete: true` now throws a `QueryError` with code `ERR_SKALEX_QUERY_SOFT_DELETE_REQUIRED`. Code that catches `Error` broadly is unaffected; code that checks `error.constructor === Error` or `error.message` strings may need updating.
+- **Mutation: `applyUpdate()` silently skips `_id` and `createdAt` fields** - update descriptors that include `_id` or `createdAt` keys no longer mutate those fields. This prevents accidental `_id` corruption and `createdAt` overwriting. If you relied on updating these fields via `updateOne` / `updateMany`, that path is now blocked.
+- **Mutation: mixed operator and plain-key update objects are no longer supported** - in alpha.1, `{ $inc: 1, someField: "x" }` as an update value would attempt to apply `$inc` and also set `someField`. The current version treats any object containing `$`-prefixed keys as a pure operator descriptor and silently ignores non-`$` keys within it. Separate operator updates from plain field assignments into distinct update calls.
+
+### Added
+
+#### Engine Modularisation
+
+The monolithic `index.js` (1,091 lines) has been decomposed into 6 focused engine modules. The public API is unchanged  -  this is a purely internal restructuring that improves maintainability, testability, and separation of concerns.
+
+| Module | Responsibility |
+|--------|----------------|
+| `src/engine/errors.js` | Typed error hierarchy (`SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError`) with stable `ERR_SKALEX_*` codes and structured `details` objects for programmatic error handling |
+| `src/engine/persistence.js` | Load/save orchestration, dirty tracking (`_dirty` flag per collection), write-queue coalescing (`isSaving` / `_pendingSave`), flush sentinel for crash detection, and orphan temp file cleanup on connect |
+| `src/engine/pipeline.js` | DRY mutation lifecycle  -  every CRUD operation runs through `pipeline.execute()`: `ensureConnected → txSnapshot → beforePlugin → [mutation] → markDirty → save → changelog → stats → event → afterPlugin`. Includes stale continuation guard (`assertTxAlive`) |
+| `src/engine/registry.js` | Collection store/instance management, lazy creation, metadata inspection (`inspect`, `dump`, `stats`, `schema`), and `rename` |
+| `src/engine/transaction.js` | Serialised transaction execution via `_txLock` promise chain, lazy copy-on-first-write snapshots, configurable timeout with `Promise.race`, deferred side-effects, and stale continuation tracking via `_abortedIds` |
+| `src/engine/adapters.js` | AI adapter factory functions (`createEmbeddingAdapter`, `createLLMAdapter`) extracted from `index.js` |
+
+#### Typed Error Hierarchy
+
+All engine throws now use typed errors with stable codes. Consumers can handle errors programmatically without parsing message strings:
+
+```js
+try {
+  await col.insertOne(doc);
+} catch (e) {
+  if (e instanceof Skalex.UniqueConstraintError) { /* handle */ }
+  if (e.code === "ERR_SKALEX_UNIQUE_VIOLATION") { /* also works */ }
+}
+```
+
+Error classes are accessible as static properties on `Skalex` (CJS/UMD) and as named exports (ESM): `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError`.
+
+#### Lazy Copy-on-First-Write Transaction Snapshots
+
+Transactions no longer deep-clone every collection at start. A collection is only snapshotted when it is first mutated inside the transaction. Cost is now O(touched collections) instead of O(total database size).
+
+| Collections | Before (alpha.1) | After (alpha.2) | Improvement |
+|---|---|---|---|
+| 10 (touch 1) | 10 clones | 1 clone | 10x |
+| 50 (touch 2) | 50 clones | 2 clones | 25x |
+| 100 (touch 1) | 100 clones | 1 clone | 100x |
+
+#### Transaction Timeout
+
+Transactions accept an optional `timeout` (in milliseconds). If `fn()` does not resolve in time, the transaction is aborted, rolled back, and the lock is released so queued transactions can proceed:
+
+```js
+await db.transaction(async (tx) => {
+  // ...
+}, { timeout: 5000 });
+```
+
+Timed-out transactions throw `TransactionError` with code `ERR_SKALEX_TX_TIMEOUT`. Stale continuations from the aborted `fn()` are tracked via `_abortedIds` and rejected with `ERR_SKALEX_TX_ABORTED` if they attempt further mutations.
+
+#### Stale Continuation Detection
+
+After a transaction times out or aborts, any async code still running from the aborted `fn()` is prevented from mutating state. Each mutation calls `assertTxAlive()` before its first in-memory state change. Both the entry-time transaction ID and the collection's creation-time transaction ID are checked against `_abortedIds`.
+
+#### Dirty Tracking
+
+Collections now carry a `_dirty` flag set on every mutation and cleared after a successful write. `saveDirty()` only persists collections that actually changed, reducing I/O to be proportional to mutation rate rather than total database size.
+
+#### Flush Sentinel (Crash Detection)
+
+`saveAtomic()` (used by transaction commits) writes a sentinel to the `_meta` collection before the batch and clears it after. If the process crashes mid-batch, the sentinel survives on disk. On next `connect()`, `_detectIncompleteFlush()` checks for an uncleared sentinel and logs a warning identifying which collections may be inconsistent.
+
+#### Batch Writes (`writeAll`)
+
+A new `writeAll(entries)` method on `StorageAdapter` enables batch persistence using each adapter's native atomicity primitive:
+
+| Adapter | Strategy |
+|---------|----------|
+| `FsAdapter` | Two-phase: write all temp files → rename sequentially. Best-effort cleanup on failure. |
+| `BunSQLiteAdapter` | Single `db.transaction()`  -  true ACID via SQLite WAL |
+| `D1Adapter` | `d1.batch()`  -  atomic per batch call |
+| `LibSQLAdapter` | `client.batch(statements, "write")`  -  LibSQL transaction |
+| `EncryptedAdapter` | Encrypts all entries in parallel, delegates to inner adapter's `writeAll()` |
+| Base class (fallback) | Sequential `write()` calls  -  backward compatible for custom adapters |
+
+#### Orphan Temp File Cleanup
+
+On `connect()`, `FsAdapter` directories are scanned for leftover `.tmp.*` files from interrupted writes. Orphans are removed before any data is loaded.
+
+#### Compound Indexes
+
+Collections can now declare multi-field compound indexes for O(1) lookups on equality queries across multiple fields:
+
+```js
+db.createCollection("orders", {
+  indexes: [["userId", "status"]],
+});
+// find({ userId: "abc", status: "active" }) uses compound index
+```
+
+#### Logical Query Operators
+
+`$or`, `$and`, and `$not` are now supported in all query filters (`find`, `findOne`, `count`, `updateMany`, `deleteMany`):
+
+```js
+await col.find({ $or: [{ status: "active" }, { role: "admin" }] });
+await col.find({ $not: { archived: true } });
+await col.find({ $and: [{ age: { $gte: 18 } }, { age: { $lt: 65 } }] });
+```
+
+Malformed logical operators (e.g. `$or` with a non-array value) throw `QueryError`.
+
+#### Schema Validation on Updates
+
+Schema validation now runs on `updateOne` and `updateMany`, not just inserts. The three error modes (`throw`, `warn`, `strip`) apply consistently to both insert and update paths.
+
+#### Mutation Pipeline
+
+All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`, `restore`) now delegate to `pipeline.execute()`. This eliminates ~200 lines of duplicated before/after hook, changelog, event emission, stats tracking, and save boilerplate that was previously repeated in every method.
+
+### Fixed
+
+#### Data Corruption Fixes (P0)
+
+- **Fix stale Collection instances after `createCollection` + `connect`** - `loadData()` now re-binds the `_store` reference on cached Collection instances after loading from disk. Previously, `createCollection()` before `connect()` cached an instance pointing to an empty store; after `connect()` replaced the store with loaded data, the cached instance still referenced the old empty store. Reads returned zero results and writes with `{ save: true }` overwrote disk data.
+- **Fix upsert operator leak into inserted documents** - `upsert()` now resolves query operator values to plain values before inserting. Previously, `upsert({ email: { $eq: "x" } }, doc)` on an empty collection stored `{ email: { $eq: "x" } }` as a literal field value, silently corrupting the document on disk.
+- **Fix `insertMany()` unique index corruption on partial batch failure** - `insertMany()` now preflights all unique constraints before any index mutation via `assertUniqueBatch()`. Previously, if the second document in a batch violated a unique constraint, the first document was already in the unique index but not in `_data` or `_id` index, creating a ghost entry that permanently blocked future inserts with the same field value.
+- **Fix non-transactional writes captured by active transaction rollback** - Transaction participation is now explicit via `_activeTxId` stamped by the proxy on Collection instances obtained through `tx.useCollection()`. Non-transactional writes to untouched collections during an active transaction are no longer snapshotted or rolled back.
+- **Fix stale transaction proxy usable after commit/timeout** - The transaction proxy now checks ctx liveness on every property access. Using a captured proxy reference after the transaction has ended throws `TransactionError` with code `ERR_SKALEX_TX_STALE_PROXY`.
+- **Fix `{ save: true }` resolving before persistence completes** - `_saveOne()` now accumulates waiting callers when a save is in-flight and resolves all of them only after the coalesced re-save actually completes. Previously, the second caller's `await` resolved immediately when `_pendingSave` was set, before data reached storage.
+- **Fix `ChangeLog.restore()` not persisting restored state** - `restore()` now calls `saveData()` after both single-document and full-collection restore paths. Previously, restored state was only in-memory and would be lost on disconnect unless the caller explicitly saved.
+
+### Tests
+
+- **82 new tests** across 7 files, bringing the total from 571 to 653 (all passing)
+- **New file: `data-integrity.test.js`** (16 tests) - regression tests for all P0 data corruption fixes: stale Collection instances, upsert operator leak, insertMany ghost index entries, transaction isolation, stale proxy detection, save durability, and changelog restore persistence
+- **New file: `engine-overhaul.test.js`** (42 tests)  -  comprehensive regression suite: transaction timeout/abort/rollback, dirty tracking, flush sentinel detection, compound index candidate selection, logical operator edge cases, typed error structure, fault injection (adapter write failures, partial batch failures), stale continuation detection, collection instance poisoning recovery, `$inc`/`$push` operator correctness, update/delete rollback, and capped collection enforcement
+- **Expanded: `collection-features.test.js`** (+11 tests)  -  schema enforcement on updates: validation rejection, strict mode, warn mode, `updateMany` batch validation
+- **Expanded: `skalex.test.js`** (+11 tests)  -  `_id` field integrity/immutability, Date serialization round-trip
+- **Expanded: `query.test.js`** (+9 tests)  -  logical operators: `$or`, `$and`, `$not`, nesting, error handling for malformed operators
+- **Expanded: `indexes.test.js`** (+6 tests)  -  compound index add/remove/lookup, type collision handling, `buildFromData` reset
+- **Expanded: `changelog.test.js`** (+2 tests)  -  edge cases in changelog restore
+- **Expanded: `skalex-core.test.js`** (+1 test)  -  additional core method coverage
+
+### Design Documents
+
+- `design/atomic-persistence.md`  -  detailed design for `writeAll` + flush sentinel, competitive analysis, edge case matrix, scalability analysis
+- `design/transaction-lazy-snapshots.md`  -  detailed design for lazy snapshots + timeout, isolation semantics, post-timeout safety
+- `design/ann-vector-index.md`  -  ANN vector index design (future)
+- `design/reliability-audit.md`  -  full engine reliability audit for primary-database use cases
+- `design/alpha1-vs-pipeline-comparison.md`  -  comprehensive diff analysis of alpha.1 vs pipeline changes
+
+### Benchmarks
+
+- `benchmarks/engine.mjs`  -  performance benchmarks for engine operations
+
+---
+
 ## [4.0.0-alpha.1] - 2026-04-01
 
 ### Fixed

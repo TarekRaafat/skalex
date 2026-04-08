@@ -42,13 +42,18 @@ class MutationPipeline {
     await ctx.ensureConnected();
     this._col._txSnapshotIfNeeded();
 
+    // Determine if this mutation is part of the active transaction.
+    // Collections obtained through the tx proxy have _activeTxId stamped.
+    // Only those writes participate in snapshot/rollback.
+    const txm = ctx.txManager;
+    const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
+
     // Detect stale continuations from aborted transactions.
     // Two sources of tx affinity:
     //   1. entryTxId: the tx active when this execute() call started
     //   2. _createdInTxId: the tx active when this Collection instance was created
     // Either being in the aborted set means this mutation must be rejected.
-    const txm = ctx.txManager;
-    const entryTxId = txm.context?.id ?? null;
+    const entryTxId = isTxWrite ? txm.context.id : null;
     const collTxId = this._col._createdInTxId;
 
     /** Guard callable passed into mutate() - must be called immediately
@@ -68,8 +73,8 @@ class MutationPipeline {
       }
     };
 
-    // Eager check before any work
-    assertTxAlive();
+    // Eager check before any work (only for tx-affiliated writes)
+    if (isTxWrite || collTxId !== null) assertTxAlive();
 
     if (beforeHook) await ctx.plugins.run(beforeHook, hookPayload);
 
@@ -87,8 +92,9 @@ class MutationPipeline {
       }
     }
 
-    // Session stats - deferred inside transactions so rolled-back writes don't count
-    if (!txm.defer(() => ctx.sessionStats.recordWrite(session))) {
+    // Session stats - deferred for tx writes so rolled-back writes don't count.
+    // Non-tx writes record immediately even during an active transaction.
+    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session))) {
       ctx.sessionStats.recordWrite(session);
     }
 
