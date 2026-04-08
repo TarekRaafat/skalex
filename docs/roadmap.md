@@ -13,22 +13,31 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Real-time collaboration: CRDT-based field-level merging for conflict-free multi-user writes; presence tracking API
 
 **Query & schema**
-- [ ] Logical query operators: `$or`, `$and`, `$not` for composable filter conditions
+- [ ] `[alpha.3]` Add input validation on public API boundaries (`insertOne`, `find`, `updateOne`, etc.)
+- [ ] `[alpha.3]` Document and cap `$fn`/`$regex` security surface in direct `matchesFilter()` calls
+- [ ] `[alpha.3]` Document snapshot isolation semantics (read-committed, not snapshot)
+- [ ] `[alpha.3]` Document no-nested-transactions limitation (detect and throw at runtime)
+- [ ] `[alpha.3]` Extract soft-delete visibility guard into `_isVisible()` method
+- [ ] `[alpha.4]` `find()` limit-only fast path: early termination without full sort
+- [ ] `[alpha.4]` Skip `structuredClone` for `prev` when changelog is disabled
+- [ ] `[alpha.4]` Cache `stats()` computation with dirty flag (avoid full `JSON.stringify`)
+- [ ] `[alpha.4]` Document `presortFilter` reliance on ES spec key-order guarantee
 - [ ] Aggregation pipeline: `$group`, `$project`, `$unwind`, `$lookup` stages (MongoDB-style)
 - [ ] Full-text search: tokenized inverted index for text fields; `$text` operator with ranking
 - [ ] Cursor-based pagination: `after` cursor complement to existing `page`/`limit`
-- [ ] Compound indexes (multi-field)
 - [ ] `db.stream(query, options)`: async generator for streaming large result sets without loading the full collection into memory
 - [ ] Schema change safety: detect breaking schema changes before applying; `addMigration({ dryRun: true })` for safe previewing
 - [ ] Zod schema integration: pass a Zod schema to `createCollection` for validation and inference
 
 **AI**
+- [ ] `[alpha.3]` Fix `Memory.tokenCount()`/`context()` bypassing `ensureConnected`
+- [ ] `[alpha.3]` Fix `Memory` reading internal `_col._data` directly (use public Collection API)
+- [ ] `[alpha.4]` Extract shared `fetchWithRetry()` utility from all AI adapters (6 duplicated copies)
 - [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion  -  15–30% better recall than cosine similarity alone
 - [ ] Multimodal embeddings: unified text + image vector space via compatible multimodal models (e.g. CLIP)  -  search images with natural language
 - [ ] Vector quantization: scalar and product quantization for 4–8× embedding memory reduction on large datasets
 - [ ] Graph-enhanced vector retrieval: traverse relationships during semantic search for contextually richer results
 - [ ] Streaming LLM responses: `db.ask()` and `memory.compress()` as async iterables for real-time output
-- [ ] `collection.similar(doc, options)`: find semantically near-duplicate documents via embedding distance
 - [ ] `db.classify(doc, labels)`: zero-shot document classification via LLM
 - [ ] `db.summarize(collection, options)`: AI-powered collection or result-set summarization
 - [ ] `db.rag(query, options)`: RAG pipeline in one call  -  vector search → context assembly → LLM answer
@@ -48,6 +57,11 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Key rotation for `EncryptedAdapter`: rekey the entire database to a new encryption key without a full decrypt/re-encrypt cycle
 
 **Storage adapters**
+- [ ] `[alpha.3]` D1 batch-size guard: chunk `writeAll()` entries to stay within Cloudflare limits
+- [ ] `[alpha.3]` Clarify runtime verification and per-adapter test coverage
+- [ ] `[alpha.3]` Move orphan temp-file cleanup from PersistenceManager to FsAdapter
+- [ ] `[alpha.4]` Convert `FsAdapter` from sync to async zlib (`deflateSync` blocks event loop)
+- [ ] `[alpha.4]` Add `FileSystemCapable` capability interface for adapter feature detection
 - [ ] `SQLiteWASMAdapter`: browser-native SQLite via the official SQLite WASM build  -  persistent, faster than `localStorage`, no server needed
 - [ ] IndexedDB adapter (browser persistent storage beyond `localStorage`)
 - [ ] `PostgresAdapter`: PostgreSQL via `postgres` / `pg` Node.js driver
@@ -59,6 +73,16 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] More storage adapter connectors
 
 **Resilience & memory**
+- [ ] `[alpha.3]` Prune `_abortedIds` in TransactionManager (unbounded memory growth on repeated timeouts)
+- [ ] `[alpha.3]` Make `_enforceCapAfterInsert()` atomic (restore on eviction failure)
+- [ ] `[alpha.3]` Design error handling for post-commit deferred effects (configurable strategy)
+- [ ] `[alpha.3]` Address `onSchemaError: "warn"` schema drift risk (log `_id`, audit trail)
+- [ ] `[alpha.3]` Fix TTL sweep O(n^2) splice loop (use filter-and-reassign pattern)
+- [ ] `[alpha.3]` Unify `_meta` store creation across persistence and registry
+- [ ] `[alpha.3]` Complete store shape deduplication in `loadAll()`
+- [ ] `[alpha.3]` Consolidate dual `_getMeta`/`_saveMeta` into PersistenceManager
+- [ ] `[alpha.4]` Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
+- [ ] `[alpha.4]` Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
 - [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
 - [ ] Write-Ahead Log (WAL): journal mutations before applying so a hard kill or OOM crash never loses committed data
 - [ ] Multi-process `FsAdapter` safety: file-lock (`O_EXCL` sentinel + PID-based stale-lock detection) so multiple Node.js / Bun processes targeting the same data directory serialize writes without data loss; single-writer-per-directory remains the default, this is an opt-in `{ multiProcess: true }` flag
@@ -67,6 +91,23 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Memory pressure events: `db.on('memoryWarning', cb)` fires when heap usage crosses a configurable threshold  -  lets apps shed load before OOM
 
 **DX & tooling**
+- [ ] `[alpha.3]` Add ESLint, Prettier, and import-cycle detection (`madge --circular`) to CI
+- [ ] `[alpha.3]` Add type declaration validation via `tsd` or `expect-type`
+- [ ] `[alpha.3]` Throw on unknown LLM provider in `createLLMAdapter()` (match embedding adapter behavior)
+- [ ] `[alpha.3]` Document pipeline event ordering contract (events before or after hooks)
+- [ ] `[alpha.3]` Document migration idempotency requirement (or wrap in transaction)
+- [ ] `[alpha.3]` Document `updatedAt` as system-managed in `applyUpdate()`
+- [ ] `[alpha.3]` Add `TransactionOptions` to type declarations
+- [ ] `[alpha.4]` `Symbol.toStringTag` on core classes for informative `console.log` output
+- [ ] `[alpha.4]` `Symbol.asyncDispose` for `await using db = new Skalex(...)` (ES2024)
+- [ ] `[alpha.4]` Extract `ICollectionContext` interface for isolated Collection testing
+- [ ] `[alpha.3]` Share `_buildCollectionContext` across Collection instances (single allocation)
+- [ ] `[alpha.3]` Remove `Collection.database` property (use `_ctx` only)
+- [ ] `[alpha.3]` Define constants for operation names and hook names (replace magic strings)
+- [ ] `[alpha.3]` Simplify `namespace()` config forwarding (store `_config`, spread on create)
+- [ ] `[alpha.4]` Decompose `Skalex` class: extract `SkalexAI`, `TtlScheduler`, consolidate meta facade
+- [ ] `[alpha.4]` Decompose `Collection` class: extract `VectorSearch`, `CollectionExporter`, `QueryPlanner`, `DocumentBuilder`
+- [ ] `[alpha.4]` Complete Skalex-Collection decoupling (Collection constructor accepts `_ctx` only)
 - [ ] `create-skalex`: scaffolding CLI  -  `npm create skalex@latest` for instant project setup with runtime-specific templates
 - [ ] Interactive playground: browser-based sandbox hosted on the docs site  -  try Skalex with zero installation
 - [ ] Test utilities: `createTestDb(options?)` helper pre-configured with MemoryAdapter for frictionless unit and integration testing
@@ -111,6 +152,9 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [x] `LibSQLAdapter`: LibSQL / Turso client adapter
 
 **Query & schema**
+- [x] Logical query operators: `$or`, `$and`, `$not` for composable filter conditions
+- [x] Compound indexes (multi-field): `createCollection(name, { indexes: [["field1", "field2"]] })`
+- [x] Deep structural equality for plain-object filter values
 - [x] Schema validation (`type`, `required`, `unique`, `enum`)
 - [x] Unique index constraints
 - [x] Strict mode: `createCollection(name, { strict: true })` rejects unknown fields
@@ -155,6 +199,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [x] `OllamaLLMAdapter`: local `/api/generate`, default `llama3.2`
 - [x] `db.ask()`: natural language → structured filter via LLM; results cached
 - [x] `db.useMemory()`: episodic agent memory (`remember`, `recall`, `context`, `compress`)
+- [x] `collection.similar(id, options)`: find nearest-neighbour documents by cosine similarity
 
 **MCP & extensibility**
 - [x] `db.mcp()`: MCP server (stdio + HTTP/SSE) for Claude Desktop, Cursor, and any MCP client
@@ -162,7 +207,26 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [x] Per-session stats: `db.sessionStats()` reads/writes/lastActive keyed by session ID
 
 **Core database & config**
-- [x] `db.transaction()`: snapshot + commit/rollback
+- [x] `db.transaction()`: lazy copy-on-first-write snapshots, serialized execution, configurable timeout, stale proxy detection, deferred side effects
+- [x] Transaction isolation: non-transactional writes not captured by rollback
+- [x] Batch persistence: `saveAtomic()` with flush sentinel for crash detection
+- [x] Database-level save mutex: serialized `saveAtomic` calls prevent race conditions
+- [x] Typed error hierarchy: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` with stable `ERR_SKALEX_*` codes
+- [x] Named ESM exports: error types and `Collection` available as named imports from `'skalex'`
+- [x] `connect()` idempotent: concurrent calls return the same promise
+- [x] `lenientLoad` config option: warn instead of throw on corrupt collection files
+- [x] `dump()` returns deep copies via `structuredClone` (no internal state mutation)
+- [x] Base adapter classes exported from connector barrels (`StorageAdapter`, `EmbeddingAdapter`, `LLMAdapter`)
+- [x] `insertMany()` preflight unique constraint check via `assertUniqueBatch()` (no ghost index entries)
+- [x] `FieldIndex.update()` atomic: restore old doc on re-index failure
+- [x] Persistence guarantees documented per adapter (FsAdapter, BunSQLite, D1, LibSQL)
+- [x] `ChangeLog.restore()` automatically persists restored state to disk
+- [x] `{ save: true }` durability: write coalescing resolves all waiters after actual disk write
+- [x] Recursive prototype pollution defense in `applyUpdate()` (nested `__proto__`/`constructor`/`prototype`)
+- [x] System fields (`createdAt`, `updatedAt`) enforced on insert (user values cannot overwrite)
+- [x] Dot-notation index fields rejected at declaration time
+- [x] `_vector` excluded from explicit `select` projections
+- [x] TTL timer `.unref()` for graceful process shutdown
 - [x] `db.seed()`: fixture seeding with optional reset
 - [x] `db.dump()`: full data snapshot
 - [x] `db.inspect()`: collection metadata

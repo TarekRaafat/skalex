@@ -987,7 +987,7 @@ class Collection {
   _getCandidates(filter) {
     if (!this._fieldIndex) return this._data;
 
-    // Try compound index first — matches more fields in one lookup
+    // Try compound index first - matches more fields in one lookup
     if (this._fieldIndex._compoundIndexes.size > 0) {
       const eqFields = {};
       for (const key in filter) {

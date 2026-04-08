@@ -33,6 +33,7 @@ new Skalex(config?)
 | `plugins` | `Plugin[]` |  -  | Pre-register plugins; see [Plugin System](#plugin-system) |
 | `autoSave` | `boolean` | `false` | Automatically persist after every write without passing `{ save: true }`. Individual calls can opt out with `{ save: false }`. |
 | `ttlSweepInterval` | `number` |  -  | Interval in ms to periodically sweep expired TTL documents. Cleared on `disconnect()`. See [TTL Documents](#ttl-documents). |
+| `lenientLoad` | `boolean` | `false` | When `true`, corrupted collection files log a warning and load as empty instead of throwing `PersistenceError`. |
 
 **`ai` config fields:**
 
@@ -186,15 +187,26 @@ const articles = db.createCollection("articles", { defaultEmbed: "body" });
 
 ### Persistence
 
-Skalex keeps all data **in memory** between operations. Writes are flushed to the storage adapter automatically after every mutating operation (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`). You can suppress this with `{ save: false }` on individual calls and flush manually.
+Skalex keeps all data **in memory** between operations. Writes are flushed to the storage adapter when `{ save: true }` is passed, when `autoSave` is enabled, or explicitly via `saveData()`. `disconnect()` flushes all pending data.
 
 > **Important:** If the process is killed before a flush completes (e.g. `kill -9`, power loss), the in-flight write may be lost. For Node.js, the `FsAdapter` uses an atomic temp-file-then-rename strategy to prevent corrupt files; a collection is either fully written or left at its last good state. Always call `await db.disconnect()` for a clean shutdown.
 
 #### `saveData(collectionName?)`
 
-Persists one collection (or all, if no name given) via the storage adapter.
+Persists one collection (or all, if no name given) via the storage adapter. Best-effort semantics: each collection is written independently. If one write fails, others may have already committed. For atomic multi-collection writes, use `transaction()`.
 
 **Returns:** `Promise<void>`
+
+#### Persistence Guarantees by Adapter
+
+| Guarantee | FsAdapter | BunSQLite | D1 | LibSQL |
+|---|---|---|---|---|
+| Single-write atomicity | Yes (temp+rename) | Yes (SQLite) | Yes | Yes |
+| Cross-collection atomicity | Best-effort | Yes (transaction) | Yes (batch) | Yes (batch) |
+| Crash detection | Sentinel (warning) | Automatic (WAL) | Automatic | Automatic |
+| Power-loss durability | No | Yes | Yes | Yes |
+
+> For primary-database use cases where cross-collection atomicity or power-loss durability is required, use an SQL-backed adapter (`BunSQLiteAdapter`, `D1Adapter`, or `LibSQLAdapter`).
 
 ---
 

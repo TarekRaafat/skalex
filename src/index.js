@@ -103,7 +103,7 @@ class Skalex {
 
     // Expose error types as static properties for CJS/UMD consumers.
     // Uses direct references (not a namespace) so tree-shaking cannot remove
-    // them — these bindings are already used in throw statements throughout
+    // them - these bindings are already used in throw statements throughout
     // the engine, so Rollup considers them live.
     if (!Skalex._errorsAttached) {
       Skalex.SkalexError = SkalexError;

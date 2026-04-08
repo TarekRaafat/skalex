@@ -681,7 +681,7 @@ describe("applyUpdate operator correctness", () => {
     await db.connect();
     const col = db.useCollection("items");
     await col.insertOne({ name: "A", score: 10 });
-    // { score: { $inc: 5, label: "high" } } — $inc should apply, label should be ignored
+    // { score: { $inc: 5, label: "high" } } - $inc should apply, label should be ignored
     const updated = await col.updateOne({ name: "A" }, { score: { $inc: 5, label: "high" } });
     expect(updated.score).toBe(15);
     await db.disconnect();
@@ -693,7 +693,7 @@ describe("applyUpdate operator correctness", () => {
     const col = db.useCollection("items");
     await col.insertOne({ name: "A" });
     const updated = await col.updateOne({ name: "A" }, { score: { $inc: 5 } });
-    // $inc requires an existing numeric field — missing field is not initialized
+    // $inc requires an existing numeric field - missing field is not initialized
     expect(updated.score).toBeUndefined();
     await db.disconnect();
   });
