@@ -153,3 +153,58 @@ describe("Compound Indexes", () => {
     expect([...engine.lookupCompound({ tenantId: "t1", email: "a@test.com" })]).toHaveLength(0);
   });
 });
+
+// ─── Compound index non-scalar rejection ──────────────────────────────────
+
+describe("compound index non-scalar rejection", () => {
+  test("rejects object value in compound-indexed field", () => {
+    const e = new IndexEngine([["tenantId", "category"]], []);
+    expect(() => e.add({ _id: "1", tenantId: "t1", category: { name: "tools" } }))
+      .toThrow(/must be a scalar/);
+
+    try {
+      e.add({ _id: "1", tenantId: "t1", category: { name: "tools" } });
+    } catch (err) {
+      expect(err.code).toBe("ERR_SKALEX_VALIDATION_COMPOUND_INDEX");
+      expect(err.details.field).toBe("category");
+    }
+  });
+
+  test("rejects array value in compound-indexed field", () => {
+    const e = new IndexEngine([["tenantId", "tags"]], []);
+    expect(() => e.add({ _id: "1", tenantId: "t1", tags: ["a", "b"] }))
+      .toThrow(/must be a scalar/);
+  });
+
+  test("rejects Date value in compound-indexed field", () => {
+    const e = new IndexEngine([["tenantId", "created"]], []);
+    expect(() => e.add({ _id: "1", tenantId: "t1", created: new Date() }))
+      .toThrow(/must be a scalar/);
+  });
+
+  test("allows scalar values in compound-indexed fields", () => {
+    const e = new IndexEngine([["tenantId", "email"]], []);
+    expect(() => e.add({ _id: "1", tenantId: "t1", email: "a@test.com" })).not.toThrow();
+    expect([...e.lookupCompound({ tenantId: "t1", email: "a@test.com" })]).toHaveLength(1);
+  });
+
+  test("allows null and undefined in compound-indexed fields", () => {
+    const e = new IndexEngine([["tenantId", "email"]], []);
+    expect(() => e.add({ _id: "1", tenantId: "t1", email: null })).not.toThrow();
+    expect(() => e.add({ _id: "2", tenantId: "t1" })).not.toThrow();
+  });
+
+  test("rejects non-scalar on update() path", () => {
+    const e = new IndexEngine([["tenantId", "category"]], []);
+    const doc = { _id: "1", tenantId: "t1", category: "tools" };
+    e.add(doc);
+    expect(() => e.update(doc, { _id: "1", tenantId: "t1", category: { nested: true } }))
+      .toThrow(/must be a scalar/);
+  });
+
+  test("rejects non-scalar on buildFromData() path", () => {
+    const e = new IndexEngine([["tenantId", "category"]], []);
+    expect(() => e.buildFromData([{ _id: "1", tenantId: "t1", category: { nested: true } }]))
+      .toThrow(/must be a scalar/);
+  });
+});

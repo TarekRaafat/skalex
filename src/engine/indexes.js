@@ -9,7 +9,7 @@
  *   fieldIndexes[field]: Map<fieldValue, Set<item>>
  *   uniqueIndexes[field]: Map<fieldValue, item>  (enforces uniqueness)
  */
-import { UniqueConstraintError } from "./errors.js";
+import { UniqueConstraintError, ValidationError } from "./errors.js";
 
 /** Empty read-only iterable returned when no index match is found. */
 const EMPTY_ITERABLE = { [Symbol.iterator]() { return { next() { return { done: true }; } }; }, size: 0 };
@@ -316,6 +316,16 @@ class IndexEngine {
       if (val !== undefined) map.set(val, doc);
     }
     for (const [, ci] of this._compoundIndexes) {
+      for (const f of ci.fields) {
+        const val = doc[f];
+        if (val !== undefined && val !== null && typeof val === "object") {
+          throw new ValidationError(
+            "ERR_SKALEX_VALIDATION_COMPOUND_INDEX",
+            `Compound index field "${f}" must be a scalar value (string, number, or boolean), got ${Array.isArray(val) ? "array" : typeof val}`,
+            { field: f }
+          );
+        }
+      }
       const tupleKey = encodeTuple(ci.fields.map(f => doc[f]));
       if (!ci.map.has(tupleKey)) ci.map.set(tupleKey, new Set());
       ci.map.get(tupleKey).add(doc);

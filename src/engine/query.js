@@ -11,6 +11,40 @@ import { resolveDotPath } from "./utils.js";
 import { QueryError } from "./errors.js";
 
 /**
+ * Structural deep equality for plain values.
+ * Handles: primitives, null, undefined, plain objects, arrays, Date, RegExp.
+ * Circular references are out of scope (engine data is JSON-serializable).
+ * @param {*} a
+ * @param {*} b
+ * @returns {boolean}
+ */
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== typeof b) return false;
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  if (a instanceof RegExp && b instanceof RegExp) return a.source === b.source && a.flags === b.flags;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (typeof a === "object") {
+    if (Array.isArray(b)) return false;
+    const keysA = Object.keys(a);
+    if (keysA.length !== Object.keys(b).length) return false;
+    for (const k of keysA) {
+      if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+      if (!deepEqual(a[k], b[k])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
  * @param {object} item
  * @param {object|function|{}} filter
  * @returns {boolean}
@@ -54,20 +88,25 @@ function matchesFilter(item, filter) {
     if (filterValue instanceof RegExp) {
       if (!filterValue.test(String(itemValue))) return false;
     } else if (typeof filterValue === "object" && filterValue !== null) {
-      // Query operators
-      if ("$eq" in filterValue && itemValue !== filterValue.$eq) return false;
-      if ("$ne" in filterValue && itemValue === filterValue.$ne) return false;
-      if ("$gt" in filterValue && !(itemValue > filterValue.$gt)) return false;
-      if ("$lt" in filterValue && !(itemValue < filterValue.$lt)) return false;
-      if ("$gte" in filterValue && !(itemValue >= filterValue.$gte)) return false;
-      if ("$lte" in filterValue && !(itemValue <= filterValue.$lte)) return false;
-      if ("$in" in filterValue && !filterValue.$in.includes(itemValue)) return false;
-      if ("$nin" in filterValue && filterValue.$nin.includes(itemValue)) return false;
-      if ("$regex" in filterValue) {
-        const rx = filterValue.$regex instanceof RegExp ? filterValue.$regex : new RegExp(filterValue.$regex);
-        if (!rx.test(String(itemValue))) return false;
+      if (Object.keys(filterValue).some(k => k.startsWith("$"))) {
+        // Query operators
+        if ("$eq" in filterValue && itemValue !== filterValue.$eq) return false;
+        if ("$ne" in filterValue && itemValue === filterValue.$ne) return false;
+        if ("$gt" in filterValue && !(itemValue > filterValue.$gt)) return false;
+        if ("$lt" in filterValue && !(itemValue < filterValue.$lt)) return false;
+        if ("$gte" in filterValue && !(itemValue >= filterValue.$gte)) return false;
+        if ("$lte" in filterValue && !(itemValue <= filterValue.$lte)) return false;
+        if ("$in" in filterValue && !filterValue.$in.includes(itemValue)) return false;
+        if ("$nin" in filterValue && filterValue.$nin.includes(itemValue)) return false;
+        if ("$regex" in filterValue) {
+          const rx = filterValue.$regex instanceof RegExp ? filterValue.$regex : new RegExp(filterValue.$regex);
+          if (!rx.test(String(itemValue))) return false;
+        }
+        if ("$fn" in filterValue && !filterValue.$fn(itemValue)) return false;
+      } else {
+        // Plain object value - structural equality
+        if (!deepEqual(itemValue, filterValue)) return false;
       }
-      if ("$fn" in filterValue && !filterValue.$fn(itemValue)) return false;
     } else {
       if (itemValue !== filterValue) return false;
     }

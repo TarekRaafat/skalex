@@ -148,15 +148,21 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 - **Make `FieldIndex.update()` atomic** - If re-indexing a document fails (e.g. unique constraint on a different field), the old document is restored in the index. Previously, `remove(old)` then `_indexDoc(new)` could leave the old document invisible to index-based queries if `_indexDoc` threw.
 - **Fix `ChangeLog.restore()` not persisting restored state** - `restore()` now calls `saveData()` after both single-document and full-collection restore paths. Previously, restored state was only in-memory and would be lost on disconnect unless the caller explicitly saved.
 
+#### Query/Index Correctness Fixes (P2)
+
+- **Fix plain-object filter matching** - `matchesFilter()` now uses structural deep equality for plain object filter values (no `$` keys). Previously, `{ metadata: { a: 1 } }` as a filter vacuously matched every document because all operator checks (`$eq`, `$gt`, etc.) evaluated false without returning false. The fix detects operator objects by the presence of `$`-prefixed keys and routes non-operator objects through a zero-dependency `deepEqual()` implementation that handles plain objects, arrays, Date, RegExp, and nested structures.
+- **Reject non-scalar values in compound index fields** - Compound indexes now validate field values at index time and throw `ValidationError` with code `ERR_SKALEX_VALIDATION_COMPOUND_INDEX` for objects, arrays, and Date values. Previously, `encodeTuple()` fell back to `String(v)` which collapsed all objects to `"[object Object]"`, causing distinct documents to collide in the compound index and producing false-positive lookups. Null and undefined remain allowed.
+
 ### Tests
 
 - **82 new tests** across 7 files, bringing the total from 571 to 653 (all passing)
 - **New file: `data-integrity.test.js`** (16 tests) - regression tests for all P0 data corruption fixes: stale Collection instances, upsert operator leak, insertMany ghost index entries, transaction isolation, stale proxy detection, save durability, and changelog restore persistence
-- **New file: `persistence-coherence.test.js`** (7 tests) - regression tests for P1 persistence fixes: index update atomicity, saveAtomic batch coherence, save best-effort semantics, and save mutex serialization
+- **New file: `persistence-coherence.test.js`** (10 tests) - regression tests for P1 persistence fixes: index update atomicity, saveAtomic batch coherence, sentinel clear failure handling, save best-effort semantics, save mutex serialization, write coalescing, and concurrent saveDirty+saveAtomic
 - **New file: `engine-overhaul.test.js`** (42 tests)  -  comprehensive regression suite: transaction timeout/abort/rollback, dirty tracking, flush sentinel detection, compound index candidate selection, logical operator edge cases, typed error structure, fault injection (adapter write failures, partial batch failures), stale continuation detection, collection instance poisoning recovery, `$inc`/`$push` operator correctness, update/delete rollback, and capped collection enforcement
 - **Expanded: `collection-features.test.js`** (+11 tests)  -  schema enforcement on updates: validation rejection, strict mode, warn mode, `updateMany` batch validation
 - **Expanded: `skalex.test.js`** (+11 tests)  -  `_id` field integrity/immutability, Date serialization round-trip
-- **Expanded: `query.test.js`** (+9 tests)  -  logical operators: `$or`, `$and`, `$not`, nesting, error handling for malformed operators
+- **Expanded: `query.test.js`** (+17 tests) - logical operators: `$or`, `$and`, `$not`, nesting, error handling for malformed operators; plain-object structural equality: nested objects, arrays, Dates, empty objects
+- **Expanded: `indexes.test.js`** (+13 tests) - compound index non-scalar rejection: objects, arrays, Dates, scalars allowed, null/undefined allowed, rejection on update/buildFromData paths
 - **Expanded: `indexes.test.js`** (+6 tests)  -  compound index add/remove/lookup, type collision handling, `buildFromData` reset
 - **Expanded: `changelog.test.js`** (+2 tests)  -  edge cases in changelog restore
 - **Expanded: `skalex-core.test.js`** (+1 test)  -  additional core method coverage

@@ -178,3 +178,47 @@ describe("presortFilter", () => {
     expect(presortFilter("str")).toBe("str");
   });
 });
+
+// ─── Plain-object filter value (structural equality) ─────────────────────
+
+describe("plain-object filter value (structural equality)", () => {
+  test("matches identical nested object (different reference)", () => {
+    expect(matchesFilter({ metadata: { a: 1 } }, { metadata: { a: 1 } })).toBe(true);
+  });
+
+  test("does NOT match different nested object", () => {
+    expect(matchesFilter({ metadata: { a: 2 } }, { metadata: { a: 1 } })).toBe(false);
+  });
+
+  test("$eq operator still works (no regression)", () => {
+    expect(matchesFilter({ status: "active" }, { status: { $eq: "active" } })).toBe(true);
+    expect(matchesFilter({ status: "active" }, { status: { $eq: "inactive" } })).toBe(false);
+  });
+
+  test("matches deeply nested objects", () => {
+    const doc = { config: { db: { host: "localhost", port: 5432 } } };
+    expect(matchesFilter(doc, { config: { db: { host: "localhost", port: 5432 } } })).toBe(true);
+    expect(matchesFilter(doc, { config: { db: { host: "localhost", port: 3306 } } })).toBe(false);
+  });
+
+  test("matches array values structurally (order-sensitive)", () => {
+    const doc = { tags: ["a", "b", "c"] };
+    expect(matchesFilter(doc, { tags: ["a", "b", "c"] })).toBe(true);
+    expect(matchesFilter(doc, { tags: ["a", "b"] })).toBe(false);
+    expect(matchesFilter(doc, { tags: ["a", "c", "b"] })).toBe(false);
+  });
+
+  test("matches Date values structurally", () => {
+    const doc = { created: new Date("2025-01-01T00:00:00Z") };
+    expect(matchesFilter(doc, { created: new Date("2025-01-01T00:00:00Z") })).toBe(true);
+    expect(matchesFilter(doc, { created: new Date("2025-06-01T00:00:00Z") })).toBe(false);
+  });
+
+  test("empty object matches empty object", () => {
+    expect(matchesFilter({ metadata: {} }, { metadata: {} })).toBe(true);
+  });
+
+  test("empty object does NOT match non-empty object", () => {
+    expect(matchesFilter({ metadata: { a: 1 } }, { metadata: {} })).toBe(false);
+  });
+});
