@@ -38,9 +38,9 @@ function cosineSimilarity(a, b) {
  * @returns {object}
  */
 function stripVector(doc) {
-  const copy = { ...doc };
-  delete copy._vector;
-  return copy;
+  if (!("_vector" in doc)) return { ...doc };
+  const { _vector, ...rest } = doc;
+  return rest;
 }
 
 export { cosineSimilarity, stripVector };

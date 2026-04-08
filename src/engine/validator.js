@@ -13,6 +13,17 @@ import { ValidationError } from "./errors.js";
 const SUPPORTED_TYPES = new Set(["string", "number", "boolean", "object", "array", "date", "any"]);
 
 /**
+ * Determine the runtime type of a value using the schema type vocabulary.
+ * @param {*} val
+ * @returns {string}
+ */
+function typeOf(val) {
+  if (Array.isArray(val)) return "array";
+  if (val instanceof Date) return "date";
+  return typeof val;
+}
+
+/**
  * Parse a raw schema definition into a normalised internal form.
  * @param {object} schema
  * @returns {{ fields: Map<string, FieldDef>, uniqueFields: string[] }}
@@ -69,7 +80,7 @@ function validateDoc(doc, fields, strict = false) {
     if (missing) continue;
 
     if (def.type !== "any") {
-      const actualType = Array.isArray(val) ? "array" : (val instanceof Date ? "date" : typeof val);
+      const actualType = typeOf(val);
       if (actualType !== def.type) {
         errors.push(`Field "${key}" must be of type "${def.type}", got "${actualType}"`);
       }
@@ -105,7 +116,7 @@ function stripInvalidFields(doc, fields) {
     if (!fields.has(key)) continue;
     const def = fields.get(key);
     if (def.type !== "any") {
-      const actualType = Array.isArray(val) ? "array" : (val instanceof Date ? "date" : typeof val);
+      const actualType = typeOf(val);
       if (actualType !== def.type) continue;
     }
     if (def.enum && !def.enum.includes(val)) continue;
@@ -123,7 +134,7 @@ function inferSchema(doc) {
   const schema = {};
   for (const [key, val] of Object.entries(doc)) {
     if (key.startsWith("_")) continue; // skip internal fields
-    const t = Array.isArray(val) ? "array" : (val instanceof Date ? "date" : typeof val);
+    const t = typeOf(val);
     schema[key] = SUPPORTED_TYPES.has(t) ? t : "any";
   }
   return schema;

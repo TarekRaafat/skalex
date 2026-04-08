@@ -95,7 +95,8 @@
   },
   "files": [
     "dist",
-    "src/connectors"
+    "src/connectors",
+    "src/engine/errors.js"
   ],
   "scripts": {
     "prepublishOnly": "npm run build",

@@ -96,7 +96,7 @@ class Skalex {
    * @param {boolean} [config.autoSave=false]            - Automatically persist after every write without passing { save: true }.
    * @param {number}  [config.ttlSweepInterval]          - Interval in ms to periodically sweep expired TTL documents.
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, queryCache, memory, logger, plugins, llmAdapter, embeddingAdapter, regexMaxLength, idGenerator, serializer, deserializer, autoSave, ttlSweepInterval } = {}) {
+  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, queryCache, memory, logger, plugins, llmAdapter, embeddingAdapter, regexMaxLength, idGenerator, serializer, deserializer, autoSave, ttlSweepInterval, lenientLoad } = {}) {
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
@@ -125,7 +125,7 @@ class Skalex {
     this.collections = this._registry.stores;
     this._collectionInstances = this._registry._instances;
     this._migrations = new MigrationEngine();
-    this._autoConnectPromise = null;
+    this._connectPromise = null;
     this.isConnected = false;
 
     this._aiConfig = ai || null;
@@ -149,6 +149,7 @@ class Skalex {
       deserializer: this._deserializer,
       logger: this._logger,
       debug: this.debug,
+      lenientLoad: lenientLoad ?? false,
     });
     this._changeLog = new ChangeLog(this);
     this._queryCache = new QueryCache(queryCache || {});
@@ -169,6 +170,13 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async connect() {
+    if (this._connectPromise) return this._connectPromise;
+    this._connectPromise = this._doConnect();
+    return this._connectPromise;
+  }
+
+  /** @private Actual connect implementation. */
+  async _doConnect() {
     try {
       await this.loadData();
 
@@ -192,6 +200,7 @@ class Skalex {
       // Start periodic TTL sweep if configured
       if (this._ttlSweepInterval > 0) {
         this._ttlTimer = setInterval(() => this._sweepTtl(), this._ttlSweepInterval);
+        if (this._ttlTimer?.unref) this._ttlTimer.unref();
       }
 
       this.isConnected = true;
@@ -216,7 +225,7 @@ class Skalex {
       this._registry.clear();
       this.collections = this._registry.stores;
       this._collectionInstances = this._registry._instances;
-      this._autoConnectPromise = null;
+      this._connectPromise = null;
       this.isConnected = false;
       this._log("> - Disconnected from the database (√)");
     } catch (error) {
@@ -232,10 +241,7 @@ class Skalex {
    */
   async _ensureConnected() {
     if (this.isConnected) return;
-    if (!this._autoConnectPromise) {
-      this._autoConnectPromise = this.connect();
-    }
-    return this._autoConnectPromise;
+    return this.connect();
   }
 
   // ─── Collections ─────────────────────────────────────────────────────────
@@ -801,3 +807,5 @@ class Skalex {
 }
 
 export default Skalex;
+export { SkalexError, ValidationError, UniqueConstraintError, TransactionError, PersistenceError, AdapterError, QueryError };
+export { default as Collection } from "./engine/collection.js";

@@ -544,15 +544,21 @@ describe("fault injection: adapter write failures", () => {
     await db.disconnect();
   });
 
-  test("adapter.read failure during connect logs warning but does not crash", async () => {
+  test("adapter.read failure during connect throws PersistenceError by default", async () => {
     const adapter = new MemoryAdapter();
-    // Pre-populate a collection
+    await adapter.write("broken", "not-json");
+
+    const db = new Skalex({ adapter });
+    await expect(db.connect()).rejects.toThrow(/Failed to load collection "broken"/);
+  });
+
+  test("adapter.read failure during connect logs warning with lenientLoad", async () => {
+    const adapter = new MemoryAdapter();
     await adapter.write("users", JSON.stringify({ collectionName: "users", data: [{ _id: "1", name: "A" }] }));
-    // Make one collection fail to read
     await adapter.write("broken", "not-json");
 
     const warnings = [];
-    const db = new Skalex({ adapter, logger: (msg, level) => { if (level === "error") warnings.push(msg); } });
+    const db = new Skalex({ adapter, lenientLoad: true, logger: (msg, level) => { if (level === "error") warnings.push(msg); } });
     await db.connect();
 
     // The valid collection loaded fine

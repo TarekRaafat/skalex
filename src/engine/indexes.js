@@ -52,11 +52,14 @@ class IndexEngine {
     this._compoundFields = [];
     for (const f of fields) {
       if (Array.isArray(f)) {
+        for (const subf of f) this._validateFieldName(subf);
         this._compoundFields.push(f);
       } else {
+        this._validateFieldName(f);
         this._fields.add(f);
       }
     }
+    for (const f of unique) this._validateFieldName(f);
     this._uniqueFields = new Set(unique);
     this._indexedFields = new Set([...this._fields, ...this._uniqueFields]);
 
@@ -298,6 +301,22 @@ class IndexEngine {
         }
         seen.add(val);
       }
+    }
+  }
+
+  /**
+   * Reject field names containing dot-notation. The index engine uses
+   * direct property access (doc[field]), not resolveDotPath(), so dot-path
+   * fields produce false negatives without falling through to linear scan.
+   * @param {string} field
+   */
+  _validateFieldName(field) {
+    if (field.includes(".")) {
+      throw new ValidationError(
+        "ERR_SKALEX_VALIDATION_INDEX_DOT_PATH",
+        `Index fields cannot use dot-notation: "${field}". Use a flat field name.`,
+        { field }
+      );
     }
   }
 

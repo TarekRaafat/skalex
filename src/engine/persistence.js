@@ -8,6 +8,8 @@ import { PersistenceError } from "./errors.js";
 
 /** Key used to store persistence metadata in the _meta collection. */
 const FLUSH_META_KEY = "_flush";
+/** _id of the meta document inside the _meta collection. */
+const META_DOC_ID = "migrations";
 
 class PersistenceManager {
   /**
@@ -18,12 +20,13 @@ class PersistenceManager {
    * @param {Function} opts.logger       - (msg, level) => void
    * @param {boolean}  [opts.debug=false]
    */
-  constructor({ adapter, serializer, deserializer, logger, debug = false }) {
+  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false }) {
     this._adapter = adapter;
     this._serializer = serializer;
     this._deserializer = deserializer;
     this._logger = logger;
     this._debug = debug;
+    this._lenientLoad = lenientLoad;
 
     /**
      * Promise-chain lock to serialize concurrent saveAtomic() calls.
@@ -110,9 +113,16 @@ class PersistenceManager {
             maxDocs,
           };
         } catch (error) {
-          if (error.code !== "ENOENT") {
+          if (error.code === "ENOENT") return;
+          if (this._lenientLoad) {
             this._logger(`WARNING: Could not load collection "${name}": ${error.message}. Collection will be empty.`, "error");
+            return;
           }
+          throw new PersistenceError(
+            "ERR_SKALEX_PERSISTENCE_CORRUPT",
+            `Failed to load collection "${name}": ${error.message}`,
+            { collection: name }
+          );
         }
       }));
 
@@ -367,7 +377,7 @@ class PersistenceManager {
   _detectIncompleteFlush(collections) {
     const metaCol = collections["_meta"];
     if (!metaCol) return;
-    const metaDoc = metaCol.index.get("migrations");
+    const metaDoc = metaCol.index.get(META_DOC_ID);
     if (!metaDoc) return;
     const flush = metaDoc[FLUSH_META_KEY];
     if (!flush) return;
@@ -430,11 +440,11 @@ class PersistenceManager {
       };
     }
     const metaCol = collections["_meta"];
-    let doc = metaCol.index.get("migrations");
+    let doc = metaCol.index.get(META_DOC_ID);
     if (!doc) {
-      doc = { _id: "migrations" };
+      doc = { _id: META_DOC_ID };
       metaCol.data.push(doc);
-      metaCol.index.set("migrations", doc);
+      metaCol.index.set(META_DOC_ID, doc);
     }
     return doc;
   }

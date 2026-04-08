@@ -16,7 +16,7 @@ function generateUniqueId() {
     random = Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
   }
 
-  return `${timestamp}${random}`.substring(0, 24);
+  return `${timestamp}${random}`;
 }
 
 /**

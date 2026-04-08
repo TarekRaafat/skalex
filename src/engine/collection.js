@@ -31,6 +31,25 @@ function resolveFilterToValues(filter) {
   return resolved;
 }
 
+/** Keys that must not appear in stored documents (prototype pollution). */
+const _DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Recursively strip dangerous keys from a value before storing.
+ * Returns the value unchanged for non-object types and arrays.
+ * @param {*} val
+ * @returns {*}
+ */
+function stripDangerousKeys(val) {
+  if (typeof val !== "object" || val === null || Array.isArray(val)) return val;
+  const out = {};
+  for (const k of Object.keys(val)) {
+    if (_DANGEROUS_KEYS.has(k)) continue;
+    out[k] = stripDangerousKeys(val[k]);
+  }
+  return out;
+}
+
 /**
  * Collection represents a collection of documents in the database.
  */
@@ -104,7 +123,7 @@ class Collection {
     if (ifNotExists) {
       await this._ctx.ensureConnected();
       const existing = this._findRaw(item);
-      if (existing) return existing;
+      if (existing) return stripVector({ ...existing });
     }
 
     const { docs } = await this._insertCore([item], { ttl, embed, session, save });
@@ -244,18 +263,18 @@ class Collection {
    */
   applyUpdate(item, update) {
     for (const field in update) {
-      if (field === "__proto__" || field === "constructor" || field === "prototype") continue;
+      if (_DANGEROUS_KEYS.has(field)) continue;
       if (field === "_id" || field === "createdAt") continue;
       const updateValue = update[field];
 
       if (Array.isArray(updateValue)) {
-        // Direct array assignment  -  must come before the generic object check
+        // Direct array assignment - must come before the generic object check
         // because for...in on [] yields zero iterations and the value would be lost.
         item[field] = updateValue;
       } else if (typeof updateValue === "object" && updateValue !== null) {
         // Determine whether this is an operator object ($inc, $push) or a
         // plain nested value to assign directly. If ANY key starts with $,
-        // treat the entire object as operators — plain keys are ignored to
+        // treat the entire object as operators - plain keys are ignored to
         // prevent overwriting the field with the operator descriptor.
         const keys = Object.keys(updateValue);
         const hasOperators = keys.some(k => k.startsWith("$"));
@@ -271,8 +290,8 @@ class Collection {
             // Non-$ keys inside an operator object are silently ignored.
           }
         } else {
-          // Plain nested object — direct assignment.
-          item[field] = updateValue;
+          // Plain nested object - strip dangerous keys recursively.
+          item[field] = stripDangerousKeys(updateValue);
         }
       } else {
         item[field] = updateValue;
@@ -506,6 +525,7 @@ class Collection {
    * @returns {Promise<number>}
    */
   async count(filter = {}) {
+    await this._ctx.ensureConnected();
     return aggCount(this._findAllRaw(filter));
   }
 
@@ -516,6 +536,7 @@ class Collection {
    * @returns {Promise<number>}
    */
   async sum(field, filter = {}) {
+    await this._ctx.ensureConnected();
     return aggSum(this._findAllRaw(filter), field);
   }
 
@@ -527,6 +548,7 @@ class Collection {
    * @returns {Promise<number|null>}
    */
   async avg(field, filter = {}) {
+    await this._ctx.ensureConnected();
     return aggAvg(this._findAllRaw(filter), field);
   }
 
@@ -538,6 +560,7 @@ class Collection {
    * @returns {Promise<Record<string, object[]>>}
    */
   async groupBy(field, filter = {}) {
+    await this._ctx.ensureConnected();
     return aggGroupBy(this._findAllRaw(filter), field);
   }
 
@@ -1022,10 +1045,10 @@ class Collection {
    */
   async _buildDoc(item, { ttl, embed } = {}) {
     const newItem = {
-      _id: (this._ctx.idGenerator ?? generateUniqueId)(),
+      ...item,
+      _id: item._id ?? (this._ctx.idGenerator ?? generateUniqueId)(),
       createdAt: new Date(),
       updatedAt: new Date(),
-      ...item,
     };
 
     const resolvedTtl = ttl ?? this._defaultTtl;
@@ -1054,7 +1077,10 @@ class Collection {
   _projectDoc(doc, select) {
     if (select) {
       const out = {};
-      for (const field of select) out[field] = doc[field];
+      for (const field of select) {
+        if (field === "_vector") continue;
+        out[field] = doc[field];
+      }
       return out;
     }
     const out = { ...doc };

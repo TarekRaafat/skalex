@@ -16,6 +16,7 @@
  */
 
 // Storage
+export { default as StorageAdapter }      from "./storage/base.js";
 export { default as FsAdapter }           from "./storage/fs.js";
 export { default as LocalStorageAdapter } from "./storage/local.js";
 export { default as EncryptedAdapter }    from "./storage/encrypted.js";
@@ -24,10 +25,12 @@ export { default as D1Adapter }           from "./storage/d1.js";
 export { default as LibSQLAdapter }       from "./storage/libsql.js";
 
 // Embedding
+export { default as EmbeddingAdapter }       from "./embedding/base.js";
 export { default as OpenAIEmbeddingAdapter } from "./embedding/openai.js";
 export { default as OllamaEmbeddingAdapter } from "./embedding/ollama.js";
 
 // LLM
+export { default as LLMAdapter }          from "./llm/base.js";
 export { default as OpenAILLMAdapter }    from "./llm/openai.js";
 export { default as AnthropicLLMAdapter } from "./llm/anthropic.js";
 export { default as OllamaLLMAdapter }    from "./llm/ollama.js";

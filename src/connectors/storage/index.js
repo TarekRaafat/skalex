@@ -12,6 +12,7 @@
  * here for bundler users  -  tree-shaking removes any that are not imported. They access
  * platform APIs lazily at runtime, so no static import errors occur in other environments.
  */
+export { default as StorageAdapter }      from "./base.js";
 export { default as FsAdapter }          from "./fs.js";
 export { default as LocalStorageAdapter } from "./local.js";
 export { default as EncryptedAdapter }    from "./encrypted.js";

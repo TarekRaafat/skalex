@@ -164,7 +164,7 @@ class CollectionRegistry {
   dump() {
     const result = {};
     for (const name in this.stores) {
-      if (!name.startsWith("_")) result[name] = [...this.stores[name].data];
+      if (!name.startsWith("_")) result[name] = structuredClone(this.stores[name].data);
     }
     return result;
   }
