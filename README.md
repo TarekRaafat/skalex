@@ -25,21 +25,23 @@
 **Zero overhead. Maximum reach.**
 - **Zero dependencies**: install the package, nothing else. No driver, no ORM, no server process.
 - **Full build matrix**: ESM, ESM minified, CJS, CJS minified, browser ESM (`dist/skalex.browser.js`, no `node:*` imports), UMD/IIFE (`dist/skalex.umd.min.js`, CDN default)
-- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by a 787-test cross-runtime suite
+- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by a 715-test cross-runtime suite
 - **Pluggable storage**: `FsAdapter` (Node), `LocalStorageAdapter` (browser), `EncryptedAdapter` (AES-256-GCM), or bring your own
 
 **Queries that scale with your data.**
-- Full operator set: `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$fn`
+- Full operator set: `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$fn` `$or` `$and` `$not`
 - Dot-notation nested field queries
 - Secondary field indexes: O(1) lookups via `IndexEngine`
 - Unique constraints, filter pre-sorter for performance
+- Compound indexes: `createCollection(name, { indexes: [["field1", "field2"]] })`
+- Logical operators: `$or`, `$and`, `$not` for composable filter conditions
 
 **Your data stays clean.**
 - Zero-dependency schema validation: `type`, `required`, `unique`, `enum`
 - Strict mode: `createCollection(name, { strict: true })` rejects unknown fields; `onSchemaError: "warn" | "strip"` for softer handling
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
 - TTL documents: `insertOne(doc, { ttl: "30m" })`, swept on connect; `defaultTtl` per collection; `ttlSweepInterval` for live processes
-- Transactions: in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; external side effects and direct collection mutations are not rolled back
+- Transactions: lazy copy-on-first-write snapshots, configurable timeout, serialised execution, stale proxy detection; non-transactional writes not captured by rollback
 - Change log: `createCollection(name, { changelog: true })`, point-in-time restore
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: `createCollection(name, { versioning: true })`, auto-increments `_version`
@@ -110,7 +112,7 @@
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.1 is the current release.** `npm install skalex` installs the last stable v3  -  use `@alpha` to get v4.
+> **v4.0.0-alpha.2 is the current release.** `npm install skalex` installs the last stable v3  -  use `@alpha` to get v4.
 
 Requires **Node.js ≥ 18**.
 
@@ -120,8 +122,8 @@ Requires **Node.js ≥ 18**.
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -132,25 +134,27 @@ Requires **Node.js ≥ 18**.
 With npm + bundler, use the connectors subpackage:
 
 ```js
-import Skalex from 'skalex';
+import Skalex, { Collection, ValidationError, UniqueConstraintError } from 'skalex';
 // Scoped barrels (tree-shakeable, recommended)
-import { FsAdapter, LocalStorageAdapter, EncryptedAdapter,
+import { StorageAdapter, FsAdapter, LocalStorageAdapter, EncryptedAdapter,
          BunSQLiteAdapter, D1Adapter, LibSQLAdapter }       from 'skalex/connectors/storage';
-import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter }   from 'skalex/connectors/embedding';
-import { OpenAILLMAdapter, AnthropicLLMAdapter,
+import { EmbeddingAdapter, OpenAIEmbeddingAdapter,
+         OllamaEmbeddingAdapter }                           from 'skalex/connectors/embedding';
+import { LLMAdapter, OpenAILLMAdapter, AnthropicLLMAdapter,
          OllamaLLMAdapter }                                 from 'skalex/connectors/llm';
 // Or pull everything from the root barrel
-import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/connectors';
+import { StorageAdapter, FsAdapter, EmbeddingAdapter, OpenAIEmbeddingAdapter,
+         LLMAdapter, OpenAILLMAdapter } from 'skalex/connectors';
 ```
 
 **IIFE**  -  exposes `window.Skalex`, for quick demos or environments that can't use ESM:
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.1"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.2"></script>
 ```
 
 ---

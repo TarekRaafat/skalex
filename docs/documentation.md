@@ -112,7 +112,34 @@ const db = new Skalex({
 
 Loads persisted data, runs pending migrations, sweeps expired TTL documents. If `ttlSweepInterval` was configured, starts the periodic sweep timer.
 
+Idempotent: concurrent calls return the same promise - safe to call from multiple startup paths.
+
 **Returns:** `Promise<void>`
+
+### Error Types
+
+All engine errors use typed classes with stable codes. Available as named imports:
+
+```js
+import Skalex, { ValidationError, UniqueConstraintError, TransactionError } from 'skalex';
+
+try {
+  await col.insertOne(doc);
+} catch (e) {
+  if (e instanceof ValidationError) { /* schema error */ }
+  if (e.code === 'ERR_SKALEX_UNIQUE_VIOLATION') { /* duplicate */ }
+}
+```
+
+| Error Class | Thrown When |
+|---|---|
+| `SkalexError` | Base class for all Skalex errors |
+| `ValidationError` | Schema validation failure, invalid arguments |
+| `UniqueConstraintError` | Duplicate value on a unique-indexed field |
+| `TransactionError` | Timeout, abort, stale proxy, or direct collection access |
+| `PersistenceError` | Load/save failure, corrupt file, flush failure |
+| `AdapterError` | Missing or misconfigured adapter |
+| `QueryError` | Invalid filter operator or vector mismatch |
 
 #### `disconnect()`
 
@@ -183,11 +210,22 @@ const sessions = db.createCollection("sessions", { defaultTtl: "24h" });
 const articles = db.createCollection("articles", { defaultEmbed: "body" });
 ```
 
+**Compound indexes:** Multi-field indexes for O(1) lookups on equality queries across multiple fields:
+
+```js
+db.createCollection('orders', {
+  indexes: [['userId', 'status']],
+});
+// find({ userId: 'abc', status: 'active' }) uses compound index
+```
+
+Compound index fields must be scalar values (string, number, boolean, or null). Objects, arrays, and Dates are rejected at index time. Dot-notation fields are not supported in index declarations.
+
 ---
 
 ### Persistence
 
-Skalex keeps all data **in memory** between operations. Writes are flushed to the storage adapter when `{ save: true }` is passed, when `autoSave` is enabled, or explicitly via `saveData()`. `disconnect()` flushes all pending data.
+Skalex keeps all data **in memory** between operations. Writes are flushed to the storage adapter when `{ save: true }` is passed. The returned promise resolves only after the data reaches storage - concurrent callers are queued and resolved after the coalesced write completes. Writes also flush when `autoSave` is enabled, or explicitly via `saveData()`. `disconnect()` flushes all pending data.
 
 > **Important:** If the process is killed before a flush completes (e.g. `kill -9`, power loss), the in-flight write may be lost. For Node.js, the `FsAdapter` uses an atomic temp-file-then-rename strategy to prevent corrupt files; a collection is either fully written or left at its last good state. Always call `await db.disconnect()` for a clean shutdown.
 
@@ -248,6 +286,14 @@ await db.transaction(async (db) => {
 });
 ```
 
+Transactions support an optional `timeout` (in milliseconds). If `fn()` does not resolve in time, the transaction is aborted and rolled back:
+
+```js
+await db.transaction(async (tx) => { /* ... */ }, { timeout: 5000 });
+```
+
+Snapshots are lazy (copy-on-first-write): only collections that receive a write inside the transaction are snapshotted. Non-transactional writes during an active transaction are not captured by rollback.
+
 ---
 
 ### Seeding & Utilities
@@ -264,7 +310,7 @@ await db.seed({
 
 #### `dump()`
 
-Returns a plain-object snapshot of all user collection data. Internal system collections (prefixed `_`) are excluded.
+Returns a deep copy (via `structuredClone`) of all user collection data. Safe to mutate - changes do not affect internal state. Internal system collections (prefixed `_`) are excluded.
 
 **Returns:** `Record<string, Document[]>`
 
@@ -918,6 +964,11 @@ await users.find({ "address.city": "Cairo" });
 | `$nin` | Value is not in array |
 | `$regex` | Matches `RegExp` or regex string pattern |
 | `$fn` | Passes custom function |
+| `$or` | `[filter, ...]` - Matches if ANY sub-filter matches |
+| `$and` | `[filter, ...]` - Matches only if ALL sub-filters match |
+| `$not` | `filter` - Matches if the sub-filter does NOT match |
+
+**Plain-object values:** When a filter value is a plain object with no `$`-prefixed keys (e.g. `{ metadata: { a: 1 } }`), it is matched using deep structural equality - not reference equality. Arrays, nested objects, and Date values are compared recursively.
 
 ---
 
@@ -1402,6 +1453,8 @@ Each entry: `{ _id, op, collection, docId, doc, prev?, timestamp, session? }`
 
 Replays log entries to rebuild the collection's state at the given point in time. With `{ _id }`, restores only a single document.
 
+Restored state is automatically persisted to disk after both single-document and full-collection restore paths.
+
 **Returns:** `Promise<void>`
 
 ```javascript
@@ -1791,8 +1844,8 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -1809,10 +1862,10 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.1"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.2"></script>
 
 <script>
   // Skalex is available as window.Skalex
@@ -1852,9 +1905,11 @@ Every document inserted by Skalex has the following system fields added automati
 
 | Field | Type | When present | Description |
 |-------|------|-------------|-------------|
-| `_id` | `string` | Always | 24-character hex ID (timestamp + crypto random) |
+| `_id` | `string` | Always | 27-character hex ID (timestamp + crypto random) |
 | `createdAt` | `Date` | Always | Set once at insert time |
 | `updatedAt` | `Date` | Always | Set at insert time, updated on every write |
 | `_expiresAt` | `Date` | When `ttl` is set | TTL expiry timestamp |
 | `_version` | `number` | When `versioning: true` | Starts at `1`; incremented on every update |
 | `_deletedAt` | `Date` | When `softDelete: true` + deleted | Soft-delete timestamp; present only on deleted documents |
+
+System fields `createdAt` and `updatedAt` are always set by the engine on insert - user-provided values are overwritten. User-provided `_id` values are preserved; if omitted, a 27-character hex ID (timestamp + crypto random) is generated.

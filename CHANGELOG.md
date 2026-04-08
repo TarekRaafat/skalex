@@ -198,7 +198,7 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 
 ### Benchmarks
 
-- `benchmarks/engine.mjs`  -  performance benchmarks for engine operations
+- `tests/benchmarks/engine.mjs`  -  performance benchmarks for engine operations
 
 ---
 

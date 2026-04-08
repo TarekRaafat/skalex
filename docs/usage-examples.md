@@ -310,7 +310,7 @@ await tenant1.disconnect();
 
 ```javascript
 import Skalex from "skalex";
-import { LocalStorageAdapter } from "skalex/connectors/local";
+import { LocalStorageAdapter } from "skalex/connectors/storage";
 
 const db = new Skalex({
   adapter: new LocalStorageAdapter({ namespace: "myapp" }),

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * benchmarks/engine.mjs  -  repeatable profiling script for core engine operations.
+ * tests/benchmarks/engine.mjs  -  repeatable profiling script for core engine operations.
  *
- * Run:   node benchmarks/engine.mjs
+ * Run:   node tests/benchmarks/engine.mjs
  * Output: table of operations with throughput and latency numbers.
  *
  * No timing assertions - this is a manual tool for tracking before/after
@@ -33,7 +33,7 @@ function fmt(ms) {
 
 // ─── Benchmark ──────────────────────────────────────────────────────────────
 
-const { default: Skalex } = await import("../src/index.js");
+const { default: Skalex } = await import("../../src/index.js");
 
 const results = [];
 

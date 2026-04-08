@@ -16,7 +16,7 @@ In 30 seconds, you'll have a database running. No server to provision. No config
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.1 is the current release.** `npm install skalex` installs the last stable v3  -  use `@alpha` to get v4.
+> **v4.0.0-alpha.2 is the current release.** `npm install skalex` installs the last stable v3  -  use `@alpha` to get v4.
 
 ---
 
@@ -39,6 +39,9 @@ import Skalex from "skalex";
 ```typescript
 import Skalex from "skalex";
 import type { Collection, SkalexConfig } from "skalex";
+
+// Runtime named exports (error types + Collection)
+import Skalex, { Collection, ValidationError, UniqueConstraintError } from "skalex";
 ```
 
 ---

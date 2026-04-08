@@ -1,6 +1,6 @@
 # Skalex v4: Architecture
 
-> Internal reference for contributors and future phases. Describes every design decision made during the v4 rewrite.
+> Internal reference for contributors. Describes the current alpha.2 design of every module, data structure, and subsystem.
 
 ---
 
@@ -9,24 +9,28 @@
 1. [Directory Layout](#1-directory-layout)
 2. [Design Principles](#2-design-principles)
 3. [Module Responsibilities](#3-module-responsibilities)
-4. [Document Shape](#4-document-shape)
-5. [Return Shapes](#5-return-shapes)
-6. [Storage Adapter Interface](#6-storage-adapter-interface)
-7. [Collection Store Object](#7-collection-store-object)
-8. [IndexEngine](#8-indexengine)
-9. [Query Engine](#9-query-engine)
-10. [Schema Validator](#10-schema-validator)
-11. [TTL Engine](#11-ttl-engine)
-12. [MigrationEngine](#12-migrationengine)
-13. [Transaction Mechanism](#13-transaction-mechanism)
-14. [Auto-Connect](#14-auto-connect)
-15. [Namespace](#15-namespace)
-16. [Build Pipeline](#16-build-pipeline)
-17. [Test Strategy](#17-test-strategy)
-18. [Phase 0 Bug Fixes](#18-phase-0-bug-fixes)
-19. [Embedding Adapter Interface](#19-embedding-adapter-interface)
-20. [Vector Storage & Stripping](#20-vector-storage--stripping)
-21. [Vector Search Engine](#21-vector-search-engine)
+4. [Typed Error Hierarchy](#4-typed-error-hierarchy)
+5. [Document Shape](#5-document-shape)
+6. [Return Shapes](#6-return-shapes)
+7. [Storage Adapter Interface](#7-storage-adapter-interface)
+8. [Collection Store Object](#8-collection-store-object)
+9. [CollectionRegistry](#9-collectionregistry)
+10. [MutationPipeline](#10-mutationpipeline)
+11. [PersistenceManager](#11-persistencemanager)
+12. [IndexEngine](#12-indexengine)
+13. [Query Engine](#13-query-engine)
+14. [Schema Validator](#14-schema-validator)
+15. [TTL Engine](#15-ttl-engine)
+16. [TransactionManager](#16-transactionmanager)
+17. [AI Adapter Factory](#17-ai-adapter-factory)
+18. [MigrationEngine](#18-migrationengine)
+19. [Auto-Connect](#19-auto-connect)
+20. [Namespace](#20-namespace)
+21. [Build Pipeline](#21-build-pipeline)
+22. [Test Strategy](#22-test-strategy)
+23. [Embedding Adapter Interface](#23-embedding-adapter-interface)
+24. [Vector Storage & Stripping](#24-vector-storage--stripping)
+25. [Vector Search Engine](#25-vector-search-engine)
 
 ---
 
@@ -39,18 +43,24 @@ src/
   engine/
     collection.js            -  Collection class (per-collection CRUD)
     query.js                 -  matchesFilter + presortFilter
-    indexes.js               -  IndexEngine (secondary field indexes)
-    validator.js             -  parseSchema, validateDoc, inferSchema
-    ttl.js                   -  parseTtl, computeExpiry, sweep
+    indexes.js               -  IndexEngine (secondary field + compound indexes)
+    validator.js             -  parseSchema, validateDoc, inferSchema, stripInvalidFields
+    ttl.js                   -  computeExpiry, sweep
     migrations.js            -  MigrationEngine
     vector.js                -  cosineSimilarity, stripVector
-    utils.js                 -  generateUniqueId, logger
+    utils.js                 -  generateUniqueId, logger, resolveDotPath
+    errors.js                -  Typed error hierarchy (SkalexError and subclasses)
+    persistence.js           -  PersistenceManager (load, save, dirty tracking, write coalescing)
+    transaction.js           -  TransactionManager (lazy snapshots, timeout, rollback)
+    registry.js              -  CollectionRegistry (store creation, instance caching, inspection)
+    pipeline.js              -  MutationPipeline (shared pre/post mutation lifecycle)
+    adapters.js              -  AI adapter factory functions (embedding + LLM)
   features/
     aggregation.js           -  count, sum, avg, groupBy
     changelog.js             -  ChangeLog class (append-only mutation log)
     events.js                -  EventBus (cross-runtime pub/sub)
     memory.js                -  Memory class (agent episodic store)
-    ask.js                   -  natural language → filter via LLM
+    ask.js                   -  natural language -> filter via LLM
     plugins.js               -  PluginEngine (pre/post hooks)
     session-stats.js         -  SessionStats (per-session read/write tracking)
     query-log.js             -  SlowQueryLog (threshold-based ring buffer)
@@ -92,35 +102,41 @@ tests/
   helpers/
     MemoryAdapter.js         -  In-memory StorageAdapter for CI (no I/O)
     MockEmbeddingAdapter.js  -  Deterministic 4-dim vectors for unit tests
-    MockLLMAdapter.js        -  Configurable nlQuery → filter map
+    MockLLMAdapter.js        -  Configurable nlQuery -> filter map
     MockTransport.js         -  In-memory MCP transport for unit tests
   unit/
-    query.test.js
-    indexes.test.js
-    validator.test.js
-    ttl.test.js
-    migrations.test.js
-    vector.test.js
     aggregation.test.js
-    changelog.test.js
-    events.test.js
-    memory.test.js
     ask.test.js
-    mcp.test.js
+    changelog.test.js
     encryption.test.js
+    events.test.js
+    indexes.test.js
+    mcp.test.js
+    memory.test.js
+    migrations.test.js
     plugins.test.js
+    query.test.js
     session-stats.test.js
+    ttl.test.js
+    utils.test.js
+    validator.test.js
+    vector.test.js
   integration/
+    collection-features.test.js
+    correctness-hardening.test.js
+    data-integrity.test.js
+    engine-overhaul.test.js
+    persistence-coherence.test.js
+    skalex-core.test.js
     skalex.test.js
-  conformance/
-    adapter.test.js          -  Shared read/write/delete/list contract tests
   smoke/
-    node.test.cjs            -  CJS dist smoke test (Node.js ≥18)
+    node.test.cjs            -  CJS dist smoke test (Node.js >=18)
     bun.test.js              -  ESM dist smoke test (Bun)
     bun-sqlite.test.js       -  BunSQLiteAdapter smoke test
     deno.test.js             -  ESM dist smoke test (Deno 2.x)
     browser.test.js          -  Headless Chromium runner (Playwright)
     browser.html             -  Browser smoke test page
+    browser-umd.html         -  UMD browser smoke test page
 
 scripts/
   mcp-server.js              -  Runnable MCP server for Claude Desktop / Cursor
@@ -131,57 +147,85 @@ scripts/
 
 ## 2. Design Principles
 
-1. **Zero dependencies in core**: the structured store, query engine, schema validator, TTL, and migrations install nothing. `devDependencies` only.
+1. **Zero dependencies in core**: the engine modules (`src/engine/`) install nothing. All imports are internal or `node:*` built-ins. Only `devDependencies` in `package.json`.
 2. **Adapter-isolated I/O**: no module in `src/` imports `fs` or `localStorage` directly. All I/O is routed through the injected `StorageAdapter`.
 3. **ESM source, dual dist**: source files use `import`/`export` (native ESM, `"type":"module"`). Rollup produces ESM, CJS, and browser dist artifacts for consumers.
-4. **In-memory first**: all data lives in plain JS arrays and Maps. The storage adapter is only called on `connect()`, `disconnect()`, and explicit `saveData()` calls (or when `{ save: true }` is passed to a mutation).
-5. **Auto-connect**: the first operation on a `Skalex` instance automatically calls `connect()` if it hasn't been called yet. `connect()` is idempotent-safe via a shared promise (`_autoConnectPromise`).
-6. **Per-collection write queue**: each collection store has its own `isSaving` flag and `_pendingSave` boolean. Concurrent saves to the same collection are serialised; the second writer sets `_pendingSave = true` and the first writer re-runs `saveOne` after its own flush completes, so no write is ever dropped.
-7. **Consistent return shapes**: `insertOne`/`updateOne`/`deleteOne`/`upsert` return `doc` or `null`. `insertMany`/`updateMany`/`deleteMany` return `doc[]`. `find` returns `{ docs: [] }` with optional `{ page, totalDocs, totalPages }` when paginated.
+4. **In-memory first**: all data lives in plain JS arrays and Maps. The storage adapter is called on `connect()`, `disconnect()`, explicit `saveData()`, or when `{ save: true }` is passed to a mutation (or `autoSave` is enabled).
+5. **Auto-connect**: the first operation on a `Skalex` instance automatically calls `connect()` if it hasn't been called yet. `connect()` is idempotent via a shared `_connectPromise`.
+6. **Per-collection write queue with durability guarantee**: each collection store tracks `isSaving`, `_pendingSave`, and `_dirty`. Concurrent saves to the same collection are serialised - the second writer creates a waiter promise (`_saveWaiters`) and the first writer re-runs `_saveOne` after its own flush completes, so no write is ever dropped.
+7. **Typed errors**: every engine throw uses a subclass of `SkalexError` with a stable `code` property (`ERR_SKALEX_<SUBSYSTEM>_<SPECIFIC>`). Consumers can handle errors programmatically without parsing message strings.
+8. **Consistent return shapes**: `insertOne`/`updateOne`/`deleteOne`/`upsert` return `doc` or `null`. `insertMany`/`updateMany`/`deleteMany` return `doc[]`. `find` returns `{ docs: [] }` with optional `{ page, totalDocs, totalPages }` when paginated.
 
 ---
 
 ## 3. Module Responsibilities
 
-| Module | Responsibility |
-|---|---|
-| `index.js` | Lifecycle (`connect`/`disconnect`), collection registry, migrations, transactions, seeding, namespaces, import/export orchestration, debug logging |
-| `collection.js` | All CRUD operations, upsert, find with sort/pagination/populate/select, export, index maintenance around mutations |
-| `query.js` | Filter evaluation (`matchesFilter`) and filter key ordering (`presortFilter`) |
-| `indexes.js` | Secondary field indexes: `Map<value, Set<doc>>` for regular fields, `Map<value, doc>` for unique fields |
-| `validator.js` | Schema parsing, document validation, schema inference from a sample document |
-| `ttl.js` | TTL string/number parsing, expiry computation, expired-document sweep |
-| `migrations.js` | Migration registration, version ordering, pending-migration execution, status reporting |
-| `vector.js` | `cosineSimilarity(a, b)`: dot-product cosine; `stripVector(doc)`: shallow copy minus `_vector` |
-| `utils.js` | `generateUniqueId()` (24-char timestamp + random), `logger()` (stderr wrapper) |
-| `connectors/storage/base.js` | Abstract `StorageAdapter` class: defines the `read/write/delete/list` interface |
-| `connectors/storage/fs.js` | Node.js adapter: gz-compressed or raw JSON files, atomic temp-then-rename writes |
-| `connectors/storage/local.js` | Browser adapter: `localStorage` with namespaced keys |
-| `connectors/embedding/base.js` | Abstract `EmbeddingAdapter` class: defines the `embed(text) → number[]` interface |
-| `connectors/embedding/openai.js` | OpenAI adapter: `POST /v1/embeddings` via native `fetch`; default `text-embedding-3-small` |
-| `connectors/embedding/ollama.js` | Ollama adapter: `POST /api/embeddings` on a local server; default `nomic-embed-text` |
+| Module | File | Responsibility |
+|---|---|---|
+| Skalex | `src/index.js` | Lifecycle (`connect`/`disconnect`), collection facade, migrations, transactions, seeding, namespaces, import/export, debug logging, serialization (BigInt/Date-safe) |
+| Collection | `src/engine/collection.js` | All CRUD operations, upsert, find with sort/pagination/populate/select, export, search, similar, index maintenance around mutations |
+| CollectionRegistry | `src/engine/registry.js` | Store creation, lazy instance caching, renames, inspection, schema access, index building |
+| MutationPipeline | `src/engine/pipeline.js` | Shared mutation lifecycle: ensureConnected, txSnapshot, beforePlugin, mutate, markDirty, save, changelog, sessionStats, event, afterPlugin |
+| PersistenceManager | `src/engine/persistence.js` | Load orchestration, save/saveDirty/saveAtomic, dirty tracking, write coalescing, flush sentinel, orphan temp-file cleanup, save mutex |
+| TransactionManager | `src/engine/transaction.js` | Transaction scope, lazy copy-on-first-write snapshots, timeout/abort, stale proxy detection, deferred side effects, rollback |
+| QueryEngine | `src/engine/query.js` | Filter evaluation (`matchesFilter`), filter key ordering (`presortFilter`), deep equality for plain objects |
+| IndexEngine | `src/engine/indexes.js` | Secondary field indexes, compound indexes, unique constraint enforcement, batch validation |
+| Validator | `src/engine/validator.js` | Schema parsing, document validation, schema inference, field stripping |
+| TTL | `src/engine/ttl.js` | TTL parsing, expiry computation, expired-document sweep |
+| Vector | `src/engine/vector.js` | `cosineSimilarity(a, b)`, `stripVector(doc)` |
+| Errors | `src/engine/errors.js` | Typed error hierarchy: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` |
+| Adapters | `src/engine/adapters.js` | Factory functions `createEmbeddingAdapter()` and `createLLMAdapter()` - pure config-to-instance mappers |
+| Migrations | `src/engine/migrations.js` | Migration registration, version ordering, pending-migration execution, status reporting |
+| Utils | `src/engine/utils.js` | `generateUniqueId()` (27-char timestamp+random), `logger()`, `resolveDotPath()` (with prototype-pollution guard) |
+| StorageAdapter | `src/connectors/storage/base.js` | Abstract class: `read`, `write`, `delete`, `list`, `writeAll` |
+| FsAdapter | `src/connectors/storage/fs.js` | Node.js adapter: gz-compressed or raw JSON files, atomic temp-then-rename writes |
+| LocalStorageAdapter | `src/connectors/storage/local.js` | Browser adapter: `localStorage` with namespaced keys |
+| EmbeddingAdapter | `src/connectors/embedding/base.js` | Abstract class: `embed(text) -> number[]` |
+| LLMAdapter | `src/connectors/llm/base.js` | Abstract class: `generate(schema, nlQuery) -> filter` |
 
 ---
 
-## 4. Document Shape
+## 4. Typed Error Hierarchy
+
+File: `src/engine/errors.js`
+
+All engine errors extend `SkalexError`, which extends `Error` and adds `code` (string) and `details` (object) properties.
+
+```
+SkalexError
+  +-- ValidationError        -  Schema parsing or document validation failure
+  +-- UniqueConstraintError  -  Insert or update violates a unique field constraint
+  +-- TransactionError       -  Transaction timeout, abort, or rollback failure
+  +-- PersistenceError       -  Load, save, serialization, or flush failure
+  +-- AdapterError           -  Storage or AI adapter misconfiguration
+  +-- QueryError             -  Query filter, operator, or execution failure
+```
+
+Code convention: `ERR_SKALEX_<SUBSYSTEM>_<SPECIFIC>` (e.g. `ERR_SKALEX_VALIDATION_REQUIRED`, `ERR_SKALEX_TX_TIMEOUT`).
+
+Error types are exposed as static properties on the `Skalex` class (`Skalex.ValidationError`, etc.) for CJS/UMD consumers, and as named exports for ESM consumers.
+
+---
+
+## 5. Document Shape
 
 Every document stored by Skalex has the following reserved fields:
 
 | Field | Type | Set by |
 |---|---|---|
-| `_id` | `string` (24 chars) | `insertOne` / `insertMany` |
-| `createdAt` | `Date` | `insertOne` / `insertMany` |
-| `updatedAt` | `Date` | `insertOne` / `insertMany` / `applyUpdate` |
+| `_id` | `string` (27 chars: hex timestamp + random bytes) | `insertOne` / `insertMany`. User-supplied `_id` is preserved. |
+| `createdAt` | `Date` | `insertOne` / `insertMany`. Always overwritten - user values are replaced. |
+| `updatedAt` | `Date` | `insertOne` / `insertMany` / `applyUpdate`. Always overwritten - user values are replaced. |
 | `_expiresAt` | `Date` \| `undefined` | `insertOne` / `insertMany` when `{ ttl }` or `defaultTtl` is set |
-| `_version` | `number` \| `undefined` | `insertOne` / `insertMany` (starts at `1`); incremented by `applyUpdate`  -  only when `versioning: true` |
-| `_deletedAt` | `Date` \| `undefined` | `deleteOne` / `deleteMany`  -  only when `softDelete: true` |
-| `_vector` | `number[]` \| `undefined` | `insertOne` / `insertMany` when `{ embed }` or `defaultEmbed` is set  -  **never returned to callers** |
+| `_version` | `number` \| `undefined` | `insertOne` (starts at `1`), incremented by `applyUpdate` - only when `versioning: true` |
+| `_deletedAt` | `Date` \| `undefined` | `deleteOne` / `deleteMany` - only when `softDelete: true` |
+| `_vector` | `number[]` \| `undefined` | `insertOne` / `insertMany` when `{ embed }` or `defaultEmbed` is set - never returned to callers |
 
-User-supplied fields spread after `_id`, `createdAt`, `updatedAt`; user values override the defaults only for `_id` (allowing caller-supplied IDs).
+User-supplied fields spread after `_id`, `createdAt`, `updatedAt`. The `_id` field respects caller-supplied values (allowing custom IDs), but `createdAt` and `updatedAt` are always engine-controlled.
 
 ---
 
-## 5. Return Shapes
+## 6. Return Shapes
 
 All mutation and query methods return plain objects. No raw documents are returned directly.
 
@@ -202,28 +246,37 @@ All mutation and query methods return plain objects. No raw documents are return
 
 ---
 
-## 6. Storage Adapter Interface
+## 7. Storage Adapter Interface
 
-All storage backends implement the `StorageAdapter` abstract class from `src/connectors/storage/base.js`:
+File: `src/connectors/storage/base.js`
+
+All storage backends implement the `StorageAdapter` abstract class:
 
 ```js
 class StorageAdapter {
-  async read(name)         // → string | null
-  async write(name, data)  // → void
-  async delete(name)       // → void
-  async list()             // → string[]
+  async read(name)              // -> string | null
+  async write(name, data)       // -> void
+  async delete(name)            // -> void
+  async list()                  // -> string[]
+  async writeAll(entries)       // -> void  (batch write)
 }
 ```
 
 `name` is a plain collection identifier (no path separators). The adapter maps it to whatever its storage scheme requires (file path, localStorage key prefix, etc.).
 
+### `writeAll(entries)`
+
+Batch write method. The base class provides a sequential fallback (`for...of write()`). Adapters that support atomic batches (SQL-backed) override this with a single transaction. Used by `PersistenceManager.saveAtomic()` during transaction commit.
+
+### FsAdapter extras
+
 `FsAdapter` additionally exposes helpers used by `Collection.export` and `Skalex.import`:
 
 ```js
-join(dir, file)            // path.join equivalent
-ensureDir(dir)             // mkdir -p equivalent (sync)
-async writeRaw(path, data) // write raw string to an arbitrary path
-async readRaw(path)        // read raw string from an arbitrary path
+join(dir, file)             // path.join equivalent
+ensureDir(dir)              // mkdir -p equivalent (sync)
+async writeRaw(path, data)  // write raw string to an arbitrary path
+async readRaw(path)         // read raw string from an arbitrary path
 ```
 
 These are not part of the `StorageAdapter` contract; they are `FsAdapter`-specific and guarded by duck-typing at the call site.
@@ -233,7 +286,6 @@ These are not part of the `StorageAdapter` contract; they are `FsAdapter`-specif
 Extend `StorageAdapter` and pass the instance to the constructor:
 
 ```js
-import { StorageAdapter } from "skalex";
 import Skalex from "skalex";
 
 class MyAdapter extends StorageAdapter {
@@ -241,6 +293,7 @@ class MyAdapter extends StorageAdapter {
   async write(name, data) { ... }
   async delete(name) { ... }
   async list() { ... }
+  async writeAll(entries) { ... }  // optional: override for atomic batch
 }
 
 const db = new Skalex({ adapter: new MyAdapter() });
@@ -248,9 +301,9 @@ const db = new Skalex({ adapter: new MyAdapter() });
 
 ---
 
-## 7. Collection Store Object
+## 8. Collection Store Object
 
-`Skalex.collections[name]` is a plain object, the single source of truth for a collection's in-memory state:
+`Skalex.collections[name]` is a plain object - the single source of truth for a collection's in-memory state:
 
 ```js
 {
@@ -258,60 +311,187 @@ const db = new Skalex({ adapter: new MyAdapter() });
   data:           object[],          // ordered array of all documents
   index:          Map<_id, doc>,     // O(1) _id lookup
   isSaving:       boolean,           // per-collection write lock
-  _pendingSave:   boolean,           // a second save was requested while isSaving; re-run after flush
+  _pendingSave:   boolean,           // a second save was requested while isSaving
+  _dirty:         boolean,           // needs persistence (set by markDirty, cleared after save)
+  _saveWaiters:   Promise[],         // callers waiting for the current write to finish
   schema:         { fields: Map, uniqueFields: string[] } | null,
+  rawSchema:      object | null,     // original schema definition before parsing
   fieldIndex:     IndexEngine | null,
 
   // optional collection-level behaviours (from createCollection opts):
-  softDelete:     boolean,           // deleteOne/deleteMany stamp _deletedAt instead of removing
-  versioning:     boolean,           // auto-increment _version on every insert and update
-  strict:         boolean,           // reject documents with unknown fields
-  onSchemaError:  "throw"|"warn"|"strip", // strategy for schema violations (default: "throw")
-  defaultTtl:     string | number | null, // TTL applied to every inserted document
-  defaultEmbed:   string | null,     // field auto-embedded as _vector on every insert
-  maxDocs:        number | null,     // capped collection; FIFO eviction when exceeded
-  changelog:      boolean,           // enable append-only mutation log
+  softDelete:     boolean,
+  versioning:     boolean,
+  strict:         boolean,
+  onSchemaError:  "throw"|"warn"|"strip",
+  defaultTtl:     string | number | null,
+  defaultEmbed:   string | null,
+  maxDocs:        number | null,
+  changelog:      boolean,
 }
 ```
 
-`Collection` instances hold a reference to this object (`this._store`) and expose it via getters (`_data`, `_index`, `_fieldIndex`, `_schema`, `_softDelete`, `_versioning`, `_strict`, `_onSchemaError`, `_defaultTtl`, `_defaultEmbed`, `_maxDocs`). Multiple `Collection` instances for the same name share the same store object; mutations are immediately visible across references.
+`Collection` instances hold a reference to this object (`this._store`) and expose it via getters. Multiple `Collection` instances for the same name share the same store object; mutations are immediately visible across references.
+
+The `rawSchema` field preserves the original schema definition so it can be round-tripped through persistence. The `_dirty` flag is set by `PersistenceManager.markDirty()` after every mutation and cleared after a successful save.
 
 ---
 
-## 8. IndexEngine
+## 9. CollectionRegistry
 
-File: `src/indexes.js`
+File: `src/engine/registry.js`
 
-Maintains two parallel index structures for declared fields:
+Owns collection definitions, store creation, instance caching, renames, inspection, and metadata access.
 
-```
-_fieldIndexes: Map<field, Map<value, Set<doc>>>    -  non-unique + unique
-_uniqueIndexes: Map<field, Map<value, doc>>         -  unique fields only
-```
-
-**Lookup**: `O(1)`; `_fieldIndexes.get(field).get(value)` returns the `Set` of matching documents.
-
-**Unique enforcement**: On `add()` and `update()`, `_checkUnique()` verifies that no other document already holds the same value for a unique field. Throws `"Unique constraint violation: field X value Y already exists"` on conflict.
-
-**Update lifecycle**: `collection.updateOne/updateMany` calls `fieldIndex.remove(oldDoc)` before `applyUpdate()` and `fieldIndex.add(newDoc)` after, so the index always reflects the post-update value.
-
-**Build from data**: `buildFromData(data[])` rebuilds all indexes from scratch; used after `loadData()` and after a transaction rollback.
-
-**Unique fields are also field-indexed**: A unique field gets an entry in both `_fieldIndexes` (for O(1) lookup) and `_uniqueIndexes` (for constraint checking).
+- **`get(name, db)`**: returns a cached `Collection` instance or lazily creates one (and its backing store).
+- **`create(name, options, db)`**: defines a collection with schema, indexes, and behaviour options. Calls `createStore()` then wraps in a `Collection` instance.
+- **`createStore(name, options)`**: allocates the raw store object with all fields initialised (including `_dirty: false`, `rawSchema`, and `_pendingSave: false`). Parses the schema, creates an `IndexEngine` if indexes or unique fields are declared.
+- **`rename(from, to)`**: renames a collection in-memory. Updates the store's `collectionName`, re-keys the stores map, and migrates the cached instance.
+- **`buildIndex(data, keyField)`**: builds a `Map<keyField, doc>` from a data array.
+- **`schema(name)`**: returns the parsed schema or infers one from the first document.
+- **`inspect(name)`**, **`stats(name)`**, **`dump()`**: metadata and diagnostic methods.
 
 ---
 
-## 9. Query Engine
+## 10. MutationPipeline
 
-File: `src/query.js`
+File: `src/engine/pipeline.js`
+
+Extracts the shared pre/post mutation lifecycle so each CRUD method only defines its operation-specific logic. Every write operation (`insertOne`, `updateOne`, `deleteOne`, etc.) delegates to `pipeline.execute()`.
+
+### Lifecycle
+
+```
+ensureConnected
+  -> txSnapshot (copy-on-first-write if inside a transaction)
+  -> assertTxAlive (reject stale continuations from aborted transactions)
+  -> beforePlugin hook
+  -> [mutation] (caller-defined: the actual data change)
+  -> markDirty
+  -> save (if { save: true } or autoSave)
+  -> changelog entry
+  -> sessionStats.recordWrite
+  -> event emission (via EventBus)
+  -> afterPlugin hook
+```
+
+### Transaction awareness
+
+The pipeline checks `_activeTxId` on the Collection instance to determine whether a write is part of the active transaction. Two guards prevent stale mutations:
+
+1. **`entryTxId`**: the transaction ID active when `execute()` was called.
+2. **`_createdInTxId`**: the transaction ID active when the Collection instance was created via the proxy.
+
+If either ID appears in `TransactionManager._abortedIds`, the mutation throws `ERR_SKALEX_TX_ABORTED`.
+
+Side effects (events, after-hooks, changelog) during a transaction are deferred via `txManager.defer()` and flushed only after successful commit.
+
+---
+
+## 11. PersistenceManager
+
+File: `src/engine/persistence.js`
+
+Owns all load/save orchestration, dirty tracking, write-queue coalescing, flush sentinel management, and orphan temp-file cleanup.
+
+### Loading (`loadAll`)
+
+1. Lists all stored collection names via `adapter.list()`.
+2. Reads and deserialises each collection in parallel.
+3. Merges persisted config with pre-existing `createCollection` config (in-memory config takes precedence).
+4. Builds the `_id` index and field indexes from loaded data.
+5. Detects incomplete flushes via the flush sentinel.
+6. Cleans orphan temp files left by interrupted atomic writes.
+
+The `lenientLoad` option allows skipping corrupt collections instead of throwing.
+
+### Saving
+
+Three save strategies:
+
+| Method | Semantics | Used by |
+|---|---|---|
+| `save(collections, name?)` | Best-effort: each collection written independently. One failure does not block others. | `db.saveData()`, `{ save: true }` mutations |
+| `saveDirty(collections)` | Same as `save` but only writes collections with `_dirty === true`. | Implicit flush paths |
+| `saveAtomic(collections, names)` | Batch write via `adapter.writeAll()`. Includes `_meta` with flush sentinel. Serialised via `_saveLock`. | Transaction commit |
+
+### Dirty tracking
+
+`markDirty(collections, name)` sets `_dirty = true` on the store. After a successful write, the flag is cleared. This ensures no mutation is silently lost.
+
+### Write coalescing
+
+Concurrent saves for the same collection are serialised by the per-collection `isSaving` / `_pendingSave` mechanism. The second caller sets `_pendingSave = true`; when the first writer finishes, it re-runs `_saveOne` with the latest data. Callers can await the `_saveWaiters` promise to know their data has been flushed.
+
+### Save mutex (`_saveLock`)
+
+`saveAtomic()` acquires the instance-level `_saveLock` (a promise chain) to serialize concurrent atomic saves. Regular `save()`/`saveDirty()` do not acquire this lock - they rely on per-collection coalescing.
+
+### Flush sentinel
+
+Before an atomic batch write, a sentinel is written into the `_meta` collection. After a successful batch, the sentinel is cleared. On next load, if the sentinel is still present, the engine knows a previous flush was interrupted.
+
+---
+
+## 12. IndexEngine
+
+File: `src/engine/indexes.js`
+
+Maintains Map-based indexes for declared fields. Three index types:
+
+```
+_fieldIndexes:    Map<field, Map<value, Set<doc>>>   -  non-unique + unique
+_uniqueIndexes:   Map<field, Map<value, doc>>        -  unique fields only
+_compoundIndexes: Map<key, { fields, map }>          -  multi-field compound indexes
+```
+
+### Compound indexes
+
+Declared as arrays in the `indexes` option: `indexes: [["field1", "field2"]]`. Values are encoded into a stable tuple key via `encodeTuple()` (type-tagged to prevent cross-type collisions). Compound index fields must be scalar values (string, number, or boolean) - non-scalar values (objects, arrays) are rejected with `ERR_SKALEX_VALIDATION_COMPOUND_INDEX`.
+
+### Dot-notation rejection
+
+Index field names cannot contain dots. The index engine uses direct property access (`doc[field]`), not `resolveDotPath()`, so dot-path fields would produce false negatives. `_validateFieldName()` throws `ERR_SKALEX_VALIDATION_INDEX_DOT_PATH` if a field name contains `.`.
+
+### Unique enforcement
+
+- **Single-document**: `_checkUnique(doc, excludeDoc)` verifies no other document holds the same value for any unique field. Throws `ERR_SKALEX_UNIQUE_VIOLATION`.
+- **Batch insert**: `assertUniqueBatch(newDocs)` validates an entire batch against the existing index and within the batch itself (intra-batch duplicate detection).
+- **Batch update**: `assertUniqueCandidates(oldDocs, newDocs)` validates staged updates before any live index mutation. Excludes the documents being updated from the conflict set.
+
+### Index rollback
+
+`update(oldDoc, newDoc)` wraps the index mutation in a try/catch. If indexing `newDoc` fails (e.g. unique violation), the old doc is restored in the index.
+
+### Lookup methods
+
+- `lookup(field, value)` - returns `object[]` (array materialised for public API).
+- `_lookupIterable(field, value)` - returns a read-only iterable wrapping the backing `Set` (avoids allocation in internal scan paths).
+- `lookupCompound(fieldValues)` - returns matching docs for a multi-field equality match.
+
+### Lifecycle
+
+- `add(doc)` - checks unique then indexes.
+- `remove(doc)` - removes from all three index types.
+- `update(oldDoc, newDoc)` - checks unique, removes old, indexes new (with rollback).
+- `buildFromData(data)` - clears and rebuilds all indexes from scratch (used after load and transaction rollback).
+
+---
+
+## 13. Query Engine
+
+File: `src/engine/query.js`
 
 ### `matchesFilter(item, filter)`
 
 Evaluation order (short-circuits on first `false`):
 
-1. **Function filter**: `if (typeof filter === "function") return filter(item)`, checked **before** the empty-filter guard because functions are `instanceof Object` with zero enumerable keys, which would otherwise match the empty-filter branch.
-2. **Empty filter**: `{}` matches everything.
-3. **AND over all keys**: every key in the filter must pass.
+1. **Function filter**: `typeof filter === "function"` - checked before the empty-filter guard because functions are objects with zero enumerable keys.
+2. **Empty filter**: `{}` or `null`/`undefined` matches everything.
+3. **Logical operators** (evaluated before field-level checks):
+   - `$or` - array of sub-filters, at least one must match.
+   - `$and` - array of sub-filters, all must match.
+   - `$not` - single sub-filter, must not match.
+4. **AND over all remaining keys**: every field key must pass.
 
 Per-key logic:
 
@@ -319,26 +499,34 @@ Per-key logic:
 |---|---|
 | `RegExp` | `filterValue.test(String(itemValue))` |
 | Object with `$`-keys | Operator dispatch: `$eq $ne $gt $gte $lt $lte $in $nin $regex $fn` |
+| Plain object (no `$`-keys) | Deep structural equality via `deepEqual()` |
 | Anything else | Strict equality `itemValue === filterValue` |
 
-Dot-notation keys (`"address.city"`) are resolved by splitting on `.` and reducing through the document.
+### `deepEqual(a, b)`
+
+Structural deep equality for plain values. Handles: primitives, `null`, `undefined`, plain objects, arrays, `Date`, `RegExp`. Circular references are out of scope (engine data is JSON-serializable).
+
+### Dot-notation
+
+Keys like `"address.city"` are resolved by `resolveDotPath()` from `src/engine/utils.js`, which splits on `.` and walks the object. Prototype-pollution keys (`__proto__`, `constructor`, `prototype`) return `undefined`.
 
 ### `presortFilter(filter, indexedFields)`
 
 Reorders filter keys for optimal short-circuit evaluation:
 
-1. **Indexed fields**: O(1) lookup, handled by `_getCandidates` before `matchesFilter` even runs
+1. **Indexed fields**: O(1) lookup, often handled by `_getCandidates` before `matchesFilter` runs
 2. **Plain equality**: fast strict comparison
 3. **Range operators**: `$gt $gte $lt $lte $ne $in $nin`
 4. **Expensive**: `$regex $fn` and `RegExp` values
+5. **Logical operators**: `$or $and $not` (preserved at the end)
 
 Returns a new object with keys in this order. Called in `find()` before the main scan loop.
 
 ---
 
-## 10. Schema Validator
+## 14. Schema Validator
 
-File: `src/validator.js`
+File: `src/engine/validator.js`
 
 ### `parseSchema(schema)`
 
@@ -362,40 +550,36 @@ Supported types: `"string"`, `"number"`, `"boolean"`, `"object"`, `"array"`, `"d
 Checks a document against the parsed `fields` Map. Returns an array of error strings (empty = valid). Checks:
 
 - **Required**: field is `undefined` or `null` when `required: true`
-- **Type**: uses `typeof`, with special handling for `Array` → `"array"` and `Date` → `"date"`
+- **Type**: uses `typeof`, with special handling for `Array` -> `"array"` and `Date` -> `"date"`
 - **Enum**: value must be in the allowed list
-- **Unknown fields** (when `strict = true`): any non-`_`-prefixed key not declared in the schema appends an `"Unknown field … (strict mode)"` error
+- **Unknown fields** (when `strict = true`): any non-`_`-prefixed key not declared in the schema is flagged
 
 ### `stripInvalidFields(doc, fields)`
 
-Used by the `"strip"` `onSchemaError` strategy. Returns a new shallow-copy object that retains:
-
-- All `_`-prefixed system fields unconditionally
-- Declared fields whose value passes type and enum checks
-
-Fields that are undeclared, type-mismatched, or enum-violating are silently dropped. Never mutates the original document.
+Used by the `"strip"` `onSchemaError` strategy. Returns a shallow copy retaining only `_`-prefixed system fields and declared fields that pass type/enum checks. Never mutates the original document.
 
 ### `inferSchema(doc)`
 
-Derives a simple `{ field: type }` schema from a sample document. Skips fields starting with `_`. Used by `db.inspect()`.
+Derives a simple `{ field: type }` schema from a sample document. Skips fields starting with `_`. Used by `db.inspect()` and `db.schema()` when no explicit schema was declared.
 
 ---
 
-## 11. TTL Engine
+## 15. TTL Engine
 
-File: `src/ttl.js`
+File: `src/engine/ttl.js`
 
-### TTL formats accepted by `parseTtl(ttl)`
+### TTL formats
 
 | Input | Meaning |
 |---|---|
 | `300` (number) | 300 seconds |
 | `"300ms"` | 300 milliseconds |
+| `"30s"` | 30 seconds |
 | `"30m"` | 30 minutes |
 | `"24h"` | 24 hours |
 | `"7d"` | 7 days |
 
-All values are converted to milliseconds internally.
+All values are converted to milliseconds internally. Non-positive values throw `ERR_SKALEX_VALIDATION_TTL`.
 
 ### `computeExpiry(ttl)`
 
@@ -407,14 +591,58 @@ Iterates the data array backwards (safe splice), removes any document where `_ex
 
 Called in two places:
 
-1. **On `connect()`**  -  one-shot sweep of every loaded collection to evict documents that expired while the process was not running.
-2. **Periodic sweep via `ttlSweepInterval`**  -  when `ttlSweepInterval` (ms) is set in the constructor, `connect()` starts a `setInterval` that calls `_sweepTtl()` on every collection at the given cadence. The timer is cleared in `disconnect()`. This keeps long-running processes free of stale documents without requiring a restart.
+1. **On `connect()`** - one-shot sweep of every loaded collection.
+2. **Periodic sweep via `ttlSweepInterval`** - when set in the constructor, `connect()` starts a `setInterval` that calls `_sweepTtl()` on every collection. The timer handle calls `.unref()` so it does not keep the Node.js process alive. Cleared in `disconnect()`.
 
 ---
 
-## 12. MigrationEngine
+## 16. TransactionManager
 
-File: `src/migrations.js`
+File: `src/engine/transaction.js`
+
+### Overview
+
+`db.transaction(fn, { timeout })` provides lazy copy-on-first-write rollback with deferred side effects.
+
+### Lifecycle
+
+1. **Lock**: transactions are serialised via `_txLock` (promise chain). No concurrent transactions.
+2. **Context creation**: allocates a `TransactionContext` with a unique `id`, `snapshots` Map, `touchedCollections` Set, `deferredEffects` array, and `aborted` flag. Records `preExisting` collection names.
+3. **Proxy**: `fn` receives a `Proxy` around the `db` instance, not the raw `db`. The proxy:
+   - Stamps `_activeTxId` on every Collection obtained via `useCollection()`.
+   - Blocks direct `db.collections` access (throws `ERR_SKALEX_TX_DIRECT_ACCESS`).
+   - Detects stale proxy usage after the transaction ends (throws `ERR_SKALEX_TX_STALE_PROXY`).
+4. **Lazy snapshots**: only collections that receive a write are snapshotted, on first mutation (via `_txSnapshotIfNeeded()` in the pipeline). Uses `structuredClone` for deep copy of the data array. Snapshot includes the `_dirty` flag state.
+5. **Timeout**: if `timeout > 0`, a `setTimeout` races against `fn`. On timeout, `ctx.aborted = true` and the transaction is rolled back.
+6. **Commit**: persists only touched collections via `PersistenceManager.saveAtomic()`. After successful persistence, flushes all deferred side effects (events, after-hooks, changelog entries).
+7. **Rollback**: on error, restores snapshotted collections via `_applySnapshot()` (which rebuilds `_id` index and field indexes from the cloned data). Collections created inside the transaction are deleted. The `_dirty` flag is restored to its pre-transaction state.
+
+### Deferred side effects
+
+During `fn()`, calls to `_emitEvent()`, `_runAfterHook()`, and `_logChange()` check `txManager.defer()`. If a transaction is active, the effect is pushed to `ctx.deferredEffects` instead of executing immediately. Effects are flushed in order after commit, or discarded on rollback.
+
+### Stale continuation detection
+
+When a transaction is aborted (timeout or error), its `id` is added to `_abortedIds`. Any subsequent mutation from a Collection stamped with that `id` (via `_activeTxId` or `_createdInTxId`) throws `ERR_SKALEX_TX_ABORTED`.
+
+---
+
+## 17. AI Adapter Factory
+
+File: `src/engine/adapters.js`
+
+Pure config-to-instance mappers extracted from the Skalex constructor.
+
+- **`createEmbeddingAdapter(ai)`**: switches on `ai.provider` ("openai" | "ollama") and returns the appropriate `EmbeddingAdapter` subclass.
+- **`createLLMAdapter(ai)`**: switches on `ai.provider` ("openai" | "anthropic" | "ollama") and returns the appropriate `LLMAdapter` subclass.
+
+Both throw `AdapterError` for unknown providers. The Skalex constructor also accepts pre-built adapter instances via `embeddingAdapter` and `llmAdapter` options, bypassing the factory.
+
+---
+
+## 18. MigrationEngine
+
+File: `src/engine/migrations.js`
 
 Migrations are registered via `db.addMigration({ version, description?, up })` and stored sorted by version. On `connect()`:
 
@@ -432,41 +660,33 @@ Duplicate version registration throws immediately. Version numbers must be posit
 
 ---
 
-## 13. Transaction Mechanism
+## 19. Auto-Connect
 
-`db.transaction(fn)` provides snapshot-based rollback:
-
-1. **Snapshot**: deep-copy `data[]` and shallow-copy `index` Map for every collection currently in memory.
-2. **Execute**: call `fn(db)`. The callback receives the same `db` instance; all operations mutate in place.
-3. **Commit**: if `fn` resolves, call `saveData()`.
-4. **Rollback**: if `fn` throws, restore `data` and `index` from snapshot and rebuild `fieldIndex` via `buildFromData()`. Re-throw the error.
-
-The snapshot covers all collections present at call time. Collections created inside `fn` are also removed on rollback  -  they are detected by diffing `this.collections` against the snapshot keys after the error is caught.
-
----
-
-## 14. Auto-Connect
-
-`_ensureConnected()` is called at the top of every public operation. On the first call:
+`_ensureConnected()` is called at the top of every public operation (via the MutationPipeline or directly).
 
 ```js
-this._autoConnectPromise = this.connect();
-return this._autoConnectPromise;
+async connect() {
+  if (this._connectPromise) return this._connectPromise;
+  this._connectPromise = this._doConnect();
+  return this._connectPromise;
+}
 ```
 
-Subsequent concurrent calls before `connect()` resolves await the same promise; no double-connect race. After `connect()` resolves, `isConnected = true` and the guard short-circuits immediately.
+The `_connectPromise` field makes `connect()` idempotent. Multiple concurrent callers before `connect()` resolves all await the same promise - no double-connect race. After `connect()` resolves, `isConnected = true` and `_ensureConnected()` short-circuits immediately.
 
 ---
 
-## 15. Namespace
+## 20. Namespace
 
-`db.namespace(id)` returns a new `Skalex` instance with `path` set to `{parent.dataDirectory}/{id}`. Config inherited from the parent: `format`, `debug`, `ai`, `encrypt`, `slowQueryLog`, `plugins`, `autoSave`, and `ttlSweepInterval`.
+`db.namespace(id)` returns a new `Skalex` instance with `path` set to `{parent.dataDirectory}/{safeId}`. The `id` is sanitised to allow only alphanumeric, dash, and underscore characters.
 
-The namespaced instance is fully independent; separate collections map, separate adapter instance pointing at the subdirectory. Cross-namespace access requires explicit construction of a second instance.
+Config inherited from the parent: `format`, `debug`, `ai`, `encrypt`, `slowQueryLog`, `queryCache`, `plugins`, `memory`, `logger`, `autoSave`, `ttlSweepInterval`, `regexMaxLength`, `idGenerator`, `serializer`, `deserializer`, and pre-built adapter instances (when no `ai` config is present).
+
+The namespaced instance is fully independent: separate collections map, separate adapter instance pointing at the subdirectory. Requires the default `FsAdapter` - throws `ERR_SKALEX_ADAPTER_NAMESPACE_REQUIRES_FS` if a custom adapter was configured.
 
 ---
 
-## 16. Build Pipeline
+## 21. Build Pipeline
 
 Tool: **Rollup** with `@rollup/plugin-node-resolve`, `@rollup/plugin-commonjs`, `@rollup/plugin-terser`.
 
@@ -482,71 +702,58 @@ Five outputs:
 | `dist/skalex.min.cjs` | CJS | Yes |
 | `dist/skalex.browser.js` | ESM (browser) | No |
 
-All outputs include source maps. Node built-ins (`node:fs`, `node:path`, `node:zlib`, `node:crypto`, `node:os`) are marked `external`; they are never bundled. The browser build stubs them with empty objects via the `nodeBrowserStubs()` Rollup plugin.
+All outputs include source maps. Node built-ins (`node:fs`, `node:path`, `node:zlib`, `node:crypto`, `node:os`) are marked `external`. The browser build stubs them with empty objects via the `nodeBrowserStubs()` Rollup plugin.
 
-The `./min` subpath export in `package.json` points to the minified pair:
-
-```json
-"./min": {
-  "import": "./dist/skalex.esm.min.js",
-  "require": "./dist/skalex.min.cjs",
-  "types": "./dist/skalex.d.ts"
-}
-```
-
-TypeScript declarations are hand-written in `src/index.d.ts` and copied to `dist/skalex.d.ts` as part of the `build` script. Auto-generation was considered and rejected; the JS source cannot produce generics-quality types for `Collection<T>`, `Filter<T>`, or `DocOf<T>` without significant JSDoc overhead that would add noise without the type-safety payoff of a TypeScript source.
+TypeScript declarations are hand-written in `src/index.d.ts` and copied to `dist/skalex.d.ts` as part of the `build` script.
 
 ---
 
-## 17. Test Strategy
+## 22. Test Strategy
 
 Runner: **Vitest** (kept over Bun test because `LocalStorageAdapter` tests require a jsdom/browser environment, which Bun test does not support as of v1.x).
 
+**715 tests** across 24 test files.
+
 ### MemoryAdapter (`tests/helpers/MemoryAdapter.js`)
 
-In-memory `StorageAdapter` for CI; no disk I/O, no temp files. Implements:
-
-- `read / write / delete / list`: backed by `Map<name, string>`
-- `join / ensureDir / writeRaw / readRaw`: stubs for `Collection.export` and `Skalex.import`
-- `getRaw(filePath)`: test assertion helper to inspect written export content
-
-All integration tests inject a `MemoryAdapter` instance. No test touches the real file system.
+In-memory `StorageAdapter` for CI; no disk I/O, no temp files. Implements `read/write/delete/list` backed by `Map<name, string>`, plus stubs for `Collection.export` and `Skalex.import`. All integration tests inject a `MemoryAdapter` instance. No test touches the real file system.
 
 ### Test files
 
 | File | Coverage |
 |---|---|
-| `tests/unit/query.test.js` | `matchesFilter`, `presortFilter`: all operators, edge cases |
-| `tests/unit/indexes.test.js` | `IndexEngine`: add/remove/update/lookup/unique constraint |
+| `tests/unit/query.test.js` | `matchesFilter`, `presortFilter`: all operators, `$or`/`$and`/`$not`, deep equality, edge cases |
+| `tests/unit/indexes.test.js` | `IndexEngine`: add/remove/update/lookup/unique constraint, compound indexes, batch validation, dot-notation rejection |
 | `tests/unit/validator.test.js` | `parseSchema`, `validateDoc` (incl. strict mode), `inferSchema`, `stripInvalidFields` |
 | `tests/unit/ttl.test.js` | `parseTtl`, `computeExpiry`, `sweep` |
-| `tests/unit/migrations.test.js` | `MigrationEngine`: registration, ordering, run, status |
+| `tests/unit/utils.test.js` | `generateUniqueId`, `resolveDotPath`, `logger` |
+| `tests/unit/vector.test.js` | `cosineSimilarity`, `stripVector` |
+| `tests/unit/aggregation.test.js` | `count`, `sum`, `avg`, `groupBy` |
+| `tests/unit/changelog.test.js` | `ChangeLog`: append, query, restore |
 | `tests/unit/events.test.js` | `EventBus`: on/emit/off, wildcard `"*"` channel, listener isolation, error swallowing |
+| `tests/unit/memory.test.js` | `Memory`: episodic store operations |
+| `tests/unit/ask.test.js` | `QueryCache`, `processLLMFilter`, `validateLLMFilter` |
+| `tests/unit/mcp.test.js` | `SkalexMCPServer`: tool definitions, protocol handling |
+| `tests/unit/encryption.test.js` | `EncryptedAdapter`: encrypt/decrypt round-trip |
+| `tests/unit/plugins.test.js` | `PluginEngine`: hook registration and execution |
+| `tests/unit/session-stats.test.js` | `SessionStats`: read/write recording |
+| `tests/unit/migrations.test.js` | `MigrationEngine`: registration, ordering, run, status |
 | `tests/integration/skalex.test.js` | Full CRUD, schema, TTL, migrations, transactions, upsert, seed, dump, inspect, import/export, namespace |
-| `tests/integration/collection-features.test.js` | `autoSave`, `upsertMany`, `defaultTtl`, `defaultEmbed`, soft deletes, capped collections, document versioning, `renameCollection`, `onSchemaError` strategies, strict mode, `ttlSweepInterval`, `db.watch()`, write queue |
+| `tests/integration/skalex-core.test.js` | Core Skalex class integration |
+| `tests/integration/collection-features.test.js` | autoSave, upsertMany, defaultTtl, defaultEmbed, soft deletes, capped collections, versioning, renameCollection, onSchemaError, strict mode, ttlSweepInterval, db.watch(), write queue |
+| `tests/integration/engine-overhaul.test.js` | Engine overhaul: errors, persistence, transactions, pipeline, registry, query operators |
+| `tests/integration/correctness-hardening.test.js` | Correctness hardening: deep equality, compound indexes, batch uniqueness, non-scalar rejection |
+| `tests/integration/data-integrity.test.js` | Data integrity: crash recovery, dirty tracking, flush sentinel |
+| `tests/integration/persistence-coherence.test.js` | Persistence coherence: write coalescing, save mutex, concurrent saves |
+| `tests/smoke/node.test.cjs` | CJS dist smoke test (Node.js >=18) |
+| `tests/smoke/bun.test.js` | ESM dist smoke test (Bun) |
+| `tests/smoke/bun-sqlite.test.js` | BunSQLiteAdapter smoke test |
+| `tests/smoke/deno.test.js` | ESM dist smoke test (Deno 2.x) |
+| `tests/smoke/browser.test.js` | Headless Chromium runner (Playwright) |
 
 ---
 
-## 18. Phase 0 Bug Fixes
-
-The following critical bugs from v3.2.5 were fixed before any v4 feature work:
-
-| # | Bug | Fix |
-|---|---|---|
-| 1 | `findOne()` returned raw `item` instead of projected `newItem`; populate and select silently discarded | Return `newItem` |
-| 2 | `matchesFilter()` short-circuited on first key; multi-condition AND filters broken | Loop all keys, return `false` on first mismatch, `true` only after all pass |
-| 3 | `applyUpdate()` modified a local copy of `item[field]` for `$inc`/`$push` but never wrote back | Operate directly on `item[field]` |
-| 4 | `isSaving` was a single database-level flag; concurrent saves to different collections blocked each other | Per-collection `isSaving` flag on the store object |
-| 5 | Inconsistent return shapes; `insertOne`/`updateOne`/`deleteOne` returned raw doc, others used wrappers | Standardised: write ops return doc or doc[] directly; `find` retains `{ docs }` wrapper for pagination |
-| 6 | `export()` imported Node's native `fs` directly; broke browser/edge adapter compatibility | Routed through `this.database.fs.writeRaw()` |
-| 7 | `Object.assign(item, item)` dead no-op line in `applyUpdate()` | Removed |
-| 8 | `index.d.ts` referenced renamed/removed APIs, missing options, wrong constructor signature | Full rewrite from scratch |
-| 9 | `matchesFilter` function-filter check fired after empty-filter guard; functions (zero enumerable keys) matched the empty-filter branch and always returned `true` | Moved function check before empty-filter check |
-| 10 | Sort comparator returned wrong direction; `if (a < b) return sortValue` sorted descending when `sortValue = 1` | Changed to `if (a < b) return -dir; if (a > b) return dir` |
-
----
-
-## 19. Embedding Adapter Interface
+## 23. Embedding Adapter Interface
 
 File: `src/connectors/embedding/base.js`
 
@@ -554,7 +761,7 @@ Single-method interface:
 
 ```js
 class EmbeddingAdapter {
-  async embed(text) → number[]
+  async embed(text) // -> number[]
 }
 ```
 
@@ -562,90 +769,76 @@ class EmbeddingAdapter {
 
 ### Configuration
 
-The adapter is wired via the `ai` constructor option:
+The adapter is wired via the `ai` constructor option or via a pre-built `embeddingAdapter` instance:
 
 ```js
+// Via ai config (factory creates the adapter)
 new Skalex({ ai: { provider: "openai", apiKey, model } })
+
+// Via pre-built instance
+new Skalex({ embeddingAdapter: new MyAdapter() })
 ```
 
-`_createEmbeddingAdapter({ provider, apiKey, model, host })` in `index.js` switches on `provider` and instantiates the correct subclass. Both built-in adapters use native `fetch` (Node ≥18, Bun, Deno, browser; no extra dependency).
-
-`this._aiConfig` stores the raw config object so `namespace()` can pass it to child instances, giving all namespaces the same embedding adapter without re-instantiation.
-
-### Writing a custom adapter
-
-```js
-import { EmbeddingAdapter } from "skalex";
-import Skalex from "skalex";
-
-class MyAdapter extends EmbeddingAdapter {
-  async embed(text) {
-    // call any API or run a local model
-    return Float32Array.from(rawVector); // or a plain number[]
-  }
-}
-
-const db = new Skalex({ path: "./data", embeddingAdapter: new MyAdapter() });
-```
-
-Pass the instance via the `embeddingAdapter` constructor option. Do not assign directly to `db._embeddingAdapter` after construction; the constructor wiring is the supported path.
+Both built-in adapters use native `fetch` (Node >=18, Bun, Deno, browser; no extra dependency).
 
 ---
 
-## 20. Vector Storage & Stripping
+## 24. Vector Storage & Stripping
 
 Vectors are stored **inline** on documents as `_vector: number[]`. This means:
 
 - No separate vector store or side-collection; one document, one file.
-- Vectors serialise to JSON as regular arrays (JSON has no `Float32Array` type).
+- Vectors serialise to JSON as regular arrays.
 - On load, vectors remain as plain `number[]`; no reconstruction step needed.
 - `_vector` is treated as a system field, parallel to `_id`, `createdAt`, `_expiresAt`.
 
-### `stripVector(doc)`, `src/vector.js`
+### `stripVector(doc)` - `src/engine/vector.js`
+
+Returns a shallow copy of the document with `_vector` removed. Short-circuits when no `_vector` key is present on the document - returns `{ ...doc }` without destructuring overhead.
 
 Every code path that returns a document to the caller passes through `stripVector`:
 
 | Method | Where stripped |
 |---|---|
-| `insertOne` | Return value: `return stripVector(newItem)` |
-| `insertMany` | Return value: `return newItems.map(stripVector)` |
-| `findOne` | After `Object.assign(newItem, item)`: `delete newItem._vector` |
-| `find` | Same as `findOne` inside the result loop |
-| `search` | `top.map(r => stripVector(r.doc))` |
-| `similar` | `top.map(r => stripVector(r.doc))` |
+| `insertOne` | Return value |
+| `insertMany` | Return value (mapped) |
+| `findOne` | After projection |
+| `find` | Inside the result loop |
+| `search` | Result mapping |
+| `similar` | Result mapping |
 
-The raw document inside `_data` always retains `_vector` for future similarity computations. `stripVector` creates a shallow copy; it does not mutate the stored document.
+The raw document inside `_data` always retains `_vector` for future similarity computations. `stripVector` never mutates the stored document.
 
 ---
 
-## 21. Vector Search Engine
+## 25. Vector Search Engine
 
-File: `src/vector.js`, `src/collection.js`
+Files: `src/engine/vector.js`, `src/engine/collection.js`
 
 ### `cosineSimilarity(a, b)`
 
 ```
-dot(a, b) / (|a| × |b|)
+dot(a, b) / (|a| x |b|)
 ```
 
-Computed in a single loop, O(d) where d = vector dimensions. Returns `0` for zero-magnitude vectors to avoid `NaN`. Throws on dimension mismatch.
+Computed in a single loop, O(d) where d = vector dimensions. Returns `0` for zero-magnitude vectors to avoid `NaN`. Throws `ERR_SKALEX_QUERY_VECTOR_MISMATCH` on dimension mismatch.
 
 ### `collection.search(query, { filter, limit, minScore })`
 
-1. `await this.database.embed(query)`: produce a query vector via the configured adapter.
-2. Get candidates: `filter` present → `_findAllRaw(filter)` (structured pre-filter, leverages `IndexEngine`); no filter → `this._data`.
+1. `await this.database.embed(query)` - produce a query vector via the configured adapter.
+2. Get candidates: `filter` present -> `_findAllRaw(filter)` (structured pre-filter, leverages `IndexEngine`); no filter -> `this._data`.
 3. For each candidate with a `_vector`, compute `cosineSimilarity(queryVector, doc._vector)`.
 4. Drop candidates below `minScore`.
 5. Sort descending by score, slice to `limit`.
 6. Return `{ docs: top.map(stripVector), scores: top.map(score) }`.
 
-This is **hybrid search** when `filter` is provided; the structured filter narrows candidates before the cosine ranking step, which is both faster and more precise than post-filtering.
+This is **hybrid search** when `filter` is provided; the structured filter narrows candidates before the cosine ranking step.
 
 ### `collection.similar(id, { limit, minScore })`
 
 1. Resolve source document via `this._index.get(id)`.
 2. Early-return `{ docs: [], scores: [] }` if not found or has no `_vector`.
-3. Iterate `this._data`, skipping the source document itself and any doc without `_vector`.
+3. Iterate `this._data`, skipping the source document and any doc without `_vector`.
 4. Compute cosine similarity, apply `minScore` threshold.
 5. Sort, slice, strip, return.
 
@@ -653,8 +846,6 @@ This is **hybrid search** when `filter` is provided; the structured filter narro
 
 | Operation | Time | Notes |
 |---|---|---|
-| `search` (no filter) | O(n × d) | n = collection size, d = dimensions |
-| `search` (with filter) | O(k × d) | k = filtered candidate count |
-| `similar` | O(n × d) | Always full scan minus one doc |
-
-For collections up to ~50K documents at 1536 dimensions, search completes in well under 100ms on modern hardware. WASM-accelerated SIMD similarity is planned for Phase 4+ as an opt-in.
+| `search` (no filter) | O(n x d) | n = collection size, d = dimensions |
+| `search` (with filter) | O(k x d) | k = filtered candidate count |
+| `similar` | O(n x d) | Full scan minus one doc |
