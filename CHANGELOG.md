@@ -139,12 +139,20 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 - **Fix non-transactional writes captured by active transaction rollback** - Transaction participation is now explicit via `_activeTxId` stamped by the proxy on Collection instances obtained through `tx.useCollection()`. Non-transactional writes to untouched collections during an active transaction are no longer snapshotted or rolled back.
 - **Fix stale transaction proxy usable after commit/timeout** - The transaction proxy now checks ctx liveness on every property access. Using a captured proxy reference after the transaction has ended throws `TransactionError` with code `ERR_SKALEX_TX_STALE_PROXY`.
 - **Fix `{ save: true }` resolving before persistence completes** - `_saveOne()` now accumulates waiting callers when a save is in-flight and resolves all of them only after the coalesced re-save actually completes. Previously, the second caller's `await` resolved immediately when `_pendingSave` was set, before data reached storage.
+
+#### Persistence Coherence Fixes (P1)
+
+- **Fix `saveAtomic()` memory/disk divergence** - `_meta` (with flush sentinel) is now included in the single `writeAll()` batch instead of being written separately before and after. SQL adapters get native atomicity; FsAdapter gets a narrowed failure window. If the batch fails, the sentinel survives on disk for crash detection on next load.
+- **Document `save()`/`saveDirty()` best-effort semantics** - Multi-collection saves run each collection independently via `Promise.all`. If one write fails, others may have already committed. Atomic multi-collection writes are only guaranteed through `transaction()` which uses `saveAtomic()`.
+- **Add database-level save mutex (`_saveLock`)** - All save paths (`save`, `saveDirty`, `saveAtomic`) now serialize through a promise-chain lock, preventing concurrent save and transaction commit from interleaving. Mirrors the existing `_txLock` pattern.
+- **Make `FieldIndex.update()` atomic** - If re-indexing a document fails (e.g. unique constraint on a different field), the old document is restored in the index. Previously, `remove(old)` then `_indexDoc(new)` could leave the old document invisible to index-based queries if `_indexDoc` threw.
 - **Fix `ChangeLog.restore()` not persisting restored state** - `restore()` now calls `saveData()` after both single-document and full-collection restore paths. Previously, restored state was only in-memory and would be lost on disconnect unless the caller explicitly saved.
 
 ### Tests
 
 - **82 new tests** across 7 files, bringing the total from 571 to 653 (all passing)
 - **New file: `data-integrity.test.js`** (16 tests) - regression tests for all P0 data corruption fixes: stale Collection instances, upsert operator leak, insertMany ghost index entries, transaction isolation, stale proxy detection, save durability, and changelog restore persistence
+- **New file: `persistence-coherence.test.js`** (7 tests) - regression tests for P1 persistence fixes: index update atomicity, saveAtomic batch coherence, save best-effort semantics, and save mutex serialization
 - **New file: `engine-overhaul.test.js`** (42 tests)  -  comprehensive regression suite: transaction timeout/abort/rollback, dirty tracking, flush sentinel detection, compound index candidate selection, logical operator edge cases, typed error structure, fault injection (adapter write failures, partial batch failures), stale continuation detection, collection instance poisoning recovery, `$inc`/`$push` operator correctness, update/delete rollback, and capped collection enforcement
 - **Expanded: `collection-features.test.js`** (+11 tests)  -  schema enforcement on updates: validation rejection, strict mode, warn mode, `updateMany` batch validation
 - **Expanded: `skalex.test.js`** (+11 tests)  -  `_id` field integrity/immutability, Date serialization round-trip

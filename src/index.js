@@ -304,9 +304,11 @@ class Skalex {
 
   /**
    * Persist one or all collections via the storage adapter.
-   * Implements a write queue: concurrent saves for the same collection are
-   * coalesced  -  the second caller sets a flag and triggers a re-run after
-   * the in-flight write completes.
+   *
+   * Best-effort: each collection is written independently. If one fails,
+   * others may already be committed. For atomic multi-collection writes,
+   * use transaction() which calls saveAtomic() on commit.
+   *
    * @param {string} [collectionName] - If omitted, saves all collections.
    * @returns {Promise<void>}
    */

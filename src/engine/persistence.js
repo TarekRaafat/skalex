@@ -24,6 +24,24 @@ class PersistenceManager {
     this._deserializer = deserializer;
     this._logger = logger;
     this._debug = debug;
+
+    /**
+     * Promise-chain lock to serialize concurrent saveAtomic() calls.
+     * Regular saves (save/saveDirty) do not acquire this lock - they
+     * rely on per-collection coalescing in _saveOne() instead.
+     */
+    this._saveLock = Promise.resolve();
+  }
+
+  /**
+   * Acquire the save lock, execute fn, then release.
+   * @param {Function} fn - async () => void
+   * @returns {Promise<void>}
+   */
+  _withSaveLock(fn) {
+    const next = this._saveLock.then(fn);
+    this._saveLock = next.catch(() => {});
+    return next;
   }
 
   // ─── Load ──────────────────────────────────────────────────────────────
@@ -113,7 +131,15 @@ class PersistenceManager {
 
   /**
    * Persist one or all collections via the storage adapter.
-   * Write queue: concurrent saves for the same collection are coalesced.
+   *
+   * Best-effort semantics: each collection is written independently via
+   * Promise.all. If one collection write fails, others may have already
+   * committed. For atomic multi-collection writes, use saveAtomic()
+   * (called automatically by transaction commit).
+   *
+   * Write queue: concurrent saves for the same collection are coalesced -
+   * the second caller waits until the in-flight write completes and a
+   * re-save runs with the latest data.
    *
    * @param {object} collections - Live collections map.
    * @param {string} [collectionName] - If omitted, saves all collections.
@@ -129,6 +155,8 @@ class PersistenceManager {
 
   /**
    * Persist only collections marked dirty. Resets dirty flag after save.
+   * Same best-effort semantics as save() - each dirty collection is
+   * written independently.
    * @param {object} collections - Live collections map.
    * @returns {Promise<void>}
    */
@@ -139,43 +167,66 @@ class PersistenceManager {
   }
 
   /**
-   * Atomic batch save of specific collections via writeAll().
-   * Used by transactions to commit all touched collections atomically.
+   * Batch save of specific collections via writeAll().
+   * Used by transactions to commit all touched collections together.
+   *
+   * Strategy: include _meta (with flush sentinel) in the single writeAll()
+   * batch so all data and metadata go through one adapter-level operation.
+   * SQL adapters (BunSQLite, D1, LibSQL) get native atomicity; FsAdapter
+   * gets a narrowed failure window (sequential renames). If the batch
+   * fails, the sentinel survives on disk for crash detection on next load.
+   *
+   * After a successful batch, the sentinel is cleared and _meta is written
+   * once more. If that final write fails, the sentinel remains - which is
+   * the correct "incomplete" signal.
    *
    * @param {object} collections - Live collections map.
    * @param {string[]} names - Collection names to save.
    * @returns {Promise<void>}
    */
-  async saveAtomic(collections, names) {
-    if (names.length === 0) return;
+  saveAtomic(collections, names) {
+    return this._withSaveLock(async () => {
+      if (names.length === 0) return;
 
-    // Set flush sentinel and persist _meta BEFORE the batch so a crash
-    // mid-batch leaves a detectable sentinel on disk.
-    this._writeFlushSentinel(collections, names);
-    await this._adapter.write("_meta", this._serializeCollection(collections["_meta"]));
+      // Set flush sentinel in memory before serializing
+      this._writeFlushSentinel(collections, names);
 
-    const entries = names
-      .filter(n => n !== "_meta") // _meta already written above
-      .map(name => ({ name, data: this._serializeCollection(collections[name]) }));
+      // Build a single batch including _meta alongside the touched collections
+      const allNames = new Set(names);
+      allNames.add("_meta");
 
-    try {
-      if (entries.length > 0) await this._adapter.writeAll(entries);
+      const entries = [...allNames]
+        .filter(n => collections[n])
+        .map(name => ({ name, data: this._serializeCollection(collections[name]) }));
 
-      // Clear dirty flags and mark flush complete
+      try {
+        await this._adapter.writeAll(entries);
+      } catch (error) {
+        throw new PersistenceError(
+          "ERR_SKALEX_PERSISTENCE_FLUSH_FAILED",
+          `Batch save failed during writeAll: ${error.message}`,
+          { collections: names }
+        );
+      }
+
+      // Batch succeeded - clear dirty flags
       for (const name of names) {
         if (collections[name]) collections[name]._dirty = false;
       }
-      this._clearFlushSentinel(collections);
 
-      // Persist _meta again with completedAt so future loads see a clean state
-      await this._adapter.write("_meta", this._serializeCollection(collections["_meta"]));
-    } catch (error) {
-      throw new PersistenceError(
-        "ERR_SKALEX_PERSISTENCE_FLUSH_FAILED",
-        `Atomic batch save failed: ${error.message}`,
-        { collections: names }
-      );
-    }
+      // Clear sentinel and persist _meta one final time.
+      // If this fails, the sentinel remains on disk - correct "incomplete" signal.
+      try {
+        this._clearFlushSentinel(collections);
+        await this._adapter.write("_meta", this._serializeCollection(collections["_meta"]));
+      } catch (error) {
+        this._logger(
+          `WARNING: Batch data committed but sentinel clear failed: ${error.message}. ` +
+          `Next load will report an incomplete flush (false positive).`,
+          "error"
+        );
+      }
+    });
   }
 
   /**
@@ -211,12 +262,20 @@ class PersistenceManager {
 
   // ─── Private ───────────────────────────────────────────────────────────
 
+  /**
+   * Persist a single collection. Implements per-collection write coalescing:
+   * if a write is in-flight, the caller is queued and resolved only after
+   * the coalesced re-save completes with the latest data.
+   *
+   * @param {object} collections
+   * @param {string} name
+   * @returns {Promise<void>}
+   */
   async _saveOne(collections, name) {
     const col = collections[name];
     if (!col) return;
 
-    // Write coalescing: if a save is in-flight, queue this caller and
-    // resolve only when the coalesced re-save actually completes.
+    // Write coalescing: queue this caller behind the in-flight write.
     if (col.isSaving) {
       col._pendingSave = true;
       return new Promise((resolve, reject) => {
@@ -226,39 +285,56 @@ class PersistenceManager {
 
     col.isSaving = true;
     col._pendingSave = false;
+
+    try {
+      await this._writeCollection(name, col);
+      // Re-save loop: drain any callers that arrived during the write.
+      while (col._pendingSave) {
+        col._pendingSave = false;
+        await this._writeCollection(name, col);
+      }
+      this._resolveSaveWaiters(col);
+    } catch (error) {
+      this._rejectSaveWaiters(col, error);
+      throw error;
+    } finally {
+      col.isSaving = false;
+    }
+  }
+
+  /**
+   * Execute the actual adapter write for a collection.
+   * @param {string} name
+   * @param {object} col
+   * @returns {Promise<void>}
+   */
+  async _writeCollection(name, col) {
     try {
       await this._adapter.write(name, this._serializeCollection(col));
       col._dirty = false;
     } catch (error) {
       this._logger(`Error saving "${name}": ${error.message}`, "error");
-      this._flushSaveWaiters(col, error);
       throw error;
-    } finally {
-      col.isSaving = false;
     }
-
-    if (col._pendingSave) {
-      col._pendingSave = false;
-      try {
-        await this._saveOne(collections, name);
-      } catch (error) {
-        this._flushSaveWaiters(col, error);
-        throw error;
-      }
-    }
-    this._flushSaveWaiters(col, null);
   }
 
   /**
-   * Resolve or reject all queued save waiters for a collection.
+   * Resolve all queued save waiters for a collection.
    * @param {object} col
-   * @param {Error|null} error - null on success, Error on failure.
    */
-  _flushSaveWaiters(col, error) {
+  _resolveSaveWaiters(col) {
     const waiters = col._saveWaiters?.splice(0) ?? [];
-    for (const w of waiters) {
-      error ? w.reject(error) : w.resolve();
-    }
+    for (const w of waiters) w.resolve();
+  }
+
+  /**
+   * Reject all queued save waiters for a collection.
+   * @param {object} col
+   * @param {Error} error
+   */
+  _rejectSaveWaiters(col, error) {
+    const waiters = col._saveWaiters?.splice(0) ?? [];
+    for (const w of waiters) w.reject(error);
   }
 
   /**

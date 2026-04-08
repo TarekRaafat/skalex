@@ -152,7 +152,14 @@ class IndexEngine {
   update(oldDoc, newDoc) {
     this._checkUnique(newDoc, oldDoc);
     this.remove(oldDoc);
-    this._indexDoc(newDoc);
+    try {
+      this._indexDoc(newDoc);
+    } catch (indexError) {
+      // Restore old doc in the index. If restore itself fails, throw the
+      // original error - the restore failure is a secondary symptom.
+      try { this._indexDoc(oldDoc); } catch { /* preserve original error */ }
+      throw indexError;
+    }
   }
 
   /**
