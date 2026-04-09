@@ -33,9 +33,9 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `[alpha.3]` Fix `Memory.tokenCount()`/`context()` bypassing `ensureConnected`
 - [ ] `[alpha.3]` Fix `Memory` reading internal `_col._data` directly (use public Collection API)
 - [ ] `[alpha.4]` Extract shared `fetchWithRetry()` utility from all AI adapters (6 duplicated copies)
-- [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion  -  15–30% better recall than cosine similarity alone
+- [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion  -  15-30% better recall than cosine similarity alone
 - [ ] Multimodal embeddings: unified text + image vector space via compatible multimodal models (e.g. CLIP)  -  search images with natural language
-- [ ] Vector quantization: scalar and product quantization for 4–8× embedding memory reduction on large datasets
+- [ ] Vector quantization: scalar and product quantization for 4-8× embedding memory reduction on large datasets
 - [ ] Graph-enhanced vector retrieval: traverse relationships during semantic search for contextually richer results
 - [ ] Streaming LLM responses: `db.ask()` and `memory.compress()` as async iterables for real-time output
 - [ ] `db.classify(doc, labels)`: zero-shot document classification via LLM
@@ -61,7 +61,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `[alpha.3]` Clarify runtime verification and per-adapter test coverage
 - [ ] `[alpha.3]` Move orphan temp-file cleanup from PersistenceManager to FsAdapter
 - [ ] `[alpha.4]` Convert `FsAdapter` from sync to async zlib (`deflateSync` blocks event loop)
-- [ ] `[alpha.4]` Add `FileSystemCapable` capability interface for adapter feature detection
+- [ ] `[alpha.4]` Formalize tiered adapter capability interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`)
 - [ ] `SQLiteWASMAdapter`: browser-native SQLite via the official SQLite WASM build  -  persistent, faster than `localStorage`, no server needed
 - [ ] IndexedDB adapter (browser persistent storage beyond `localStorage`)
 - [ ] `PostgresAdapter`: PostgreSQL via `postgres` / `pg` Node.js driver
@@ -81,6 +81,9 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `[alpha.3]` Unify `_meta` store creation across persistence and registry
 - [ ] `[alpha.3]` Complete store shape deduplication in `loadAll()`
 - [ ] `[alpha.3]` Consolidate dual `_getMeta`/`_saveMeta` into PersistenceManager
+- [ ] `[alpha.2.1]` Fix connect-time migration deadlock (migrations calling collection write APIs self-deadlock on `_connectPromise`)
+- [ ] `[alpha.2.1]` Fix failed `connect()` not recoverable (`_connectPromise` never cleared on failure)
+- [ ] `[alpha.4]` Tighten transaction isolation: block non-tx writes to tx-touched collections (rollback can clobber outside writes)
 - [ ] `[alpha.4]` Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
 - [ ] `[alpha.4]` Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
 - [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
@@ -105,9 +108,12 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `[alpha.3]` Remove `Collection.database` property (use `_ctx` only)
 - [ ] `[alpha.3]` Define constants for operation names and hook names (replace magic strings)
 - [ ] `[alpha.3]` Simplify `namespace()` config forwarding (store `_config`, spread on create)
+- [ ] `[alpha.4]` Align `SkalexConfig` type with runtime: add `lenientLoad`, widen logger level to include `'warn'`
 - [ ] `[alpha.4]` Decompose `Skalex` class: extract `SkalexAI`, `TtlScheduler`, consolidate meta facade
 - [ ] `[alpha.4]` Decompose `Collection` class: extract `VectorSearch`, `CollectionExporter`, `QueryPlanner`, `DocumentBuilder`
 - [ ] `[alpha.4]` Complete Skalex-Collection decoupling (Collection constructor accepts `_ctx` only)
+- [ ] `[beta.1]` Fix lossy changelog restore (rehydrate raw snapshots instead of replaying through `insertOne`/`updateOne`)
+- [ ] `[beta.1]` Normalize connector subpath exports (add `require`/`types` entries for all connector subpaths)
 - [ ] `create-skalex`: scaffolding CLI  -  `npm create skalex@latest` for instant project setup with runtime-specific templates
 - [ ] Interactive playground: browser-based sandbox hosted on the docs site  -  try Skalex with zero installation
 - [ ] Test utilities: `createTestDb(options?)` helper pre-configured with MemoryAdapter for frictionless unit and integration testing
@@ -208,7 +214,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **Core database & config**
 - [x] `db.transaction()`: lazy copy-on-first-write snapshots, serialized execution, configurable timeout, stale proxy detection, deferred side effects
-- [x] Transaction isolation: non-transactional writes not captured by rollback
+- [x] Transaction isolation: snapshot/rollback for transactional writes (non-tx writes to tx-touched collections not yet isolated - see alpha.4 #16)
 - [x] Batch persistence: `saveAtomic()` with flush sentinel for crash detection
 - [x] Database-level save mutex: serialized `saveAtomic` calls prevent race conditions
 - [x] Typed error hierarchy: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` with stable `ERR_SKALEX_*` codes

@@ -150,7 +150,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Transactions & Integrity
 
-- `db.transaction(fn)`  -  in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback
+- `db.transaction(fn)`  -  in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback; non-transactional writes to a tx-touched collection are not yet isolated from rollback (planned for alpha.4)
 - `db.namespace(id)`  -  scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
 - `db.seed(fixtures, opts?)`  -  bulk-insert fixtures; `reset: true` clears first
 - `db.addMigration({ version, up })`  -  versioned migration; runs automatically on `connect()`
@@ -160,7 +160,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `collection.watch(filter?, callback?)`  -  reactive collection observer; callback or `AsyncIterableIterator`
 - `db.watch(callback)`  -  cross-collection global observer; fires for every mutation across all collections
 - `db.changelog()`  -  append-only mutation log
-- `db.restore(collection, timestamp)`  -  point-in-time restore from changelog
+- `db.restore(collection, timestamp)`  -  point-in-time restore from changelog (currently lossy: replays via `insertOne`/`updateOne` which regenerates timestamps and `_version`; exact snapshot rehydration planned for beta.1)
 - `db.stats()`  -  count, estimated size, average doc size per collection
 - `db.slowQueries()`  -  slow query log with configurable threshold and ring buffer
 - `db.sessionStats()`  -  reads/writes/lastActive keyed by session ID
@@ -215,7 +215,7 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 **Query & schema:** `$or`/`$and`/`$not` logical operators; aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`); full-text search with inverted index and `$text` operator; cursor-based pagination; compound multi-field indexes; `db.stream()` async generator for large result sets; schema change safety with `addMigration({ dryRun: true })`; Zod schema integration
 
-**AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15–30% better recall); multimodal embeddings (text + image unified space via CLIP); vector quantization (4–8× memory reduction); graph-enhanced vector retrieval; streaming LLM responses for `db.ask()` and `memory.compress()`; `collection.similar(doc)`; `db.classify(doc, labels)` zero-shot classification; `db.summarize()`; `db.rag()` one-call RAG pipeline; strict LLM response validation
+**AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15-30% better recall); multimodal embeddings (text + image unified space via CLIP); vector quantization (4-8× memory reduction); graph-enhanced vector retrieval; streaming LLM responses for `db.ask()` and `memory.compress()`; `collection.similar(doc)`; `db.classify(doc, labels)` zero-shot classification; `db.summarize()`; `db.rag()` one-call RAG pipeline; strict LLM response validation
 
 **Graph:** `collection.traverse(startId, options)` multi-hop traversal; shortest-path and neighbor queries
 
