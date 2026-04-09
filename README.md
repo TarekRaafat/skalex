@@ -14,9 +14,9 @@
 
 **AI-first · Isomorphic · Zero-dependency · Local-first**
 
-> `Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package  -  no server, no config, no external services. One `npm install skalex` on Node.js, Bun, Deno, browsers, and edge runtimes. All AI capabilities  -  cosine similarity search, semantic agent memory with compression, `db.ask()` NLP queries via any LLM, and a one-line MCP server for Claude Desktop and Cursor  -  are built into the core with zero additional dependencies.
+> `Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package - no server, no config, no external services. One `npm install skalex` on Node.js, Bun, Deno, browsers, and edge runtimes. All AI capabilities - cosine similarity search, semantic agent memory with compression, `db.ask()` NLP queries via any LLM, and a one-line MCP server for Claude Desktop and Cursor - are built into the core with zero additional dependencies.
 
-> **Architecture + fit:** all data lives in your process's heap  -  `db.connect()` loads the full dataset for instant, zero-overhead access. Storage adapters control where data persists, not how much fits. Designed for single-process, local-first workloads where the dataset fits in RAM: AI agents, CLI tools, desktop apps, edge workers, offline-first apps. Not a replacement for PostgreSQL or MongoDB for large-scale, multi-process, or distributed systems.
+> **Architecture + fit:** all data lives in your process's heap - `db.connect()` loads the full dataset for instant, zero-overhead access. Storage adapters control where data persists, not how much fits. Designed for single-process, local-first workloads where the dataset fits in RAM: AI agents, CLI tools, desktop apps, edge workers, offline-first apps. Not a replacement for PostgreSQL or MongoDB for large-scale, multi-process, or distributed systems.
 
 ---
 
@@ -112,13 +112,13 @@
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.2 is the current release.** `npm install skalex` installs the last stable v3  -  use `@alpha` to get v4.
+> **v4.0.0-alpha.2 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 Requires **Node.js ≥ 18**.
 
-**Or via CDN** (no bundler, no npm  -  browser direct):
+**Or via CDN** (no bundler, no npm - browser direct):
 
-**ESM**  -  recommended for real browser apps; connectors import alongside Skalex:
+**ESM** - recommended for real browser apps; connectors import alongside Skalex:
 
 ```html
 <script type="module">
@@ -147,7 +147,7 @@ import { StorageAdapter, FsAdapter, EmbeddingAdapter, OpenAIEmbeddingAdapter,
          LLMAdapter, OpenAILLMAdapter } from 'skalex/connectors';
 ```
 
-**IIFE**  -  exposes `window.Skalex`, for quick demos or environments that can't use ESM:
+**IIFE** - exposes `window.Skalex`, for quick demos or environments that can't use ESM:
 
 ```html
 <!-- jsDelivr (recommended) -->
@@ -159,7 +159,7 @@ import { StorageAdapter, FsAdapter, EmbeddingAdapter, OpenAIEmbeddingAdapter,
 
 ---
 
-## Quick Start  -  30 seconds to a working database
+## Quick Start - 30 seconds to a working database
 
 ```javascript
 import Skalex from "skalex";

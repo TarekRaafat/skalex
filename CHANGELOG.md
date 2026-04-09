@@ -21,13 +21,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Engine Modularisation
 
-The monolithic `index.js` (1,091 lines) has been decomposed into 6 focused engine modules. The public API is unchanged  -  this is a purely internal restructuring that improves maintainability, testability, and separation of concerns.
+The monolithic `index.js` (1,091 lines) has been decomposed into 6 focused engine modules. The public API is unchanged - this is a purely internal restructuring that improves maintainability, testability, and separation of concerns.
 
 | Module | Responsibility |
 |--------|----------------|
 | `src/engine/errors.js` | Typed error hierarchy (`SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError`) with stable `ERR_SKALEX_*` codes and structured `details` objects for programmatic error handling |
 | `src/engine/persistence.js` | Load/save orchestration, dirty tracking (`_dirty` flag per collection), write-queue coalescing (`isSaving` / `_pendingSave`), flush sentinel for crash detection, and orphan temp file cleanup on connect |
-| `src/engine/pipeline.js` | DRY mutation lifecycle  -  every CRUD operation runs through `pipeline.execute()`: `ensureConnected → txSnapshot → beforePlugin → [mutation] → markDirty → save → changelog → stats → event → afterPlugin`. Includes stale continuation guard (`assertTxAlive`) |
+| `src/engine/pipeline.js` | DRY mutation lifecycle - every CRUD operation runs through `pipeline.execute()`: `ensureConnected → txSnapshot → beforePlugin → [mutation] → markDirty → save → changelog → stats → event → afterPlugin`. Includes stale continuation guard (`assertTxAlive`) |
 | `src/engine/registry.js` | Collection store/instance management, lazy creation, metadata inspection (`inspect`, `dump`, `stats`, `schema`), and `rename` |
 | `src/engine/transaction.js` | Serialised transaction execution via `_txLock` promise chain, lazy copy-on-first-write snapshots, configurable timeout with `Promise.race`, deferred side-effects, and stale continuation tracking via `_abortedIds` |
 | `src/engine/adapters.js` | AI adapter factory functions (`createEmbeddingAdapter`, `createLLMAdapter`) extracted from `index.js` |
@@ -88,11 +88,11 @@ A new `writeAll(entries)` method on `StorageAdapter` enables batch persistence u
 | Adapter | Strategy |
 |---------|----------|
 | `FsAdapter` | Two-phase: write all temp files → rename sequentially. Best-effort cleanup on failure. |
-| `BunSQLiteAdapter` | Single `db.transaction()`  -  true ACID via SQLite WAL |
-| `D1Adapter` | `d1.batch()`  -  atomic per batch call |
-| `LibSQLAdapter` | `client.batch(statements, "write")`  -  LibSQL transaction |
+| `BunSQLiteAdapter` | Single `db.transaction()` - true ACID via SQLite WAL |
+| `D1Adapter` | `d1.batch()` - atomic per batch call |
+| `LibSQLAdapter` | `client.batch(statements, "write")` - LibSQL transaction |
 | `EncryptedAdapter` | Encrypts all entries in parallel, delegates to inner adapter's `writeAll()` |
-| Base class (fallback) | Sequential `write()` calls  -  backward compatible for custom adapters |
+| Base class (fallback) | Sequential `write()` calls - backward compatible for custom adapters |
 
 #### Orphan Temp File Cleanup
 
@@ -179,26 +179,26 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 - **New file: `data-integrity.test.js`** (16 tests) - regression tests for all P0 data corruption fixes: stale Collection instances, upsert operator leak, insertMany ghost index entries, transaction isolation, stale proxy detection, save durability, and changelog restore persistence
 - **New file: `persistence-coherence.test.js`** (10 tests) - regression tests for P1 persistence fixes: index update atomicity, saveAtomic batch coherence, sentinel clear failure handling, save best-effort semantics, save mutex serialization, write coalescing, and concurrent saveDirty+saveAtomic
 - **New file: `correctness-hardening.test.js`** (20 tests) - regression tests for P2.5 hardening: ifNotExists copy, aggregation auto-connect, dot-notation rejection, connect idempotency, vector select, dangerous key stripping, named exports, stripVector, ID entropy, corrupt load, system fields, dump deep copy
-- **New file: `engine-overhaul.test.js`** (43 tests)  -  comprehensive regression suite: transaction timeout/abort/rollback, dirty tracking, flush sentinel detection, compound index candidate selection, logical operator edge cases, typed error structure, fault injection (adapter write failures, partial batch failures), stale continuation detection, collection instance poisoning recovery, `$inc`/`$push` operator correctness, update/delete rollback, and capped collection enforcement
-- **Expanded: `collection-features.test.js`** (+11 tests)  -  schema enforcement on updates: validation rejection, strict mode, warn mode, `updateMany` batch validation
-- **Expanded: `skalex.test.js`** (+11 tests)  -  `_id` field integrity/immutability, Date serialization round-trip
+- **New file: `engine-overhaul.test.js`** (43 tests) - comprehensive regression suite: transaction timeout/abort/rollback, dirty tracking, flush sentinel detection, compound index candidate selection, logical operator edge cases, typed error structure, fault injection (adapter write failures, partial batch failures), stale continuation detection, collection instance poisoning recovery, `$inc`/`$push` operator correctness, update/delete rollback, and capped collection enforcement
+- **Expanded: `collection-features.test.js`** (+11 tests) - schema enforcement on updates: validation rejection, strict mode, warn mode, `updateMany` batch validation
+- **Expanded: `skalex.test.js`** (+11 tests) - `_id` field integrity/immutability, Date serialization round-trip
 - **Expanded: `query.test.js`** (+17 tests) - logical operators: `$or`, `$and`, `$not`, nesting, error handling for malformed operators; plain-object structural equality: nested objects, arrays, Dates, empty objects
 - **Expanded: `indexes.test.js`** (+13 tests) - compound index non-scalar rejection: objects, arrays, Dates, scalars allowed, null/undefined allowed, rejection on update/buildFromData paths
-- **Expanded: `indexes.test.js`** (+6 tests)  -  compound index add/remove/lookup, type collision handling, `buildFromData` reset
-- **Expanded: `changelog.test.js`** (+2 tests)  -  edge cases in changelog restore
-- **Expanded: `skalex-core.test.js`** (+1 test)  -  additional core method coverage
+- **Expanded: `indexes.test.js`** (+6 tests) - compound index add/remove/lookup, type collision handling, `buildFromData` reset
+- **Expanded: `changelog.test.js`** (+2 tests) - edge cases in changelog restore
+- **Expanded: `skalex-core.test.js`** (+1 test) - additional core method coverage
 
 ### Design Documents
 
-- `design/atomic-persistence.md`  -  detailed design for `writeAll` + flush sentinel, competitive analysis, edge case matrix, scalability analysis
-- `design/transaction-lazy-snapshots.md`  -  detailed design for lazy snapshots + timeout, isolation semantics, post-timeout safety
-- `design/ann-vector-index.md`  -  ANN vector index design (future)
-- `design/reliability-audit.md`  -  full engine reliability audit for primary-database use cases
-- `design/alpha1-vs-pipeline-comparison.md`  -  comprehensive diff analysis of alpha.1 vs pipeline changes
+- `design/atomic-persistence.md` - detailed design for `writeAll` + flush sentinel, competitive analysis, edge case matrix, scalability analysis
+- `design/transaction-lazy-snapshots.md` - detailed design for lazy snapshots + timeout, isolation semantics, post-timeout safety
+- `design/ann-vector-index.md` - ANN vector index design (future)
+- `design/reliability-audit.md` - full engine reliability audit for primary-database use cases
+- `design/alpha1-vs-pipeline-comparison.md` - comprehensive diff analysis of alpha.1 vs pipeline changes
 
 ### Benchmarks
 
-- `tests/benchmarks/engine.mjs`  -  performance benchmarks for engine operations
+- `tests/benchmarks/engine.mjs` - performance benchmarks for engine operations
 
 ---
 
@@ -206,16 +206,16 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 
 ### Fixed
 
-- **Transaction: `autoSave` suppressed during `fn()`**  -  writes no longer flush to disk mid-transaction when `autoSave: true`; the adapter is only written once on commit. (#1)
-- **Transaction: `structuredClone` replaces `JSON.parse/stringify` for snapshots**  -  Date, TypedArray, Map, Set, RegExp, and other non-JSON types now survive rollback correctly. (#2)
-- **Transaction: `_inTransaction` flag**  -  added to the constructor and toggled around `fn()` so `_saveIfNeeded()` in collection operations correctly detects an active transaction. (#3)
-- **Transaction: event emissions and plugin after-hooks deferred until commit**  -  `watch()` observers and `after*` plugin hooks no longer fire for writes that are subsequently rolled back; they are queued and flushed atomically on commit. (#4)
-- **Transaction: concurrent transactions serialised via promise-chain mutex**  -  a `_txLock` chain ensures only one transaction runs at a time, eliminating lost-update races under `Promise.all`. (#7)
-- **Transaction: `db.collections` blocked inside `fn()` via Proxy**  -  direct mutations to `db.collections` bypass the snapshot; accessing the property inside a transaction callback now throws a descriptive error directing callers to `db.useCollection()`. (#11)
-- **Documentation: transaction guarantees corrected**  -  replaced "atomic" / "snapshot + commit/rollback" with accurate language across README, llms.txt, docs/index.md, and docs/index.html. (#15)
-- **Serializer: BigInt-safe default serializer/deserializer**  -  the default `JSON.stringify`/`JSON.parse` pair is replaced with `_serialize`/`_deserialize`, which encode BigInt as tagged objects and revive them on load; custom serializer options are unaffected. (#16)
-- **Transaction: commit sequence corrected**  -  `saveData()` now runs before the side-effect queue is flushed, so `watch()` callbacks and plugin hooks observe fully persisted state. The `_inTransaction` flag is cleared after `saveData()` and before the flush, so observers can safely trigger further operations without them being re-queued.
-- **Transaction: `restore()` now uses transaction helpers**  -  `restore()` was calling `_changeLog.log()` and `_eventBus.emit()` directly, bypassing the transaction queue. It now uses `_logChange()` and `_emitEvent()` so events and changelog entries are properly deferred until commit.
+- **Transaction: `autoSave` suppressed during `fn()`** - writes no longer flush to disk mid-transaction when `autoSave: true`; the adapter is only written once on commit. (#1)
+- **Transaction: `structuredClone` replaces `JSON.parse/stringify` for snapshots** - Date, TypedArray, Map, Set, RegExp, and other non-JSON types now survive rollback correctly. (#2)
+- **Transaction: `_inTransaction` flag** - added to the constructor and toggled around `fn()` so `_saveIfNeeded()` in collection operations correctly detects an active transaction. (#3)
+- **Transaction: event emissions and plugin after-hooks deferred until commit** - `watch()` observers and `after*` plugin hooks no longer fire for writes that are subsequently rolled back; they are queued and flushed atomically on commit. (#4)
+- **Transaction: concurrent transactions serialised via promise-chain mutex** - a `_txLock` chain ensures only one transaction runs at a time, eliminating lost-update races under `Promise.all`. (#7)
+- **Transaction: `db.collections` blocked inside `fn()` via Proxy** - direct mutations to `db.collections` bypass the snapshot; accessing the property inside a transaction callback now throws a descriptive error directing callers to `db.useCollection()`. (#11)
+- **Documentation: transaction guarantees corrected** - replaced "atomic" / "snapshot + commit/rollback" with accurate language across README, llms.txt, docs/index.md, and docs/index.html. (#15)
+- **Serializer: BigInt-safe default serializer/deserializer** - the default `JSON.stringify`/`JSON.parse` pair is replaced with `_serialize`/`_deserialize`, which encode BigInt as tagged objects and revive them on load; custom serializer options are unaffected. (#16)
+- **Transaction: commit sequence corrected** - `saveData()` now runs before the side-effect queue is flushed, so `watch()` callbacks and plugin hooks observe fully persisted state. The `_inTransaction` flag is cleared after `saveData()` and before the flush, so observers can safely trigger further operations without them being re-queued.
+- **Transaction: `restore()` now uses transaction helpers** - `restore()` was calling `_changeLog.log()` and `_eventBus.emit()` directly, bypassing the transaction queue. It now uses `_logChange()` and `_emitEvent()` so events and changelog entries are properly deferred until commit.
 
 ### Tests
 

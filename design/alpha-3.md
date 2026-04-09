@@ -79,9 +79,13 @@ These fix silent runtime bugs that affect long-lived processes.
 
 **Fix:** Collect eviction candidates first, then remove from all indexes in a try/catch that restores on failure (same pattern as alpha.2 #11 for `FieldIndex.update()`).
 
+**Additional fix (eviction event gap):** FIFO eviction happens after the insert event is emitted ([pipeline.js:102-104](../src/engine/pipeline.js#L102)), so watch listeners see the insert but never receive a delete event for the evicted document(s). After `_enforceCapAfterInsert()` removes evicted documents, emit a `"delete"` event per evicted document via `ctx.emitEvent()` (same pattern as `deleteMany`).
+
 **Scope:** `src/engine/collection.js`
 
-**Test:** Mock `_removeFromIndex` to throw on second call. Assert `_data` and `_index` remain consistent after the error.
+**Test:**
+1. Mock `_removeFromIndex` to throw on second call - assert `_data` and `_index` remain consistent after the error
+2. Create a capped collection with `maxDocs: 3`, insert 4 documents, register a watch callback - assert a `"delete"` event is emitted for the evicted document alongside the `"insert"` event
 
 **Depends on:** None
 
@@ -408,10 +412,13 @@ data.push(...remaining);
 - Only written collections are rolled back on failure
 - Reads on non-written collections see the latest committed state
 - For full isolation, the caller should read-then-write to trigger a snapshot
+- Transaction timeout is cooperative, not preemptive - the timeout rejects the promise but does not cancel in-flight mutations. Mutations continue until they reach an `assertTxAlive()` check.
 
 **Scope:** `src/index.js`, `src/engine/transaction.js`
 
-**Test:** Start a transaction, read collection A (don't write), mutate collection A from outside, read A again inside transaction. Assert the second read sees the external mutation (documenting current behavior).
+**Test:**
+1. Start a transaction, read collection A (don't write), mutate collection A from outside, read A again inside transaction - assert the second read sees the external mutation (documenting current behavior)
+2. Start a transaction with `{ timeout: 50 }`, perform a mutation that takes >50ms (e.g., mock embedding adapter with delay) - assert the transaction rejects with `ERR_SKALEX_TX_TIMEOUT` and rollback is clean
 
 **Depends on:** None
 
@@ -456,6 +463,8 @@ data.push(...remaining);
 
 Ensure ALL deferred effects run regardless of individual failures (don't short-circuit on first error).
 
+**Note:** Event emission in [pipeline.js:102-104](../src/engine/pipeline.js#L102) is synchronous - a slow watch listener blocks the mutation pipeline. Recommend keeping synchronous dispatch (preserves ordered delivery guarantees) but document this as an explicit contract in the JSDoc on `execute()`. If async dispatch is needed later, it can be added as a separate config option.
+
 **Scope:** `src/engine/pipeline.js`, `src/index.js`
 
 **Test:**
@@ -480,13 +489,15 @@ Ensure ALL deferred effects run regardless of individual failures (don't short-c
 1. Document `$fn` as a power-user feature with a security warning: "Do not pass user-controlled functions to `$fn`."
 2. Apply the existing `regexMaxLength` cap to `matchesFilter()` when the regex comes from a string (not a pre-compiled `RegExp` instance).
 3. Add the ReDoS nested-quantifier check from `ask.js` to `query.js`.
+4. Strip `$fn` from MCP-sourced filters. The MCP tool handler in [tools.js](../src/connectors/mcp/tools.js) accepts filter objects from AI agents. An AI-crafted filter containing `$fn` would execute arbitrary JavaScript in the host process. Add a `sanitizeFilter(filter)` helper that recursively walks the filter tree (including inside `$or`, `$and`, `$not` branches) and deletes any `$fn` keys. Call it in `callTool()` before passing filters to the Collection API. Log a warning when a `$fn` is stripped.
 
-**Scope:** `src/engine/query.js`, `src/engine/ask.js`
+**Scope:** `src/engine/query.js`, `src/features/ask.js`, `src/connectors/mcp/tools.js`
 
 **Test:**
 1. Call `find()` with a `$regex` string exceeding `regexMaxLength` - assert it throws
 2. Call `find()` with a pre-compiled `RegExp` exceeding the length - assert it is allowed
 3. Call `find()` with a `$regex` containing nested quantifiers - assert it throws
+4. Send an MCP `skalex_find` request with a filter containing `$fn` - assert the `$fn` key is stripped before query execution and a warning is logged
 
 **Depends on:** None
 
@@ -609,9 +620,26 @@ async insertOne(item, options = {}) {
 
 Apply to: `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`, `upsert`, `upsertMany`, `find`, `findOne`, `search`.
 
-**Scope:** `src/engine/collection.js`
+**Additional fix (collection name sanitization):** `useCollection()` and `createCollection()` accept arbitrary strings as collection names. A name like `../../../etc/passwd` or one containing null bytes could cause path traversal in `FsAdapter._filePath()`. Add a validation guard in `CollectionRegistry.get()` and `CollectionRegistry.create()`:
 
-**Test:** For each method, assert that null, string, number, and array arguments throw `ValidationError` with a clear message.
+```js
+const _COLLECTION_NAME_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,63}$/;
+if (!_COLLECTION_NAME_RE.test(name))
+  throw new ValidationError("ERR_SKALEX_VALIDATION_COLLECTION_NAME",
+    `Invalid collection name "${name}". Names must be 1-64 alphanumeric characters (plus _ . : -), starting with a letter, digit, or underscore.`,
+    { name });
+```
+
+Internal collections (`_meta`, `_changelog`, `_memory`) use `_` prefix and pass this check.
+
+**Scope:** `src/engine/collection.js`, `src/engine/registry.js`
+
+**Test:**
+1. For each CRUD method, assert that null, string, number, and array arguments throw `ValidationError` with a clear message
+2. Call `useCollection("../etc/passwd")` - assert it throws `ValidationError` with code `ERR_SKALEX_VALIDATION_COLLECTION_NAME`
+3. Call `useCollection("valid_name-1.0")` - assert it succeeds
+4. Call `useCollection("")` - assert it throws
+5. Call `useCollection("a\x00b")` - assert it throws
 
 **Depends on:** None
 
@@ -672,12 +700,15 @@ Add scripts:
 "deps:check": "madge --circular src/"
 ```
 
-**Scope:** `package.json`, `.eslintrc.*` (new), `.prettierrc` (new)
+**Additional fix (vitest coverage exclude path):** [vitest.config.js:11](../vitest.config.js#L11) excludes `"src/adapters/storage/d1.js"` but the directory is `src/connectors/`, not `src/adapters/`. The exclude silently matches nothing. Change to `"src/connectors/storage/d1.js"`.
+
+**Scope:** `package.json`, `.eslintrc.*` (new), `.prettierrc` (new), `vitest.config.js`
 
 **Test:**
 1. Run `npm run lint` - assert it passes with no errors
 2. Run `npm run format:check` - assert all files are formatted
 3. Run `npm run deps:check` - assert no circular imports
+4. Run `npm run test:coverage` - assert `src/connectors/storage/d1.js` is excluded from the coverage report
 
 **Depends on:** None
 
@@ -695,15 +726,20 @@ Add scripts:
 - Expand failure-path coverage for `FsAdapter.writeAll()` (rename failure, orphan cleanup).
 - Add focused coverage for `BunSQLiteAdapter`, `D1Adapter`, and `LibSQLAdapter` batch semantics where their runtimes are available.
 - Make release docs explicit about which adapters/runtimes are validated in CI versus supported by contract only.
+- Add MCP transport tests. Both `src/connectors/mcp/transports/stdio.js` (0% coverage) and `src/connectors/mcp/transports/http.js` (0% coverage) are production-facing integration surfaces with no test coverage. MCP is the primary AI agent integration path - transport-level bugs would be invisible until production.
+- Verify SQL-backed adapters (`BunSQLiteAdapter`, `D1Adapter`, `LibSQLAdapter`) use a native database transaction (BEGIN/COMMIT) within `writeAll()` for true atomicity.
 
-**Outcome:** alpha.3 should leave adapter guarantees explicit instead of implied.
+**Outcome:** alpha.3 should leave adapter and transport guarantees explicit instead of implied.
 
-**Scope:** `src/connectors/storage/fs.js`, `src/connectors/storage/d1.js`, `src/connectors/storage/bun-sqlite.js`, `src/connectors/storage/libsql.js`
+**Scope:** `src/connectors/storage/fs.js`, `src/connectors/storage/d1.js`, `src/connectors/storage/bun-sqlite.js`, `src/connectors/storage/libsql.js`, `src/connectors/mcp/transports/stdio.js`, `src/connectors/mcp/transports/http.js`
 
 **Test:**
 1. Run `FsAdapter.writeAll()` with a simulated rename failure - assert error propagates and orphan cleanup runs
 2. Run batch operations on `D1Adapter`, `BunSQLiteAdapter`, and `LibSQLAdapter` - assert batch semantics match documentation
 3. Verify release docs explicitly state which adapters are CI-validated vs. contract-only
+4. Send a valid JSON-RPC request to stdio transport via `MockTransport` - assert correct response framing. Send a malformed request - assert error response, not crash
+5. Start HTTP transport on a random port, send a valid POST with JSON-RPC body - assert 200. Send oversized body exceeding `maxBodySize` - assert 413 rejection. Verify SSE endpoint connects and receives events
+6. Verify SQL adapter `writeAll()` uses native transaction (BEGIN/COMMIT) - mock or spy on the underlying driver to assert transaction boundaries
 
 **Depends on:** None
 
@@ -718,7 +754,7 @@ Every item must ship with at least one targeted regression test:
 | #1 (_abortedIds) | 100+ timed-out transactions - assert set stays bounded |
 | #2 (LLM provider) | Unknown provider string - assert throws `AdapterError` |
 | #3 (D1 batch) | 250 entries via `writeAll()` - assert chunked `batch()` calls |
-| #4 (cap atomicity) | Throw during eviction - assert data/index consistent |
+| #4 (cap atomicity + eviction events) | Throw during eviction - assert data/index consistent. Capped insert emits delete event for evicted doc |
 | #5 (Memory connect) | `tokenCount()` before connect - assert triggers auto-connect or throws |
 | #6 (Memory _data) | Memory uses `find()` not `_data` directly (code review) |
 | #7 (_meta unify) | `_meta` shape matches `createStore()` output |
@@ -732,18 +768,18 @@ Every item must ship with at least one targeted regression test:
 | #15 (TTL O(n)) | 10k docs / 5k expired - linear sweep |
 | #16 (orphan FsAdapter) | Orphan cleanup works; browser builds skip it |
 | #17 (updatedAt) | `applyUpdate` skips user-provided `updatedAt` |
-| #18 (isolation docs) | Read inside tx sees external mutation on untouched collection |
+| #18 (isolation + timeout docs) | Read inside tx sees external mutation on untouched collection. Cooperative timeout semantics documented and tested |
 | #19 (warn drift) | Warn mode logs `_id` and errors |
 | #20 (deferred errors) | All effects run even when one throws |
-| #21 ($fn/$regex cap) | Regex length cap in `matchesFilter()`; $fn documented |
+| #21 ($fn/$regex cap + MCP) | Regex length cap in `matchesFilter()`. `$fn` documented. `$fn` stripped from MCP filters |
 | #22 (event ordering) | Documented or reordered; test verifies contract |
 | #23 (migration idempotency) | Documented or wrapped in transaction |
 | #24 (nested tx) | Nested `transaction()` call throws or documented as deadlock |
 | #25 (TransactionOptions) | TypeScript compilation with `{ timeout }` succeeds |
-| #26 (input validation) | null/string/number/array args throw `ValidationError` |
+| #26 (input validation + name sanitization) | null/string/number/array args throw `ValidationError`. Path-traversal collection names rejected |
 | #27 (tsd) | `tsd` smoke tests pass |
-| #28 (lint) | `eslint`, `prettier --check`, `madge --circular` pass |
-| #29 (adapter coverage) | Adapter tests expanded or docs narrowed |
+| #28 (lint + vitest config) | `eslint`, `prettier --check`, `madge --circular` pass. Vitest coverage exclude path corrected to `src/connectors/storage/d1.js` |
+| #29 (adapter + MCP transport coverage) | Adapter tests expanded or docs narrowed. MCP stdio + HTTP transports have basic request/response tests. SQL adapter `writeAll()` uses native transactions |
 
 ---
 
@@ -769,7 +805,7 @@ alpha.3 is done when:
 1. Long-lived transaction aborts do not produce unbounded in-memory growth.
 2. Adapter misconfiguration fails loudly and consistently.
 3. D1 batching behavior is bounded and documented.
-4. Cap enforcement eviction is atomic (no data/index inconsistency on failure).
+4. Cap enforcement eviction is atomic (no data/index inconsistency on failure) and emits delete events for evicted documents.
 5. `Memory.tokenCount()`/`context()` don't return stale data pre-connect.
 6. `Memory` uses public Collection API, not internal `_data` access.
 7. `_meta` creation is owned by one store-construction path.
@@ -783,18 +819,18 @@ alpha.3 is done when:
 15. TTL sweep runs in O(n) time, not O(n*k).
 16. Orphan temp-file cleanup lives in `FsAdapter`, not `PersistenceManager`.
 17. `updatedAt` is skipped or documented as system-managed in `applyUpdate()`.
-18. Snapshot isolation semantics are explicitly documented (read-committed, not snapshot).
+18. Snapshot isolation semantics are explicitly documented (read-committed, not snapshot), including cooperative timeout behavior.
 19. `onSchemaError: "warn"` logs document `_id` and is documented as non-blocking.
 20. Deferred effect errors have a configurable strategy and don't skip remaining effects.
-21. `$fn` has a security warning; `$regex` length cap applies in `matchesFilter()`.
+21. `$fn` has a security warning; `$regex` length cap applies in `matchesFilter()`; `$fn` is stripped from MCP-sourced filters.
 22. Pipeline event ordering contract is explicit.
 23. Migration idempotency is documented or enforced via transaction.
 24. Nested transaction deadlock is documented and detected at runtime.
 25. `TransactionOptions` with `timeout` is declared in `.d.ts`.
-26. Public API methods reject invalid argument types with clear `ValidationError`.
+26. Public API methods reject invalid argument types with clear `ValidationError`. Collection names are sanitized against path traversal.
 27. Type declarations are validated against runtime via `tsd` or equivalent.
-28. Linting, formatting, and import-cycle checks are wired into CI.
-29. Adapter/runtime guarantees are backed by targeted tests or explicitly narrowed documentation.
+28. Linting, formatting, and import-cycle checks are wired into CI. Vitest coverage exclude path corrected.
+29. Adapter/runtime guarantees are backed by targeted tests or explicitly narrowed documentation. MCP stdio and HTTP transports have basic test coverage. SQL adapter `writeAll()` uses native transactions.
 30. All regression tests exist and pass.
 31. The verification matrix passes.
 

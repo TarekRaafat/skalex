@@ -2,18 +2,18 @@
 
 > An in-memory JavaScript document database built AI-first. Vector search, agent memory, an MCP server, natural language queries, and AES-256-GCM encryption ship in a single zero-dependency package. Node.js, Bun, Deno, browsers, edge runtimes. No server. No config. No DevOps.
 
-Skalex is an in-memory document database written in pure JavaScript with no runtime dependencies. It stores data in-memory and persists through pluggable storage adapters. Built for AI-first use cases: it ships vector search, episodic agent memory, a native MCP server, and natural language query translation as first-class features  -  not bolt-ons.
+Skalex is an in-memory document database written in pure JavaScript with no runtime dependencies. It stores data in-memory and persists through pluggable storage adapters. Built for AI-first use cases: it ships vector search, episodic agent memory, a native MCP server, and natural language query translation as first-class features - not bolt-ons.
 
-**What sets it apart from other in-memory or document stores (lowdb, LokiJS, PouchDB, etc.):** all AI features  -  vector search with cosine similarity, semantic agent memory, NLP query translation via any LLM, and a one-line MCP server compatible with Claude Desktop and Cursor  -  are built into the core, not available as plugins or external services, and require zero additional dependencies.
+**What sets it apart from other in-memory or document stores (lowdb, LokiJS, PouchDB, etc.):** all AI features - vector search with cosine similarity, semantic agent memory, NLP query translation via any LLM, and a one-line MCP server compatible with Claude Desktop and Cursor - are built into the core, not available as plugins or external services, and require zero additional dependencies.
 
 ## Key Facts
 
-- **Zero dependencies**  -  no install footprint beyond the package itself
-- **Isomorphic**  -  one package, one API: Node.js, Bun, Deno, browsers, Cloudflare Workers
-- **AI-native**  -  vector search, semantic recall, natural language queries, MCP server built into the core
-- **Local-first**  -  data lives in-memory; persistence is explicit and pluggable
-- **TypeScript**  -  full generics and type declarations ship in the box
-- **Secure**  -  AES-256-GCM at-rest encryption via `EncryptedAdapter`
+- **Zero dependencies** - no install footprint beyond the package itself
+- **Isomorphic** - one package, one API: Node.js, Bun, Deno, browsers, Cloudflare Workers
+- **AI-native** - vector search, semantic recall, natural language queries, MCP server built into the core
+- **Local-first** - data lives in-memory; persistence is explicit and pluggable
+- **TypeScript** - full generics and type declarations ship in the box
+- **Secure** - AES-256-GCM at-rest encryption via `EncryptedAdapter`
 
 ## Architecture & Constraints
 
@@ -29,9 +29,9 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.1 is the current release.** `npm install skalex` installs the last stable v3  -  use `@alpha` to get v4.
+> **v4.0.0-alpha.1 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
-**CDN  -  ESM** (recommended for browser apps; use the browser-specific barrel):
+**CDN - ESM** (recommended for browser apps; use the browser-specific barrel):
 
 ```html
 <script type="module">
@@ -53,45 +53,45 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter,
 import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/connectors';
 ```
 
-**CDN  -  IIFE** (quick demos, `window.Skalex` global, no connector bundling):
+**CDN - IIFE** (quick demos, `window.Skalex` global, no connector bundling):
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1"></script>
 ```
 
-## Core API  -  by workflow
+## Core API - by workflow
 
 ### Setup
 
-- `new Skalex(config)`  -  create a database instance; key options:
-  - `path`  -  data directory (default: `./.db`)
-  - `format`  -  `"gz"` (default) or `"json"`
-  - `adapter`  -  custom `StorageAdapter` instance
-  - `ai`  -  AI/embedding config (`provider`, `apiKey`, `model`, `embedModel`, `host`, …)
-  - `encrypt`  -  `{ key }` for AES-256-GCM at-rest encryption
-  - `autoSave`  -  persist after every write without `{ save: true }` (default: `false`)
-  - `ttlSweepInterval`  -  interval in ms for periodic TTL sweep
-  - `plugins`  -  pre-register plugin array
-  - `logger`  -  custom `(message, level) => void`
-  - `llmAdapter` / `embeddingAdapter`  -  inject pre-built adapters directly
-  - `queryCache`  -  `{ maxSize?, ttl? }` for `ask()` result caching
-  - `memory`  -  `{ compressionThreshold?, maxEntries?, keepRecent?, contextTokens? }`
+- `new Skalex(config)` - create a database instance; key options:
+  - `path` - data directory (default: `./.db`)
+  - `format` - `"gz"` (default) or `"json"`
+  - `adapter` - custom `StorageAdapter` instance
+  - `ai` - AI/embedding config (`provider`, `apiKey`, `model`, `embedModel`, `host`, …)
+  - `encrypt` - `{ key }` for AES-256-GCM at-rest encryption
+  - `autoSave` - persist after every write without `{ save: true }` (default: `false`)
+  - `ttlSweepInterval` - interval in ms for periodic TTL sweep
+  - `plugins` - pre-register plugin array
+  - `logger` - custom `(message, level) => void`
+  - `llmAdapter` / `embeddingAdapter` - inject pre-built adapters directly
+  - `queryCache` - `{ maxSize?, ttl? }` for `ask()` result caching
+  - `memory` - `{ compressionThreshold?, maxEntries?, keepRecent?, contextTokens? }`
   - `regexMaxLength`, `idGenerator`, `serializer`, `deserializer`
-- `db.connect()`  -  load persisted data, run pending migrations, sweep expired TTL docs, start TTL sweep timer if configured
-- `db.disconnect()`  -  flush all unsaved data, clear in-memory state, stop TTL sweep timer
-- `db.useCollection(name)`  -  get or create a cached collection instance
-- `db.createCollection(name, opts?)`  -  define schema and collection behaviour before `connect()`; key options:
-  - `schema`  -  `{ field: type | { type, required, unique, enum } }`
-  - `indexes`  -  fields to build O(1) secondary indexes on
-  - `changelog`  -  enable append-only mutation log
-  - `softDelete`  -  mark documents deleted with `_deletedAt` instead of removing them
-  - `versioning`  -  auto-increment `_version` on every insert and update
-  - `strict`  -  reject documents with unknown fields
-  - `onSchemaError`  -  `"throw"` (default) | `"warn"` | `"strip"`
-  - `defaultTtl`  -  TTL applied to every inserted document (e.g. `"24h"`)
-  - `defaultEmbed`  -  field name auto-embedded as `_vector` on every insert
-  - `maxDocs`  -  capped collection; oldest documents evicted FIFO when exceeded
-- `db.renameCollection(from, to)`  -  rename in memory and on disk
+- `db.connect()` - load persisted data, run pending migrations, sweep expired TTL docs, start TTL sweep timer if configured
+- `db.disconnect()` - flush all unsaved data, clear in-memory state, stop TTL sweep timer
+- `db.useCollection(name)` - get or create a cached collection instance
+- `db.createCollection(name, opts?)` - define schema and collection behaviour before `connect()`; key options:
+  - `schema` - `{ field: type | { type, required, unique, enum } }`
+  - `indexes` - fields to build O(1) secondary indexes on
+  - `changelog` - enable append-only mutation log
+  - `softDelete` - mark documents deleted with `_deletedAt` instead of removing them
+  - `versioning` - auto-increment `_version` on every insert and update
+  - `strict` - reject documents with unknown fields
+  - `onSchemaError` - `"throw"` (default) | `"warn"` | `"strip"`
+  - `defaultTtl` - TTL applied to every inserted document (e.g. `"24h"`)
+  - `defaultEmbed` - field name auto-embedded as `_vector` on every insert
+  - `maxDocs` - capped collection; oldest documents evicted FIFO when exceeded
+- `db.renameCollection(from, to)` - rename in memory and on disk
 
 ### CRUD
 
@@ -109,40 +109,40 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Update Operators
 
-- `{ field: { $inc: n } }`  -  increment numeric field by `n`
-- `{ field: { $push: val } }`  -  append to array field (auto-created if missing)
+- `{ field: { $inc: n } }` - increment numeric field by `n`
+- `{ field: { $push: val } }` - append to array field (auto-created if missing)
 
 ### Query Filters
 
-- Plain object: `{ role: "admin" }`  -  equality match
+- Plain object: `{ role: "admin" }` - equality match
 - Operators: `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$fn`
 - Dot-notation: `{ "address.city": "Cairo" }`
 - Function: `doc => doc.score > 100`
 
 ### Vector Search
 
-- `collection.insertOne(doc, { embed: "fieldName" })`  -  store embedding for the named field
-- `collection.search(query, opts?)` → `{ docs, scores }`  -  cosine similarity; opts: `filter`, `limit`, `minScore`
-- `collection.similar(id, opts?)` → `{ docs, scores }`  -  nearest-neighbour by document ID
+- `collection.insertOne(doc, { embed: "fieldName" })` - store embedding for the named field
+- `collection.search(query, opts?)` → `{ docs, scores }` - cosine similarity; opts: `filter`, `limit`, `minScore`
+- `collection.similar(id, opts?)` → `{ docs, scores }` - nearest-neighbour by document ID
 
 ### AI Queries
 
-- `db.ask(collection, nlQuery, opts?)`  -  translate natural language to a structured filter via LLM; results cached by `{ collection, schema, query }` hash
+- `db.ask(collection, nlQuery, opts?)` - translate natural language to a structured filter via LLM; results cached by `{ collection, schema, query }` hash
 
 ### Agent Memory
 
-- `db.useMemory(sessionId)`  -  episodic store backed by `_memory_<sessionId>` collection
-- `memory.remember(text)` → `doc`  -  store a text episode with embedding
-- `memory.recall(query, opts?)` → `{ docs, scores }`  -  semantic similarity recall
-- `memory.history(opts?)` → `doc[]`  -  chronological listing; opts: `since`, `limit`
-- `memory.forget(id)` → `doc | null`  -  delete a memory entry
-- `memory.context(opts?)` → `string`  -  LLM-ready context string capped to a token budget; opts: `tokens`
-- `memory.compress(opts?)`  -  summarise old episodes via LLM; opts: `threshold`, `keepRecent`
+- `db.useMemory(sessionId)` - episodic store backed by `_memory_<sessionId>` collection
+- `memory.remember(text)` → `doc` - store a text episode with embedding
+- `memory.recall(query, opts?)` → `{ docs, scores }` - semantic similarity recall
+- `memory.history(opts?)` → `doc[]` - chronological listing; opts: `since`, `limit`
+- `memory.forget(id)` → `doc | null` - delete a memory entry
+- `memory.context(opts?)` → `string` - LLM-ready context string capped to a token budget; opts: `tokens`
+- `memory.compress(opts?)` - summarise old episodes via LLM; opts: `threshold`, `keepRecent`
 - `memory.tokenCount()` → `{ tokens, count }`
 
 ### MCP Server
 
-- `db.mcp(opts?)`  -  expose the database to Claude Desktop, Cursor, and any MCP client
+- `db.mcp(opts?)` - expose the database to Claude Desktop, Cursor, and any MCP client
   - Supports stdio and HTTP/SSE transports
   - Configurable per-collection scopes (`read` / `write` / `admin`)
   - CORS opt-in via `allowedOrigin`
@@ -150,25 +150,25 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Transactions & Integrity
 
-- `db.transaction(fn)`  -  in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback; non-transactional writes to a tx-touched collection are not yet isolated from rollback (planned for alpha.4)
-- `db.namespace(id)`  -  scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
-- `db.seed(fixtures, opts?)`  -  bulk-insert fixtures; `reset: true` clears first
-- `db.addMigration({ version, up })`  -  versioned migration; runs automatically on `connect()`
+- `db.transaction(fn)` - in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback; non-transactional writes to a tx-touched collection are not yet isolated from rollback (planned for alpha.4)
+- `db.namespace(id)` - scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
+- `db.seed(fixtures, opts?)` - bulk-insert fixtures; `reset: true` clears first
+- `db.addMigration({ version, up })` - versioned migration; runs automatically on `connect()`
 
 ### Observability
 
-- `collection.watch(filter?, callback?)`  -  reactive collection observer; callback or `AsyncIterableIterator`
-- `db.watch(callback)`  -  cross-collection global observer; fires for every mutation across all collections
-- `db.changelog()`  -  append-only mutation log
-- `db.restore(collection, timestamp)`  -  point-in-time restore from changelog (currently lossy: replays via `insertOne`/`updateOne` which regenerates timestamps and `_version`; exact snapshot rehydration planned for beta.1)
-- `db.stats()`  -  count, estimated size, average doc size per collection
-- `db.slowQueries()`  -  slow query log with configurable threshold and ring buffer
-- `db.sessionStats()`  -  reads/writes/lastActive keyed by session ID
-- `db.inspect(name?)`  -  collection metadata including `softDelete`, `versioning`, `strict`, `maxDocs`
+- `collection.watch(filter?, callback?)` - reactive collection observer; callback or `AsyncIterableIterator`
+- `db.watch(callback)` - cross-collection global observer; fires for every mutation across all collections
+- `db.changelog()` - append-only mutation log
+- `db.restore(collection, timestamp)` - point-in-time restore from changelog (currently lossy: replays via `insertOne`/`updateOne` which regenerates timestamps and `_version`; exact snapshot rehydration planned for beta.1)
+- `db.stats()` - count, estimated size, average doc size per collection
+- `db.slowQueries()` - slow query log with configurable threshold and ring buffer
+- `db.sessionStats()` - reads/writes/lastActive keyed by session ID
+- `db.inspect(name?)` - collection metadata including `softDelete`, `versioning`, `strict`, `maxDocs`
 
 ## Document System Fields
 
-Every inserted document receives: `_id`, `createdAt`, `updatedAt`. Optional system fields: `_expiresAt` (TTL), `_version` (versioning), `_deletedAt` (soft delete), `_vector` (embedding  -  never returned in query results).
+Every inserted document receives: `_id`, `createdAt`, `updatedAt`. Optional system fields: `_expiresAt` (TTL), `_version` (versioning), `_deletedAt` (soft delete), `_vector` (embedding - never returned in query results).
 
 ## Connector Import Paths
 
@@ -185,27 +185,27 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 
 `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, BunSQLiteAdapter, D1Adapter, LibSQLAdapter } from 'skalex/connectors/storage'`
 
-- `FsAdapter`  -  Node.js / Bun / Deno filesystem (default); atomic writes; gz/json formats
-- `LocalStorageAdapter`  -  browser `localStorage`
-- `EncryptedAdapter`  -  AES-256-GCM wrapper for any adapter; zero extra dependencies
-- `BunSQLiteAdapter`  -  Bun-native `bun:sqlite`
-- `D1Adapter`  -  Cloudflare D1 / Workers
-- `LibSQLAdapter`  -  LibSQL / Turso
+- `FsAdapter` - Node.js / Bun / Deno filesystem (default); atomic writes; gz/json formats
+- `LocalStorageAdapter` - browser `localStorage`
+- `EncryptedAdapter` - AES-256-GCM wrapper for any adapter; zero extra dependencies
+- `BunSQLiteAdapter` - Bun-native `bun:sqlite`
+- `D1Adapter` - Cloudflare D1 / Workers
+- `LibSQLAdapter` - LibSQL / Turso
 
 ## Embedding Adapters
 
 `import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors/embedding'`
 
-- `OpenAIEmbeddingAdapter`  -  OpenAI `text-embedding-3-small` (and any model override)
-- `OllamaEmbeddingAdapter`  -  local embeddings via Ollama; zero API cost
+- `OpenAIEmbeddingAdapter` - OpenAI `text-embedding-3-small` (and any model override)
+- `OllamaEmbeddingAdapter` - local embeddings via Ollama; zero API cost
 
 ## Language Model Adapters
 
 `import { OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors/llm'`
 
-- `OpenAILLMAdapter`  -  `gpt-4o-mini` (default); any OpenAI chat model
-- `AnthropicLLMAdapter`  -  `claude-haiku-4-5` (default); any Anthropic model
-- `OllamaLLMAdapter`  -  `llama3.2` (default); any locally running Ollama model
+- `OpenAILLMAdapter` - `gpt-4o-mini` (default); any OpenAI chat model
+- `AnthropicLLMAdapter` - `claude-haiku-4-5` (default); any Anthropic model
+- `OllamaLLMAdapter` - `llama3.2` (default); any locally running Ollama model
 
 ## Roadmap
 
@@ -213,7 +213,7 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 **Sync & multi-device:** pluggable push/pull replication (REST, WebSocket, CouchDB/PouchDB, Supabase, Firebase); multi-tab BroadcastChannel sync; partial/filtered replication; CRDT field-level merging with presence tracking
 
-**Query & schema:** `$or`/`$and`/`$not` logical operators; aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`); full-text search with inverted index and `$text` operator; cursor-based pagination; compound multi-field indexes; `db.stream()` async generator for large result sets; schema change safety with `addMigration({ dryRun: true })`; Zod schema integration
+**Query & schema:** `$or`/`$and`/`$not` logical operators; aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`); full-text search with inverted index and `$text` operator; cursor-based pagination; compound multi-field indexes; `db.stream()` async generator for large result sets; schema change safety with `addMigration({ dryRun: true })`; Zod schema integration; QueryCache invalidation on schema change
 
 **AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15-30% better recall); multimodal embeddings (text + image unified space via CLIP); vector quantization (4-8× memory reduction); graph-enhanced vector retrieval; streaming LLM responses for `db.ask()` and `memory.compress()`; `collection.similar(doc)`; `db.classify(doc, labels)` zero-shot classification; `db.summarize()`; `db.rag()` one-call RAG pipeline; strict LLM response validation
 
@@ -221,13 +221,15 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 **Time-series:** `createCollection(name, { timeSeries: true })` with windowed queries, time-bucketed aggregations, and downsampling
 
-**Security:** field-level encryption with separate keys; row-level security (per-collection access control functions); key rotation for `EncryptedAdapter`
+**Security:** field-level encryption with separate keys; row-level security (per-collection access control functions); key rotation for `EncryptedAdapter`; MCP HTTP authentication (API key / bearer token)
+
+**MCP:** request schema validation; rate limiting on HTTP transport; SSE heartbeat for stale connection detection
 
 **Storage adapters:** `SQLiteWASMAdapter` (browser-native SQLite via official WASM build); `IndexedDB` adapter; `PostgresAdapter`; `BetterSQLite3Adapter`; `RedisAdapter`; `MongoAdapter`; `BunPostgresAdapter`; `DenoKVAdapter`
 
-**Resilience & memory:** `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler; Write-Ahead Log (WAL) for crash safety; `db.size()` memory footprint reporting; `db.on('memoryWarning', cb)` memory pressure events
+**Resilience & memory:** `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler; Write-Ahead Log (WAL) for crash safety; `db.size()` memory footprint reporting; `db.on('memoryWarning', cb)` memory pressure events; per-collection transaction locking; copy-on-write transaction isolation; crash recovery beyond sentinel warning; persistence state encapsulation
 
-**DX & tooling:** `create-skalex` scaffolding CLI; interactive browser playground; `createTestDb()` test helper; `db.rest()` auto-REST API; `db.graphql()` auto-GraphQL API; `db.compact()`; OpenTelemetry integration; actionable error messages with codes; Prisma/Drizzle schema import; `@skalex/devtools` browser extension; `npx skalex` REPL; query explain/execution plan; automated backup & restore; NDJSON/Parquet export formats
+**DX & tooling:** `create-skalex` scaffolding CLI; interactive browser playground; `createTestDb()` test helper; `db.rest()` auto-REST API; `db.graphql()` auto-GraphQL API; `db.compact()`; OpenTelemetry integration; actionable error messages with codes; Prisma/Drizzle schema import; `@skalex/devtools` browser extension; `npx skalex` REPL; query explain/execution plan; automated backup & restore; NDJSON/Parquet export formats; dataset size and memory architecture documentation; custom serializer protocol documentation
 
 **Framework adapters:** `skalex/react` (React hooks and context); `skalex/vue` (Vue 3 composables); `skalex/svelte` (Svelte stores); `skalex/solid` (SolidJS signals); `skalex/eleva` (Eleva.js signals and reactive store)
 

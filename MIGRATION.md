@@ -71,4 +71,4 @@ await collection.export({}, { format: "json", name: "users" });
 ```
 
 2. Replace every `db.import(path, "csv")` call with `db.import(path)` pointing at the JSON file.
-3. `collection.export({ format: "csv" })` still works for exporting  -  only import of CSV was removed.
+3. `collection.export({ format: "csv" })` still works for exporting - only import of CSV was removed.

@@ -38,72 +38,72 @@
 
 ```
 src/
-  index.js                   -  Skalex class (database entry point)
-  index.d.ts                 -  TypeScript declarations (source of truth)
+  index.js                  - Skalex class (database entry point)
+  index.d.ts                - TypeScript declarations (source of truth)
   engine/
-    collection.js            -  Collection class (per-collection CRUD)
-    query.js                 -  matchesFilter + presortFilter
-    indexes.js               -  IndexEngine (secondary field + compound indexes)
-    validator.js             -  parseSchema, validateDoc, inferSchema, stripInvalidFields
-    ttl.js                   -  computeExpiry, sweep
-    migrations.js            -  MigrationEngine
-    vector.js                -  cosineSimilarity, stripVector
-    utils.js                 -  generateUniqueId, logger, resolveDotPath
-    errors.js                -  Typed error hierarchy (SkalexError and subclasses)
-    persistence.js           -  PersistenceManager (load, save, dirty tracking, write coalescing)
-    transaction.js           -  TransactionManager (lazy snapshots, timeout, rollback)
-    registry.js              -  CollectionRegistry (store creation, instance caching, inspection)
-    pipeline.js              -  MutationPipeline (shared pre/post mutation lifecycle)
-    adapters.js              -  AI adapter factory functions (embedding + LLM)
+    collection.js           - Collection class (per-collection CRUD)
+    query.js                - matchesFilter + presortFilter
+    indexes.js              - IndexEngine (secondary field + compound indexes)
+    validator.js            - parseSchema, validateDoc, inferSchema, stripInvalidFields
+    ttl.js                  - computeExpiry, sweep
+    migrations.js           - MigrationEngine
+    vector.js               - cosineSimilarity, stripVector
+    utils.js                - generateUniqueId, logger, resolveDotPath
+    errors.js               - Typed error hierarchy (SkalexError and subclasses)
+    persistence.js          - PersistenceManager (load, save, dirty tracking, write coalescing)
+    transaction.js          - TransactionManager (lazy snapshots, timeout, rollback)
+    registry.js             - CollectionRegistry (store creation, instance caching, inspection)
+    pipeline.js             - MutationPipeline (shared pre/post mutation lifecycle)
+    adapters.js             - AI adapter factory functions (embedding + LLM)
   features/
-    aggregation.js           -  count, sum, avg, groupBy
-    changelog.js             -  ChangeLog class (append-only mutation log)
-    events.js                -  EventBus (cross-runtime pub/sub)
-    memory.js                -  Memory class (agent episodic store)
-    ask.js                   -  natural language -> filter via LLM
-    plugins.js               -  PluginEngine (pre/post hooks)
-    session-stats.js         -  SessionStats (per-session read/write tracking)
-    query-log.js             -  SlowQueryLog (threshold-based ring buffer)
+    aggregation.js          - count, sum, avg, groupBy
+    changelog.js            - ChangeLog class (append-only mutation log)
+    events.js               - EventBus (cross-runtime pub/sub)
+    memory.js               - Memory class (agent episodic store)
+    ask.js                  - natural language -> filter via LLM
+    plugins.js              - PluginEngine (pre/post hooks)
+    session-stats.js        - SessionStats (per-session read/write tracking)
+    query-log.js            - SlowQueryLog (threshold-based ring buffer)
   connectors/
     storage/
-      base.js                -  StorageAdapter abstract class
-      fs.js                  -  FsAdapter (Node.js file system, atomic writes, gz/json)
-      local.js               -  LocalStorageAdapter (browser localStorage)
-      encrypted.js           -  EncryptedAdapter (AES-256-GCM wrapper)
-      bun-sqlite.js          -  BunSQLiteAdapter (bun:sqlite)
-      d1.js                  -  D1Adapter (Cloudflare D1 / Workers)
-      libsql.js              -  LibSQLAdapter (LibSQL / Turso)
+      base.js               - StorageAdapter abstract class
+      fs.js                 - FsAdapter (Node.js file system, atomic writes, gz/json)
+      local.js              - LocalStorageAdapter (browser localStorage)
+      encrypted.js          - EncryptedAdapter (AES-256-GCM wrapper)
+      bun-sqlite.js         - BunSQLiteAdapter (bun:sqlite)
+      d1.js                 - D1Adapter (Cloudflare D1 / Workers)
+      libsql.js             - LibSQLAdapter (LibSQL / Turso)
     embedding/
-      base.js                -  EmbeddingAdapter abstract class
-      openai.js              -  OpenAIEmbeddingAdapter (text-embedding-3-small default)
-      ollama.js              -  OllamaEmbeddingAdapter (nomic-embed-text default)
+      base.js               - EmbeddingAdapter abstract class
+      openai.js             - OpenAIEmbeddingAdapter (text-embedding-3-small default)
+      ollama.js             - OllamaEmbeddingAdapter (nomic-embed-text default)
     llm/
-      base.js                -  LLMAdapter abstract class
-      openai.js              -  OpenAILLMAdapter (gpt-4o-mini default)
-      anthropic.js           -  AnthropicLLMAdapter (claude-haiku-4-5 default)
-      ollama.js              -  OllamaLLMAdapter (llama3.2 default)
+      base.js               - LLMAdapter abstract class
+      openai.js             - OpenAILLMAdapter (gpt-4o-mini default)
+      anthropic.js          - AnthropicLLMAdapter (claude-haiku-4-5 default)
+      ollama.js             - OllamaLLMAdapter (llama3.2 default)
     mcp/
-      index.js               -  SkalexMCPServer (stdio + HTTP/SSE)
-      protocol.js            -  JSON-RPC 2.0 helpers
-      tools.js               -  MCP tool definitions
+      index.js              - SkalexMCPServer (stdio + HTTP/SSE)
+      protocol.js           - JSON-RPC 2.0 helpers
+      tools.js              - MCP tool definitions
       transports/
-        stdio.js             -  StdioTransport
-        http.js              -  HttpTransport (HTTP + SSE)
+        stdio.js            - StdioTransport
+        http.js             - HttpTransport (HTTP + SSE)
 
-dist/                        -  generated by `npm run build`, not committed to git
-  skalex.esm.js              -  ESM build (readable)
-  skalex.esm.min.js          -  ESM build (minified)
-  skalex.cjs                 -  CJS build (readable)
-  skalex.min.cjs             -  CJS build (minified)
-  skalex.browser.js          -  Browser ESM build (node:* built-ins stubbed)
-  skalex.d.ts                -  TypeScript declarations (copied from src/index.d.ts)
+dist/                       - generated by `npm run build`, not committed to git
+  skalex.esm.js             - ESM build (readable)
+  skalex.esm.min.js         - ESM build (minified)
+  skalex.cjs                - CJS build (readable)
+  skalex.min.cjs            - CJS build (minified)
+  skalex.browser.js         - Browser ESM build (node:* built-ins stubbed)
+  skalex.d.ts               - TypeScript declarations (copied from src/index.d.ts)
 
 tests/
   helpers/
-    MemoryAdapter.js         -  In-memory StorageAdapter for CI (no I/O)
-    MockEmbeddingAdapter.js  -  Deterministic 4-dim vectors for unit tests
-    MockLLMAdapter.js        -  Configurable nlQuery -> filter map
-    MockTransport.js         -  In-memory MCP transport for unit tests
+    MemoryAdapter.js        - In-memory StorageAdapter for CI (no I/O)
+    MockEmbeddingAdapter.js - Deterministic 4-dim vectors for unit tests
+    MockLLMAdapter.js       - Configurable nlQuery -> filter map
+    MockTransport.js        - In-memory MCP transport for unit tests
   unit/
     aggregation.test.js
     ask.test.js
@@ -130,17 +130,17 @@ tests/
     skalex-core.test.js
     skalex.test.js
   smoke/
-    node.test.cjs            -  CJS dist smoke test (Node.js >=18)
-    bun.test.js              -  ESM dist smoke test (Bun)
-    bun-sqlite.test.js       -  BunSQLiteAdapter smoke test
-    deno.test.js             -  ESM dist smoke test (Deno 2.x)
-    browser.test.js          -  Headless Chromium runner (Playwright)
-    browser.html             -  Browser smoke test page
-    browser-umd.html         -  UMD browser smoke test page
+    node.test.cjs           - CJS dist smoke test (Node.js >=18)
+    bun.test.js             - ESM dist smoke test (Bun)
+    bun-sqlite.test.js      - BunSQLiteAdapter smoke test
+    deno.test.js            - ESM dist smoke test (Deno 2.x)
+    browser.test.js         - Headless Chromium runner (Playwright)
+    browser.html            - Browser smoke test page
+    browser-umd.html        - UMD browser smoke test page
 
 scripts/
-  mcp-server.js              -  Runnable MCP server for Claude Desktop / Cursor
-  run-deno.js                -  Cross-platform deno binary resolver
+  mcp-server.js             - Runnable MCP server for Claude Desktop / Cursor
+  run-deno.js               - Cross-platform deno binary resolver
 ```
 
 ---
@@ -193,12 +193,12 @@ All engine errors extend `SkalexError`, which extends `Error` and adds `code` (s
 
 ```
 SkalexError
-  +-- ValidationError        -  Schema parsing or document validation failure
-  +-- UniqueConstraintError  -  Insert or update violates a unique field constraint
-  +-- TransactionError       -  Transaction timeout, abort, or rollback failure
-  +-- PersistenceError       -  Load, save, serialization, or flush failure
-  +-- AdapterError           -  Storage or AI adapter misconfiguration
-  +-- QueryError             -  Query filter, operator, or execution failure
+  +-- ValidationError       - Schema parsing or document validation failure
+  +-- UniqueConstraintError - Insert or update violates a unique field constraint
+  +-- TransactionError      - Transaction timeout, abort, or rollback failure
+  +-- PersistenceError      - Load, save, serialization, or flush failure
+  +-- AdapterError          - Storage or AI adapter misconfiguration
+  +-- QueryError            - Query filter, operator, or execution failure
 ```
 
 Code convention: `ERR_SKALEX_<SUBSYSTEM>_<SPECIFIC>` (e.g. `ERR_SKALEX_VALIDATION_REQUIRED`, `ERR_SKALEX_TX_TIMEOUT`).
@@ -439,9 +439,9 @@ File: `src/engine/indexes.js`
 Maintains Map-based indexes for declared fields. Three index types:
 
 ```
-_fieldIndexes:    Map<field, Map<value, Set<doc>>>   -  non-unique + unique
-_uniqueIndexes:   Map<field, Map<value, doc>>        -  unique fields only
-_compoundIndexes: Map<key, { fields, map }>          -  multi-field compound indexes
+_fieldIndexes:    Map<field, Map<value, Set<doc>>>  - non-unique + unique
+_uniqueIndexes:   Map<field, Map<value, doc>>       - unique fields only
+_compoundIndexes: Map<key, { fields, map }>         - multi-field compound indexes
 ```
 
 ### Compound indexes
