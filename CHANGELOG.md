@@ -7,7 +7,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [4.0.0-alpha.2] - Unreleased
+## [4.0.0-alpha.2] - 2026-04-09
 
 ### Breaking Changes
 
@@ -170,6 +170,7 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 - **Throw `PersistenceError` on corrupt collection files by default** - `loadAll()` now throws `PersistenceError` with code `ERR_SKALEX_PERSISTENCE_CORRUPT` when a collection file fails to deserialize. The previous silent-warning behavior is available via `{ lenientLoad: true }`.
 - **Prevent user spread from overwriting system timestamps on insert** - `_buildDoc()` now sets `createdAt` and `updatedAt` after spreading user input, ensuring system timestamps are always current. User-provided `_id` is preserved via nullish coalescing.
 - **`dump()` returns deep copies** - `dump()` now uses `structuredClone` instead of shallow array spread, preventing callers from corrupting internal state by mutating returned documents.
+- **Document connector subpath exports as raw ESM** - connector subpaths (`skalex/connectors/*`) point to raw `src/` ESM source with `node:*` imports, not bundled `dist/` artifacts. This is intentional: connectors are runtime-specific and not candidates for browser stubbing. `src/connectors` is included in the published `files` list. Full `import`/`require`/`types` normalization is tracked for beta.1.
 - **Export base adapter classes from connector barrels** - `StorageAdapter`, `EmbeddingAdapter`, and `LLMAdapter` are now exported from their respective barrel files and the full connectors barrel. Consumers can extend base classes without reaching into internal paths.
 - **Add `src/engine/errors.js` to package `files`** - The encrypted adapter's transitive dependency on `errors.js` is now included in the published package.
 
@@ -409,6 +410,7 @@ New options available when defining a collection:
 - `dist/skalex.esm.js`: ESM for Node.js, Bun, Deno
 - `dist/skalex.cjs`: CommonJS for Node.js `require()`
 - `dist/skalex.browser.js`: browser ESM; all `node:*` built-ins stubbed at build time
+- `dist/skalex.umd.min.js`: IIFE/UMD for CDN `<script>` usage (`window.Skalex`)
 - `dist/skalex.esm.min.js` + `dist/skalex.min.cjs`: minified variants
 - Subpath exports: `skalex/connectors/encrypted`, `/local`, `/d1`, `/bun-sqlite`, `/libsql`
 - `skalex/min`: subpath export for minified builds
