@@ -46,10 +46,20 @@ After extraction, `Skalex` becomes a facade that composes:
 **Outcome:** `Skalex` class drops to ~400 lines of pure composition and
 lifecycle orchestration.
 
-**Scope:** `src/index.js`, new `src/engine/ai.js`, `src/engine/ttl.js`, `src/engine/importer.js`
+**Additional fix (type drift):** While reshaping the constructor surface,
+align `SkalexConfig` in `src/index.d.ts` with runtime:
+- Add `lenientLoad?: boolean` to `SkalexConfig` (accepted at
+  [index.js:99](../src/index.js#L99), passed to PersistenceManager at
+  [index.js:152](../src/index.js#L152), missing from the type).
+- Widen logger level from `'info' | 'error'` to `'info' | 'warn' | 'error'`
+  (runtime emits `'warn'` at [collection.js:330](../src/engine/collection.js#L330)
+  and [collection.js:906](../src/engine/collection.js#L906)).
+
+**Scope:** `src/index.js`, `src/index.d.ts`, new `src/engine/ai.js`, `src/engine/ttl.js`, `src/engine/importer.js`
 
 **Test:** All existing integration tests must pass unchanged. The extracted
-classes should have focused unit tests.
+classes should have focused unit tests. `types:check` must pass with the
+updated `SkalexConfig` definition.
 
 **Depends on:** alpha.3 #8 (consolidate `_getMeta`/`_saveMeta`), alpha.3 #9 (shared context)
 
@@ -126,6 +136,53 @@ Recommend Option A with a `dropped` counter on the iterator for observability.
 buffer stays at `maxBufferSize` and oldest events are dropped.
 
 **Depends on:** None
+
+---
+
+### 16. Tighten transaction isolation for out-of-band writes
+
+**Issue:** None
+**Severity:** P0 - critical
+**Effort:** Medium
+
+**Problem:** `snapshotIfNeeded()` deep-clones `col.data` via `structuredClone`
+([index.js:790](../src/index.js#L790)) before the first transactional write.
+Rollback restores the snapshot by replacing the live array: `col.data = snap.data`
+([index.js:801](../src/index.js#L801)). Non-transactional writes mutate the
+same `col.data` in memory. If a non-tx write hits a collection already
+snapshotted by a transaction, rollback overwrites that non-tx write - the
+entire array is replaced with the pre-snapshot copy.
+
+Existing test ([data-integrity.test.js:170](../tests/integration/data-integrity.test.js#L170))
+only proves survival for writes to a different, untouched collection. No test
+covers the unsafe case: non-tx write to a tx-touched collection followed by
+rollback.
+
+**Fix options:**
+
+- **(A)** Block non-tx writes while a transaction touches a collection.
+  Reject with `TransactionError("ERR_SKALEX_TX_COLLECTION_LOCKED", ...)`
+  until commit or rollback.
+
+- **(B)** Per-collection copy-on-write. Transactional writes operate on a
+  cloned copy; commit merges back; rollback discards. Non-tx writes always
+  hit the live state.
+
+Option A for alpha.4 - simpler, matches the existing single-writer model
+(`_txLock` serializes transactions). Option B can follow in beta if needed.
+
+**Scope:** `src/engine/transaction.js`, `src/engine/collection.js`, `src/engine/pipeline.js`
+
+**Test:**
+1. Start a transaction that writes to collection "items"
+2. Outside the transaction, attempt `insertOne()` on "items"
+3. Assert the outside write is rejected with `ERR_SKALEX_TX_COLLECTION_LOCKED`
+4. Commit the transaction
+5. Retry the outside write - assert it succeeds
+6. Repeat with rollback instead of commit - assert outside write succeeds after rollback
+7. Assert writes to a different collection during the transaction still succeed (no over-locking)
+
+**Depends on:** alpha.4 #1 (Skalex decomposition extracts TransactionManager)
 
 ---
 
@@ -477,41 +534,47 @@ Assert basic CRUD works without a `Skalex` instance.
 
 ---
 
-### 15. Add `FileSystemCapable` capability interface for adapters
+### 15. Formalize tiered adapter capability interfaces
 
 **Issue:** None
 **Severity:** P3 - housekeeping
-**Effort:** Small
+**Effort:** Medium
 
-**Problem:** `Collection.export()` calls `this._ctx.fs.writeRaw()`,
-`this._ctx.fs.join()`, and `this._ctx.fs.ensureDir()` - methods that only
-exist on `FsAdapter`, not on the base `StorageAdapter`. If a consumer uses
-`LocalStorageAdapter` or `D1Adapter` and calls `export()`, they get
-`writeRaw is not a function`.
+**Problem:** Base contract in [base.js:7](../src/connectors/storage/base.js#L7)
+defines `read`, `write`, `delete`, `list`, plus an optional `writeAll` fallback
+([base.js:50](../src/connectors/storage/base.js#L50)). Core features rely on
+methods outside this contract:
 
-**Fix:** Define a `FileSystemCapable` mixin or check:
+- `writeAll()` for transaction commit ([collection.js:836](../src/engine/collection.js#L836))
+- `readRaw()` for import ([index.js:544](../src/index.js#L544))
+- `writeRaw()` for export ([collection.js:857](../src/engine/collection.js#L857))
+- `join()` / `ensureDir()` for filesystem paths ([collection.js:854-856](../src/engine/collection.js#L854))
 
-```js
-if (typeof this._ctx.fs.writeRaw !== "function") {
-  throw new AdapterError("ERR_SKALEX_ADAPTER_NO_RAW_WRITE",
-    "export() requires a file-system adapter (FsAdapter).");
-}
-```
+Currently duck-typed via `typeof` checks at call sites. No way to tell from
+the base class which optional methods a given adapter must implement.
 
-This check already exists (alpha.2 era) but the error message could guide
-users to alternatives. The deeper fix is extracting `export()` into
-`CollectionExporter` (#2) which can accept a file-system target explicitly.
+**Fix:** Promote into explicit tiered interfaces:
 
-**Scope:** `src/engine/collection.js`
+1. **`StorageAdapter`** (base) - `read`, `write`, `delete`, `list`. Unchanged.
+2. **`BatchStorageAdapter`** - extends base, adds `writeAll(entries)`.
+3. **`RawFileStorageAdapter`** - extends base, adds `readRaw(path)`, `writeRaw(path, data)`.
+4. **`PathAwareStorageAdapter`** - extends raw-file, adds `join(...segments)`, `ensureDir(path)`.
+
+Replace `typeof` checks with `instanceof` assertions. The `CollectionExporter`
+extraction (#2) accepts a capability-checked adapter explicitly.
+
+**Scope:** `src/connectors/storage/base.js`, new `src/connectors/storage/batch.js`,
+new `src/connectors/storage/raw-file.js`, new `src/connectors/storage/path-aware.js`,
+`src/engine/collection.js`, `src/index.js`
 
 **Test:**
-1. Create a `Collection` backed by a non-FS adapter (e.g., `LocalStorageAdapter`)
-2. Call `collection.export()` on it
-3. Assert it throws `AdapterError` with code `ERR_SKALEX_ADAPTER_NO_RAW_WRITE`
-4. Create a `Collection` backed by `FsAdapter` and call `export()`
-5. Assert it succeeds without error
+1. `collection.export()` on a non-FS adapter - assert `AdapterError` with code `ERR_SKALEX_ADAPTER_NO_RAW_WRITE`
+2. `collection.export()` on `FsAdapter` - assert success
+3. Assert `FsAdapter instanceof PathAwareStorageAdapter` is true
+4. Assert `LocalStorageAdapter instanceof PathAwareStorageAdapter` is false
+5. Assert `FsAdapter instanceof BatchStorageAdapter` is true
 
-**Depends on:** None
+**Depends on:** alpha.4 #2 (Collection decomposition / CollectionExporter extraction)
 
 ---
 
@@ -535,7 +598,8 @@ Every item must ship with at least one targeted regression test:
 | #12 (fetchWithRetry) | Mocked fetch - retry count, delay doubling, timeout abort |
 | #13 (async zlib) | Event loop not blocked during large collection read/write |
 | #14 (ICollectionContext) | Collection instantiated via `forTesting()` - basic CRUD works |
-| #15 (FileSystemCapable) | `export()` on non-FS adapter - clear `AdapterError` |
+| #15 (adapter tiers) | `export()` on non-FS adapter - clear `AdapterError`; `instanceof` checks pass for each tier |
+| #16 (tx isolation) | Non-tx write to tx-touched collection rejected; write succeeds after commit/rollback; untouched collections unaffected |
 
 ---
 
@@ -572,9 +636,11 @@ alpha.4 is done when:
 12. AI adapter retry logic uses a single shared `fetchWithRetry()` utility.
 13. `FsAdapter` uses async zlib (no event loop blocking on large collections).
 14. `Collection` can be instantiated with `CollectionContext.forTesting()` for isolated unit tests.
-15. `export()` on a non-FS adapter throws a clear error (not `undefined is not a function`).
-16. All regression tests exist and pass.
-17. The verification matrix passes.
+15. Adapter capabilities formalized into tiered interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`).
+16. Non-tx writes to a tx-touched collection are rejected; rollback cannot clobber outside writes.
+17. `SkalexConfig` type exposes `lenientLoad`; logger level includes `'warn'`.
+18. All regression tests exist and pass.
+19. The verification matrix passes.
 
 ---
 
@@ -582,17 +648,19 @@ alpha.4 is done when:
 
 | Item | Tracking |
 |---|---|
-| Changelog retention / compaction | pre-GA |
-| ANN vector indexing | pre-GA |
-| `namespace()` capability checks | pre-GA |
-| Transaction proxy hardening | pre-GA |
+| Changelog retention / compaction | beta |
+| Changelog restore correctness | beta.1 |
+| Connector subpath export normalization | beta.1 |
+| ANN vector indexing | beta |
+| `namespace()` capability checks | beta |
+| Transaction proxy hardening | beta |
 | WAL / multi-process FsAdapter safety | long-term roadmap |
 | `FsAdapter { durable: true }` (fsync) | long-term roadmap |
-| `dropCollection()` | pre-GA feature backlog |
-| `$exists`, `$set`, `$unset` operators | pre-GA feature backlog |
-| Cursor / iterator API for `find()` | pre-GA feature backlog |
-| `upsertMany` O(n^2) optimization | pre-GA feature backlog |
-| Bulk delete by ID array | pre-GA feature backlog |
+| `dropCollection()` | beta feature backlog |
+| `$exists`, `$set`, `$unset` operators | beta feature backlog |
+| Cursor / iterator API for `find()` | beta feature backlog |
+| `upsertMany` batch pipeline | beta.1 |
+| Bulk delete by ID array | beta feature backlog |
 
 ---
 
@@ -601,9 +669,9 @@ alpha.4 is done when:
 alpha.4 is not the release for:
 
 - New user-facing features (this is a structural release)
-- ANN vector indexing (pre-GA, separate design doc)
+- ANN vector indexing (beta, separate design doc)
 - WAL or multi-process support (long-term roadmap)
-- Changelog compaction (pre-GA)
+- Changelog compaction (beta)
 - Breaking API changes (all refactors are internal)
 
 ---
@@ -613,22 +681,23 @@ alpha.4 is not the release for:
 Recommended sequence:
 
 **Phase 1 - Decomposition (high effort, high value):**
-1. **#1** (Skalex decomposition) - largest refactor, unlocks everything
+1. **#1** (Skalex decomposition + type drift fix) - largest refactor, unlocks everything
 2. **#2** (Collection decomposition) - second largest, independent of #1
 3. **#8** (Skalex-Collection decoupling) - falls out of #2
+4. **#16** (transaction isolation) - depends on #1, tightens tx model
 
 **Phase 2 - Performance (medium effort):**
-4. **#4** (find pagination fast path) - limit-only optimization
-5. **#5** (structuredClone skip) - small, targeted
-6. **#6** (stats caching) - medium, self-contained
+5. **#4** (find pagination fast path) - limit-only optimization
+6. **#5** (structuredClone skip) - small, targeted
+7. **#6** (stats caching) - medium, self-contained
 
 **Phase 3 - Adapter & code quality (medium effort):**
-7. **#12** (fetchWithRetry extraction) - dedup 6 adapter retry loops
-8. **#13** (async zlib) - unblock event loop in FsAdapter
-9. **#14** (ICollectionContext) - testability interface
-10. **#15** (FileSystemCapable) - adapter capability check
+8. **#12** (fetchWithRetry extraction) - dedup 6 adapter retry loops
+9. **#13** (async zlib) - unblock event loop in FsAdapter
+10. **#14** (ICollectionContext) - testability interface
+11. **#15** (adapter capability tiers) - formalize tiered interfaces
 
 **Phase 4 - Ergonomics (low effort):**
-11. **#7** (browser FsAdapter error) - small, high consumer impact
-12. **#3** (watch backpressure) - medium, needs API decision
-13. **#9-#11** (Symbol.toStringTag, asyncDispose, presortFilter docs) - trivial batch
+12. **#7** (browser FsAdapter error) - small, high consumer impact
+13. **#3** (watch backpressure) - medium, needs API decision
+14. **#9-#11** (Symbol.toStringTag, asyncDispose, presortFilter docs) - trivial batch

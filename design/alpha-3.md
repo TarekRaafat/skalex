@@ -2,7 +2,7 @@
 
 **Status:** Pending alpha.2 completion
 **Version:** v4.0.0-alpha.3
-**Prerequisite:** All alpha.2 items resolved and shipped.
+**Prerequisite:** All alpha.2.1 items resolved and shipped.
 **Gate:** alpha.3 does not ship until every item is resolved and covered by regression tests.
 **Rule:** alpha.3 should reduce long-lived runtime risk and tighten the adapter/platform contract before new major feature work resumes.
 **Theme:** Runtime safety, adapter consistency, code quality, and platform hardening.
