@@ -110,6 +110,63 @@ get focused unit tests.
 
 ---
 
+### 17. Introduce `DataStore` abstraction between Collection and raw data
+
+**Issue:** None
+**Severity:** P0 - critical
+**Effort:** Medium
+
+**Problem:** `Collection` accesses `this._data` (the in-memory array) directly
+throughout: `push()` for inserts ([collection.js:176](../src/engine/collection.js#L176)),
+`splice()` for deletes ([collection.js:786](../src/engine/collection.js#L786)),
+`indexOf()` for position lookups ([collection.js:364](../src/engine/collection.js#L364)),
+direct index assignment for updates ([collection.js:368](../src/engine/collection.js#L368)),
+and full-array iteration as fallback when indexes miss
+([collection.js:1013](../src/engine/collection.js#L1013)). Every new feature
+that touches data adds more direct coupling to the array.
+
+This blocks any future move to a disk-backed storage engine. Without a seam
+between Collection and its data, swapping the in-memory array for a
+disk-backed store would require rewriting every CRUD method.
+
+**Fix:** Introduce a `DataStore` interface that owns all data access:
+
+```js
+class DataStore {
+  insert(doc) {}
+  update(id, doc) {}
+  remove(id) {}
+  getById(id) {}
+  getAll() {}
+  filter(fn) {}
+  count() {}
+  clear() {}
+  replaceAll(docs) {}
+}
+```
+
+The default `InMemoryDataStore` wraps the current array and `_index` Map.
+Collection methods call `this._store.insert(doc)` instead of
+`this._data.push(doc)`. The `QueryPlanner` (extracted in #2) receives the
+store and calls `store.filter()` or `store.getAll()` instead of iterating
+`this._data`.
+
+No public API changes. The store is an internal abstraction. The
+`InMemoryDataStore` preserves current behavior exactly.
+
+**Scope:** new `src/engine/datastore.js`, `src/engine/collection.js`,
+`src/engine/query-planner.js` (after #2 extraction)
+
+**Test:**
+1. All existing collection tests pass unchanged (InMemoryDataStore is the default)
+2. `DataStore` interface unit tests: insert/update/remove/getById/filter/count/clear
+3. Collection instantiated with InMemoryDataStore explicitly - basic CRUD works
+4. No direct `this._data` access remains in Collection after refactor (grep verification)
+
+**Depends on:** alpha.4 #2 (Collection decomposition)
+
+---
+
 ### 3. Add backpressure to watch event queues
 
 **Issue:** None
@@ -600,6 +657,7 @@ Every item must ship with at least one targeted regression test:
 | #14 (ICollectionContext) | Collection instantiated via `forTesting()` - basic CRUD works |
 | #15 (adapter tiers) | `export()` on non-FS adapter - clear `AdapterError`; `instanceof` checks pass for each tier |
 | #16 (tx isolation) | Non-tx write to tx-touched collection rejected; write succeeds after commit/rollback; untouched collections unaffected |
+| #17 (DataStore) | All existing tests pass with InMemoryDataStore; no direct `this._data` access in Collection; DataStore interface unit tests pass |
 
 ---
 
@@ -639,8 +697,9 @@ alpha.4 is done when:
 15. Adapter capabilities formalized into tiered interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`).
 16. Non-tx writes to a tx-touched collection are rejected; rollback cannot clobber outside writes.
 17. `SkalexConfig` type exposes `lenientLoad`; logger level includes `'warn'`.
-18. All regression tests exist and pass.
-19. The verification matrix passes.
+18. `DataStore` abstraction replaces all direct `this._data` access in Collection. No `this._data.push`, `splice`, `indexOf`, or direct index assignment remains.
+19. All regression tests exist and pass.
+20. The verification matrix passes.
 
 ---
 
@@ -683,21 +742,22 @@ Recommended sequence:
 **Phase 1 - Decomposition (high effort, high value):**
 1. **#1** (Skalex decomposition + type drift fix) - largest refactor, unlocks everything
 2. **#2** (Collection decomposition) - second largest, independent of #1
-3. **#8** (Skalex-Collection decoupling) - falls out of #2
-4. **#16** (transaction isolation) - depends on #1, tightens tx model
+3. **#17** (DataStore abstraction) - depends on #2, eliminates direct `_data` coupling
+4. **#8** (Skalex-Collection decoupling) - falls out of #2
+5. **#16** (transaction isolation) - depends on #1, tightens tx model
 
 **Phase 2 - Performance (medium effort):**
-5. **#4** (find pagination fast path) - limit-only optimization
-6. **#5** (structuredClone skip) - small, targeted
-7. **#6** (stats caching) - medium, self-contained
+6. **#4** (find pagination fast path) - limit-only optimization
+7. **#5** (structuredClone skip) - small, targeted
+8. **#6** (stats caching) - medium, self-contained
 
 **Phase 3 - Adapter & code quality (medium effort):**
-8. **#12** (fetchWithRetry extraction) - dedup 6 adapter retry loops
-9. **#13** (async zlib) - unblock event loop in FsAdapter
-10. **#14** (ICollectionContext) - testability interface
-11. **#15** (adapter capability tiers) - formalize tiered interfaces
+9. **#12** (fetchWithRetry extraction) - dedup 6 adapter retry loops
+10. **#13** (async zlib) - unblock event loop in FsAdapter
+11. **#14** (ICollectionContext) - testability interface
+12. **#15** (adapter capability tiers) - formalize tiered interfaces
 
 **Phase 4 - Ergonomics (low effort):**
-12. **#7** (browser FsAdapter error) - small, high consumer impact
-13. **#3** (watch backpressure) - medium, needs API decision
-14. **#9-#11** (Symbol.toStringTag, asyncDispose, presortFilter docs) - trivial batch
+13. **#7** (browser FsAdapter error) - small, high consumer impact
+14. **#3** (watch backpressure) - medium, needs API decision
+15. **#9-#11** (Symbol.toStringTag, asyncDispose, presortFilter docs) - trivial batch

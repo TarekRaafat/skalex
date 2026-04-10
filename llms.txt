@@ -29,14 +29,14 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.1 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **v4.0.0-alpha.2.1 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 **CDN - ESM** (recommended for browser apps; use the browser-specific barrel):
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/dist/skalex.browser.js";
-  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/dist/skalex.browser.js";
+  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/src/connectors/storage/browser.js";
 </script>
 ```
 
@@ -56,7 +56,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 **CDN - IIFE** (quick demos, `window.Skalex` global, no connector bundling):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1"></script>
 ```
 
 ## Core API - by workflow
@@ -179,7 +179,7 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 - Embedding only: `import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors/embedding'`
 - LLM only: `import { OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors/llm'`
 - Individual paths: `skalex/connectors/fs`, `skalex/connectors/local`, `skalex/connectors/encrypted`, `skalex/connectors/bun-sqlite`, `skalex/connectors/d1`, `skalex/connectors/libsql`
-- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.1/src/connectors/storage/browser.js"`
+- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/src/connectors/storage/browser.js"`
 
 ## Storage Adapters
 
@@ -213,9 +213,9 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 **Sync & multi-device:** pluggable push/pull replication (REST, WebSocket, CouchDB/PouchDB, Supabase, Firebase); multi-tab BroadcastChannel sync; partial/filtered replication; CRDT field-level merging with presence tracking
 
-**Query & schema:** `$or`/`$and`/`$not` logical operators; aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`); full-text search with inverted index and `$text` operator; cursor-based pagination; compound multi-field indexes; `db.stream()` async generator for large result sets; schema change safety with `addMigration({ dryRun: true })`; Zod schema integration; QueryCache invalidation on schema change
+**Query & schema:** additional query operators (`$exists`, `$type`, `$size`, `$all`, `$elemMatch`); aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`); full-text search with inverted index and `$text` operator; cursor-based pagination; `db.stream()` async generator for large result sets; schema change safety with `addMigration({ dryRun: true })`; Zod schema integration; QueryCache invalidation on schema change
 
-**AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15-30% better recall); multimodal embeddings (text + image unified space via CLIP); vector quantization (4-8× memory reduction); graph-enhanced vector retrieval; streaming LLM responses for `db.ask()` and `memory.compress()`; `collection.similar(doc)`; `db.classify(doc, labels)` zero-shot classification; `db.summarize()`; `db.rag()` one-call RAG pipeline; strict LLM response validation
+**AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15-30% better recall); multimodal embeddings (text + image unified space via CLIP); vector quantization (4-8× memory reduction); graph-enhanced vector retrieval; streaming LLM responses for `db.ask()` and `memory.compress()`; embedding cache for deduplicating API calls; `collection.similar(doc)`; `db.classify(doc, labels)` zero-shot classification; `db.summarize()`; `db.rag()` one-call RAG pipeline; strict LLM response validation
 
 **Graph:** `collection.traverse(startId, options)` multi-hop traversal; shortest-path and neighbor queries
 
@@ -227,9 +227,9 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 **Storage adapters:** `SQLiteWASMAdapter` (browser-native SQLite via official WASM build); `IndexedDB` adapter; `PostgresAdapter`; `BetterSQLite3Adapter`; `RedisAdapter`; `MongoAdapter`; `BunPostgresAdapter`; `DenoKVAdapter`
 
-**Resilience & memory:** `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler; Write-Ahead Log (WAL) for crash safety; `db.size()` memory footprint reporting; `db.on('memoryWarning', cb)` memory pressure events; per-collection transaction locking; copy-on-write transaction isolation; crash recovery beyond sentinel warning; persistence state encapsulation
+**Resilience & memory:** plugin hook timeouts; `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler; Write-Ahead Log (WAL) for crash safety; `db.size()` memory footprint reporting; `db.on('memoryWarning', cb)` memory pressure events; memory budgets with LRU eviction; per-collection transaction locking; copy-on-write transaction isolation; crash recovery beyond sentinel warning; persistence state encapsulation
 
-**DX & tooling:** `create-skalex` scaffolding CLI; interactive browser playground; `createTestDb()` test helper; `db.rest()` auto-REST API; `db.graphql()` auto-GraphQL API; `db.compact()`; OpenTelemetry integration; actionable error messages with codes; Prisma/Drizzle schema import; `@skalex/devtools` browser extension; `npx skalex` REPL; query explain/execution plan; automated backup & restore; NDJSON/Parquet export formats; dataset size and memory architecture documentation; custom serializer protocol documentation
+**DX & tooling:** `create-skalex` scaffolding CLI; interactive browser playground; `createTestDb()` test helper; `db.rest()` auto-REST API; `db.graphql()` auto-GraphQL API; `db.compact()`; OpenTelemetry integration; actionable error messages with codes; Prisma/Drizzle schema import; `@skalex/devtools` browser extension; `npx skalex` REPL; query explain/execution plan; migration rollback (`down()` support); automated backup & restore; NDJSON/Parquet export formats; stress and performance test suite; performance characteristics documentation; dataset size and memory architecture guide; custom serializer protocol guide
 
 **Framework adapters:** `skalex/react` (React hooks and context); `skalex/vue` (Vue 3 composables); `skalex/svelte` (Svelte stores); `skalex/solid` (SolidJS signals); `skalex/eleva` (Eleva.js signals and reactive store)
 

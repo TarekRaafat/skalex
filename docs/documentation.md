@@ -1844,8 +1844,8 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -1862,10 +1862,10 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.2"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.2.1"></script>
 
 <script>
   // Skalex is available as window.Skalex

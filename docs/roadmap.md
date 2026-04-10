@@ -22,6 +22,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `[alpha.4]` Skip `structuredClone` for `prev` when changelog is disabled
 - [ ] `[alpha.4]` Cache `stats()` computation with dirty flag (avoid full `JSON.stringify`)
 - [ ] `[alpha.4]` Document `presortFilter` reliance on ES spec key-order guarantee
+- [ ] Additional query operators: `$exists`, `$type`, `$size`, `$all`, `$elemMatch` for deeper document filtering
 - [ ] Aggregation pipeline: `$group`, `$project`, `$unwind`, `$lookup` stages (MongoDB-style)
 - [ ] Full-text search: tokenized inverted index for text fields; `$text` operator with ranking
 - [ ] Cursor-based pagination: `after` cursor complement to existing `page`/`limit`
@@ -42,6 +43,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `db.classify(doc, labels)`: zero-shot document classification via LLM
 - [ ] `db.summarize(collection, options)`: AI-powered collection or result-set summarization
 - [ ] `db.rag(query, options)`: RAG pipeline in one call - vector search → context assembly → LLM answer
+- [ ] Embedding cache: deduplicate embedding API calls for repeated or similar text inputs - reduces cost and latency on AI workloads
 - [ ] Strict LLM response validation: type-check and operator-validate AI-generated filters before execution; throw on malformed responses instead of silently returning empty results
 
 **Graph**
@@ -77,7 +79,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `MongoAdapter`: MongoDB collection as a storage backend via the official `mongodb` driver
 - [ ] `BunPostgresAdapter`: Bun-native `bun:postgres` storage
 - [ ] `DenoKVAdapter`: Deno KV storage for Deno Deploy persistence
-- [ ] More storage adapter connectors
+- [ ] `DataStore` abstraction layer: introduce an interface between Collection and the raw `_data` array so the storage engine can be swapped from in-memory to disk-backed without changing the public API - prerequisite for scaling beyond in-memory limits
 
 **Resilience & memory**
 - [ ] `[alpha.3]` Prune `_abortedIds` in TransactionManager (unbounded memory growth on repeated timeouts)
@@ -88,17 +90,17 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `[alpha.3]` Unify `_meta` store creation across persistence and registry
 - [ ] `[alpha.3]` Complete store shape deduplication in `loadAll()`
 - [ ] `[alpha.3]` Consolidate dual `_getMeta`/`_saveMeta` into PersistenceManager
-- [ ] `[alpha.2.1]` Fix connect-time migration deadlock (migrations calling collection write APIs self-deadlock on `_connectPromise`)
-- [ ] `[alpha.2.1]` Fix failed `connect()` not recoverable (`_connectPromise` never cleared on failure)
 - [ ] `[alpha.4]` Tighten transaction isolation: block non-tx writes to tx-touched collections (rollback can clobber outside writes)
 - [ ] `[alpha.4]` Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
 - [ ] `[alpha.4]` Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
+- [ ] Plugin hook timeouts: configurable timeout for `beforeHook`/`afterHook` execution in the mutation pipeline - a slow or hanging plugin should not block all database operations indefinitely
 - [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
 - [ ] Write-Ahead Log (WAL): journal mutations before applying so a hard kill or OOM crash never loses committed data
 - [ ] Multi-process `FsAdapter` safety: file-lock (`O_EXCL` sentinel + PID-based stale-lock detection) so multiple Node.js / Bun processes targeting the same data directory serialize writes without data loss; single-writer-per-directory remains the default, this is an opt-in `{ multiProcess: true }` flag
 - [ ] `FsAdapter { durable: true }`: call `F_FULLFSYNC` (macOS) or `fsync` + directory-sync (Linux) after every rename so writes survive a sudden power failure on SSDs with write caching; off by default to preserve current performance characteristics
 - [ ] `db.size(collection?)`: report per-collection and total in-memory footprint in bytes
 - [ ] Memory pressure events: `db.on('memoryWarning', cb)` fires when heap usage crosses a configurable threshold - lets apps shed load before OOM
+- [ ] Memory budgets with LRU eviction: configurable per-collection memory limit with least-recently-used eviction policy for long-running processes - complements `maxDocs` FIFO cap with a memory-aware alternative
 - [ ] Per-collection transaction locking: replace global serialization with per-collection locks so transactions touching disjoint collections can run concurrently - significantly improves write throughput for multi-collection workloads
 - [ ] Copy-on-write transaction isolation: transactional writes operate on a cloned copy; commit merges back, rollback discards - eliminates full-collection deep clone cost for large datasets
 - [ ] Crash recovery beyond sentinel warning: auto-rollback to last-known-good state or programmatic recovery callback when an incomplete flush is detected on load - currently only logs a warning
@@ -137,8 +139,11 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `@skalex/devtools`: browser DevTools extension - inspect collections, run live queries, visualize schema and indexes
 - [ ] `npx skalex`: CLI inspector REPL for browsing database files without writing code
 - [ ] Query explain / execution plan debug tool
+- [ ] Migration rollback: `down()` migration support for reversible schema and data changes - currently only `up()` is supported with no programmatic rollback path
 - [ ] Automated backup & restore
 - [ ] Additional export formats (NDJSON, Parquet)
+- [ ] Stress and performance test suite: benchmark hot paths (`insertOne`, `find`, `updateOne`) under load, detect memory leaks in long-running processes, and guard against performance regressions across releases
+- [ ] Performance characteristics documentation: document expected throughput, latency, and memory usage for common workloads and collection sizes
 - [ ] Dataset size and memory architecture guide: recommended collection sizes, index strategy for large datasets, and memory characteristics of the in-memory architecture - set clear expectations for what Skalex is designed for
 - [ ] Custom serializer protocol guide: document the tagged-object convention for BigInt and Date preservation so custom serializer/deserializer implementations handle type round-trips correctly
 
@@ -233,6 +238,8 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [x] Typed error hierarchy: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` with stable `ERR_SKALEX_*` codes
 - [x] Named ESM exports: error types and `Collection` available as named imports from `'skalex'`
 - [x] `connect()` idempotent: concurrent calls return the same promise
+- [x] Migrations can use collection write APIs during `db.connect()` without deadlocking (bootstrap flag bypasses `_ensureConnected()` during the connect lifecycle)
+- [x] Failed `connect()` is recoverable: `_connectPromise` cleared on failure so retries work after the underlying error clears
 - [x] `lenientLoad` config option: warn instead of throw on corrupt collection files
 - [x] `dump()` returns deep copies via `structuredClone` (no internal state mutation)
 - [x] Base adapter classes exported from connector barrels (`StorageAdapter`, `EmbeddingAdapter`, `LLMAdapter`)

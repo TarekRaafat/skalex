@@ -55,7 +55,7 @@
 - Pure Vanilla JavaScript: zero runtime dependencies
 - Isomorphic: Node.js ≥18, Bun, Deno 2.x, browsers, edge runtimes
 - Full build matrix ships in the box: `dist/skalex.esm.js`, `dist/skalex.esm.min.js`, `dist/skalex.cjs`, `dist/skalex.min.cjs`, `dist/skalex.browser.js`, `dist/skalex.umd.min.js`
-- CDN-ready - **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2"></script>` → `window.Skalex`
+- CDN-ready - **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1"></script>` → `window.Skalex`
 - npm + bundler: `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors'` - single subpackage, fully tree-shakeable; scoped: `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`
 - Full TypeScript definitions with generics and union types; no `@types/` package needed
 - Pluggable connectors: storage (`FsAdapter`, `LocalStorageAdapter`, `EncryptedAdapter`, `BunSQLiteAdapter`, `D1Adapter`, `LibSQLAdapter`), embedding (`OpenAIEmbeddingAdapter`, `OllamaEmbeddingAdapter`), LLM (`OpenAILLMAdapter`, `AnthropicLLMAdapter`, `OllamaLLMAdapter`)
