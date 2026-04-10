@@ -16,7 +16,10 @@ class MigrationEngine {
   }
 
   /**
-   * Register a migration.
+   * Register a migration. The `up()` function runs during `db.connect()`
+   * after data has been loaded. Collection write APIs (`insertOne`,
+   * `updateOne`, `deleteOne`, etc.) are safe to call from inside `up()` -
+   * they will operate on the loaded data and persist on the next save.
    * @param {{ version: number, description?: string, up: (collection: Collection) => Promise<void> }} migration
    */
   add(migration) {

@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.2.1] - 2026-04-10
+
+Correctness-only patch for two P0 bugs that block the migration and connect-retry models.
+
+### Fixed
+
+- **Connect-time migration deadlock** - Migrations that called collection write APIs (`insertOne`, `updateOne`, etc.) during `db.connect()` would self-deadlock. The write call invoked `_ensureConnected()`, which returned the still-pending `_connectPromise`, waiting forever for the connect that was waiting for the migration. Fixed by introducing a `_bootstrapping` flag set after `loadData()` completes but before migrations run. `_ensureConnected()` returns immediately when the flag is true since the database is already loaded and the caller is inside the connect lifecycle.
+- **Failed `connect()` not recoverable** - If `connect()` failed with a transient adapter or filesystem error, `_connectPromise` was never cleared. Subsequent `connect()` calls returned the same rejected promise forever, permanently bricking the instance. Fixed by clearing `_connectPromise` in a `.catch()` handler so retries work after the underlying error clears.
+
+### Tests
+
+- 3 new regression tests in `tests/integration/skalex.test.js`:
+  - Migration with `insertOne` resolves and inserted document exists
+  - Migration with `updateOne` resolves and updated document reflects new value
+  - Failed `connect()` recovers when adapter is fixed and second `connect()` succeeds
+
+---
+
 ## [4.0.0-alpha.2] - 2026-04-09
 
 ### Breaking Changes

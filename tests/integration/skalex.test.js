@@ -787,6 +787,73 @@ describe("migrations", () => {
     expect(status.pending).toHaveLength(0);
     await db.disconnect();
   });
+
+  test("migration that calls collection insertOne does not deadlock", { timeout: 5000 }, async () => {
+    const { db } = makeDb();
+    db.addMigration({
+      version: 1,
+      up: async () => {
+        const users = db.useCollection("users");
+        await users.insertOne({ name: "seed-user" });
+      },
+    });
+    await db.connect();
+    const users = db.useCollection("users");
+    const result = await users.findOne({ name: "seed-user" });
+    expect(result).not.toBeNull();
+    expect(result.name).toBe("seed-user");
+    await db.disconnect();
+  });
+
+  test("migration that calls collection updateOne does not deadlock", { timeout: 5000 }, async () => {
+    const adapter = new MemoryAdapter();
+    // Pre-seed data so the migration has something to update
+    const db1 = new Skalex({ adapter });
+    await db1.connect();
+    const col = db1.useCollection("config");
+    await col.insertOne({ _id: "app", version: 1 }, { save: true });
+    await db1.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    db2.addMigration({
+      version: 1,
+      up: async () => {
+        const config = db2.useCollection("config");
+        await config.updateOne({ _id: "app" }, { version: 2 });
+      },
+    });
+    await db2.connect();
+    const config = db2.useCollection("config");
+    const doc = await config.findOne({ _id: "app" });
+    expect(doc.version).toBe(2);
+    await db2.disconnect();
+  });
+
+  test("failed connect() can be retried after error clears", async () => {
+    let shouldFail = true;
+    const adapter = new MemoryAdapter();
+    const originalList = adapter.list.bind(adapter);
+    adapter.list = async () => {
+      if (shouldFail) throw new Error("transient disk error");
+      return originalList();
+    };
+
+    const db = new Skalex({ adapter });
+    await expect(db.connect()).rejects.toThrow("transient disk error");
+    expect(db.isConnected).toBe(false);
+
+    // Fix the adapter
+    shouldFail = false;
+    await db.connect();
+    expect(db.isConnected).toBe(true);
+
+    // Instance is fully usable
+    const col = db.useCollection("test");
+    await col.insertOne({ name: "recovery" });
+    const doc = await col.findOne({ name: "recovery" });
+    expect(doc).not.toBeNull();
+    await db.disconnect();
+  });
 });
 
 // ─── _id integrity ──────────────────────────────────────────────────────────

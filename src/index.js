@@ -127,6 +127,7 @@ class Skalex {
     this._migrations = new MigrationEngine();
     this._connectPromise = null;
     this.isConnected = false;
+    this._bootstrapping = false;
 
     this._aiConfig = ai || null;
     this._encryptConfig = encrypt || null;
@@ -171,14 +172,26 @@ class Skalex {
    */
   async connect() {
     if (this._connectPromise) return this._connectPromise;
-    this._connectPromise = this._doConnect();
+    this._connectPromise = this._doConnect().catch((err) => {
+      this._connectPromise = null;
+      throw err;
+    });
     return this._connectPromise;
   }
 
-  /** @private Actual connect implementation. */
+  /**
+   * Actual connect implementation.
+   *
+   * Sets `_bootstrapping` before migrations run so that collection write APIs
+   * called inside a migration's `up()` function can bypass `_ensureConnected()`
+   * without deadlocking on the still-pending `_connectPromise`.
+   * @private
+   */
   async _doConnect() {
     try {
       await this.loadData();
+
+      this._bootstrapping = true;
 
       // Restore persisted query cache
       const meta = this._getMeta();
@@ -208,6 +221,8 @@ class Skalex {
     } catch (error) {
       this._logger(`Error connecting to the database: ${error}`, "error");
       throw error;
+    } finally {
+      this._bootstrapping = false;
     }
   }
 
@@ -237,10 +252,12 @@ class Skalex {
   /**
    * Ensure connect() has been called before proceeding.
    * Triggers auto-connect on the first operation if not already connected.
+   * Returns immediately during the bootstrap phase (after loadData but before
+   * isConnected) so migrations can use collection APIs without deadlocking.
    * @returns {Promise<void>}
    */
   async _ensureConnected() {
-    if (this.isConnected) return;
+    if (this.isConnected || this._bootstrapping) return;
     return this.connect();
   }
 
