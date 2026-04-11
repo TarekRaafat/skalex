@@ -20,13 +20,15 @@ class PersistenceManager {
    * @param {Function} opts.logger       - (msg, level) => void
    * @param {boolean}  [opts.debug=false]
    */
-  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false }) {
+  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null }) {
     this._adapter = adapter;
     this._serializer = serializer;
     this._deserializer = deserializer;
     this._logger = logger;
     this._debug = debug;
     this._lenientLoad = lenientLoad;
+    /** @type {import("./registry.js").default|null} Back-reference used for canonical store construction. */
+    this._registry = registry;
 
     /**
      * Promise-chain lock to serialize concurrent saveAtomic() calls.
@@ -59,6 +61,11 @@ class PersistenceManager {
    * @param {Function} IndexEngine       - IndexEngine class.
    * @returns {Promise<void>}
    */
+  /** Attach the registry used for canonical store construction. */
+  setRegistry(registry) {
+    this._registry = registry;
+  }
+
   async loadAll(collections, { parseSchema, buildIndex, IndexEngine }) {
     try {
       const names = await this._adapter.list();
@@ -93,25 +100,48 @@ class PersistenceManager {
           const idIndex = buildIndex(data, "_id");
           if (fieldIndex) fieldIndex.buildFromData(data);
 
-          collections[collectionName] = {
-            collectionName,
-            data,
-            index: idIndex,
-            isSaving: false,
-            _pendingSave: false,
-            _dirty: false,
-            schema: parsedSchema,
-            rawSchema,
-            fieldIndex,
-            changelog,
-            softDelete,
-            versioning,
-            strict,
-            onSchemaError,
-            defaultTtl,
-            defaultEmbed,
-            maxDocs,
-          };
+          // Build the canonical store shape via the registry (single construction
+          // path), then merge loaded data/options into it. If a new store field
+          // is added to registry.createStore(), it automatically applies here too.
+          if (this._registry) {
+            this._registry.createStore(collectionName, {
+              schema: rawSchema,
+              changelog,
+              softDelete,
+              versioning,
+              strict,
+              onSchemaError,
+              defaultTtl,
+              defaultEmbed,
+              maxDocs,
+            });
+            const store = this._registry.stores[collectionName];
+            store.data = data;
+            store.index = idIndex;
+            // Preserve the index instance already built from loaded data.
+            if (fieldIndex) store.fieldIndex = fieldIndex;
+            collections[collectionName] = store;
+          } else {
+            collections[collectionName] = {
+              collectionName,
+              data,
+              index: idIndex,
+              isSaving: false,
+              _pendingSave: false,
+              _dirty: false,
+              schema: parsedSchema,
+              rawSchema,
+              fieldIndex,
+              changelog,
+              softDelete,
+              versioning,
+              strict,
+              onSchemaError,
+              defaultTtl,
+              defaultEmbed,
+              maxDocs,
+            };
+          }
         } catch (error) {
           if (error.code === "ENOENT") return;
           if (this._lenientLoad) {
@@ -390,54 +420,35 @@ class PersistenceManager {
   }
 
   /**
-   * Clean orphan temp files left by interrupted FsAdapter writes.
-   * Only applies if the adapter has a list-level view that could include temp files.
+   * Delegate orphan temp-file cleanup to the adapter, if supported.
+   * Non-FS adapters (browser LocalStorage, D1, SQLite, etc.) don't implement
+   * `cleanOrphans` and this is a no-op for them.
    */
   async _cleanOrphanTempFiles() {
-    // Only FsAdapter (and compatible) supports directory listing that might include temp files.
-    // We detect this by checking for the ensureDir/join helpers.
-    if (typeof this._adapter.join !== "function") return;
-    if (typeof this._adapter.list !== "function") return;
-
+    if (typeof this._adapter.cleanOrphans !== "function") return;
     try {
-      const nodeFs = await import("node:fs");
-      const nodePath = await import("node:path");
-      const dir = this._adapter.dir;
-      if (!dir) return;
-
-      const files = await nodeFs.default.promises.readdir(dir);
-      const orphans = files.filter(f => f.includes(".tmp."));
-      for (const orphan of orphans) {
-        const orphanPath = nodePath.default.join(dir, orphan);
-        try {
-          await nodeFs.default.promises.unlink(orphanPath);
-          this._log(`Cleaned orphan temp file: ${orphan}`);
-        } catch { /* ignore cleanup failures */ }
-      }
-    } catch { /* ignore on non-FS runtimes */ }
+      const removed = await this._adapter.cleanOrphans();
+      if (removed > 0) this._log(`Cleaned ${removed} orphan temp file(s)`);
+    } catch { /* ignore cleanup failures */ }
   }
 
+  /**
+   * Return the canonical `_meta` document, creating the collection and the
+   * document if they do not exist. The collection shape is built via the
+   * registry's single `createStore()` path so it can never drift.
+   * @param {object} collections - Live collections map (mutated in place).
+   * @returns {object} The meta document.
+   */
   _getOrCreateMeta(collections) {
     if (!collections["_meta"]) {
-      collections["_meta"] = {
-        collectionName: "_meta",
-        data: [],
-        index: new Map(),
-        isSaving: false,
-        _pendingSave: false,
-        _dirty: false,
-        schema: null,
-        rawSchema: null,
-        fieldIndex: null,
-        changelog: false,
-        softDelete: false,
-        versioning: false,
-        strict: false,
-        onSchemaError: "throw",
-        defaultTtl: null,
-        defaultEmbed: null,
-        maxDocs: null,
-      };
+      if (!this._registry) {
+        throw new PersistenceError(
+          "ERR_SKALEX_PERSISTENCE_NO_REGISTRY",
+          "PersistenceManager requires a registry to construct _meta."
+        );
+      }
+      this._registry.createStore("_meta");
+      collections["_meta"] = this._registry.stores["_meta"];
     }
     const metaCol = collections["_meta"];
     let doc = metaCol.index.get(META_DOC_ID);
@@ -447,6 +458,30 @@ class PersistenceManager {
       metaCol.index.set(META_DOC_ID, doc);
     }
     return doc;
+  }
+
+  /**
+   * Return the current `_meta` document content (sans `_id`), or an empty
+   * object if none exists. The collection is not mutated if absent.
+   * @param {object} collections - Live collections map.
+   * @returns {object}
+   */
+  getMeta(collections) {
+    const metaCol = collections["_meta"];
+    if (!metaCol) return {};
+    return metaCol.index.get(META_DOC_ID) || {};
+  }
+
+  /**
+   * Merge the given data into the `_meta` document and mark it dirty.
+   * Creates the `_meta` collection and document if needed.
+   * @param {object} collections - Live collections map (mutated in place).
+   * @param {object} data - Fields to merge.
+   */
+  updateMeta(collections, data) {
+    const doc = this._getOrCreateMeta(collections);
+    Object.assign(doc, data);
+    this.markDirty(collections, "_meta");
   }
 
   _log(msg) {

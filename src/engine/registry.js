@@ -6,7 +6,25 @@
  */
 import IndexEngine from "./indexes.js";
 import { parseSchema, inferSchema } from "./validator.js";
-import { PersistenceError } from "./errors.js";
+import { PersistenceError, ValidationError } from "./errors.js";
+
+/**
+ * Pattern for a safe collection name. Guards against path traversal and
+ * filesystem-hostile characters when the name is used as a file basename.
+ * Allows letters, digits, underscore, dot, dash, and colon after the first
+ * character. Max length 64.
+ */
+const _COLLECTION_NAME_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,63}$/;
+
+function _assertCollectionName(name) {
+  if (typeof name !== "string" || !_COLLECTION_NAME_RE.test(name)) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_COLLECTION_NAME",
+      `Invalid collection name "${name}". Names must be 1-64 characters, start with a letter, digit, or underscore, and contain only letters, digits, and "_.:-".`,
+      { name }
+    );
+  }
+}
 
 class CollectionRegistry {
   /**
@@ -27,6 +45,7 @@ class CollectionRegistry {
    * @returns {import("./collection.js").default}
    */
   get(name, db) {
+    _assertCollectionName(name);
     if (this._instances[name]) return this._instances[name];
     if (!this.stores[name]) this.createStore(name);
     const instance = new this._CollectionClass(this.stores[name], db);
@@ -42,6 +61,7 @@ class CollectionRegistry {
    * @returns {import("./collection.js").default}
    */
   create(name, options = {}, db) {
+    _assertCollectionName(name);
     this.createStore(name, options);
     const instance = new this._CollectionClass(this.stores[name], db);
     this._instances[name] = instance;
@@ -63,6 +83,7 @@ class CollectionRegistry {
     defaultEmbed = null,
     maxDocs = null,
   } = {}) {
+    _assertCollectionName(name);
     let parsedSchema = null;
     let fieldIndex = null;
 

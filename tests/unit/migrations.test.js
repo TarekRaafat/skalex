@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect } from "vitest";
 import MigrationEngine from "../../src/engine/migrations.js";
 
 describe("MigrationEngine", () => {
@@ -35,20 +35,36 @@ describe("MigrationEngine", () => {
     expect(() => engine.add({ version: 1, up: async () => {} })).toThrow(/already registered/);
   });
 
+  // Stub transaction wrapper for unit tests: runs fn with a stub db and
+  // captures each recordApplied payload so we can assert per-migration
+  // atomicity without touching persistence.
+  function makeHooks() {
+    const recorded = [];
+    const fakeDb = { useCollection: () => ({}) };
+    return {
+      recorded,
+      runInTx: async (fn) => { await fn(fakeDb); },
+      recordApplied: (versions) => { recorded.push([...versions]); },
+    };
+  }
+
   test("run() executes only pending migrations", async () => {
     const calls = [];
     const engine = makeEngine([
-      { version: 1, up: async (col) => { calls.push(1); } },
-      { version: 2, up: async (col) => { calls.push(2); } },
-      { version: 3, up: async (col) => { calls.push(3); } },
+      { version: 1, up: async () => { calls.push(1); } },
+      { version: 2, up: async () => { calls.push(2); } },
+      { version: 3, up: async () => { calls.push(3); } },
     ]);
+    const hooks = makeHooks();
 
     // Version 1 already applied
-    const getCol = vi.fn(() => ({}));
-    const applied = await engine.run(getCol, [1]);
+    const applied = await engine.run(hooks, [1]);
 
     expect(calls).toEqual([2, 3]);
     expect(applied).toEqual([1, 2, 3]);
+    // recordApplied was called once per successful migration, with the
+    // running sorted list each time.
+    expect(hooks.recorded).toEqual([[1, 2], [1, 2, 3]]);
   });
 
   test("run() returns full sorted applied list", async () => {
@@ -56,8 +72,36 @@ describe("MigrationEngine", () => {
       { version: 2, up: async () => {} },
       { version: 4, up: async () => {} },
     ]);
-    const applied = await engine.run(vi.fn(), [1, 3]);
+    const hooks = makeHooks();
+    const applied = await engine.run(hooks, [1, 3]);
     expect(applied).toEqual([1, 2, 3, 4]);
+    expect(hooks.recorded).toEqual([[1, 2, 3], [1, 2, 3, 4]]);
+  });
+
+  test("run() passes the db proxy to up()", async () => {
+    const seen = [];
+    const engine = makeEngine([
+      { version: 1, up: async (db) => { seen.push(db); } },
+    ]);
+    const hooks = makeHooks();
+    await engine.run(hooks, []);
+    expect(seen[0]).toBeDefined();
+    expect(typeof seen[0].useCollection).toBe("function");
+  });
+
+  test("run() re-throws if a migration fails and does NOT record its version", async () => {
+    const calls = [];
+    const engine = makeEngine([
+      { version: 1, up: async () => { calls.push(1); } },
+      { version: 2, up: async () => { calls.push(2); throw new Error("boom"); } },
+      { version: 3, up: async () => { calls.push(3); } },
+    ]);
+    const hooks = makeHooks();
+    await expect(engine.run(hooks, [])).rejects.toThrow(/boom/);
+    expect(calls).toEqual([1, 2]);
+    // Only migration 1's version was recorded; migration 2 threw before
+    // recordApplied could fire, so [1, 2] never appears.
+    expect(hooks.recorded).toEqual([[1]]);
   });
 
   test("status() reports pending and applied correctly", () => {
