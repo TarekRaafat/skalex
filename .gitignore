@@ -143,6 +143,12 @@ tmp/
 
 # Internal planning & audit documents
 AUDIT.md
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.cursorrules
+.github/copilot-instructions.md
+agent_docs/
 Skalex_v4_Plan.md
 LAUNCH.md
 design/audits/

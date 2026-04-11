@@ -8,7 +8,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.js"],
-      exclude: ["src/adapters/storage/d1.js"],
+      exclude: ["src/connectors/storage/d1.js"],
     },
   },
 });
