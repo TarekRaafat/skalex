@@ -25,10 +25,22 @@ class MutationPipeline {
   /**
    * Execute a mutation with the full lifecycle.
    *
+   * Event ordering contract
+   * -----------------------
+   * Watch events are emitted **before** the after-hook runs. This is
+   * intentional: it keeps observers on the synchronous path of the mutation
+   * and preserves strict per-collection delivery order. A consequence is
+   * that observers may see a mutation event whose corresponding after-hook
+   * subsequently throws - the mutation itself is already committed.
+   *
+   * Event dispatch is synchronous. A slow watch listener blocks the
+   * mutation pipeline. Listeners should hand work off to a queue if they
+   * need to do anything non-trivial.
+   *
    * @param {object} opts
-   * @param {string}   opts.op          - "insert" | "update" | "delete" | "restore"
-   * @param {string}   opts.beforeHook  - Plugin hook name (e.g. "beforeInsert")
-   * @param {string}   opts.afterHook   - Plugin hook name (e.g. "afterInsert")
+   * @param {string}   opts.op          - One of the `Ops` values from src/engine/constants.js.
+   * @param {string}   opts.beforeHook  - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.BEFORE_INSERT`).
+   * @param {string}   opts.afterHook   - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.AFTER_INSERT`).
    * @param {object}   opts.hookPayload - Data passed to before hook.
    * @param {Function} opts.mutate      - async (assertTxAlive) => { docs, prevDocs }
    * @param {Function} [opts.afterHookPayload] - (docs) => payload for after hook.
