@@ -726,6 +726,73 @@ Adapter interface methods (`StorageAdapter.read/write/...`, `LLMAdapter.generate
 
 ---
 
+### 22. Restore `$fn` over MCP via a named-predicate allowlist
+
+**Issue:** None
+**Severity:** P1 - feature restoration
+**Effort:** Medium
+
+**Problem:** alpha.3 made `sanitizeFilter()` strip every `$fn` key out of filters coming from MCP clients, because an LLM agent shipping a JavaScript function string over the wire is a straightforward remote code execution vector: the MCP tool handler would `Function(...)` the string and run it in the host process with full filesystem / network / env access. The strip is the right default for a zero-config deployment.
+
+But `$fn` is one of Skalex's distinctive direct-API features, and blanket-stripping it at the MCP boundary means agents lose expressiveness they would otherwise have. Queries like "orders whose second item's price exceeds the first" can't be phrased without `$fn` and force agents into slower multi-step retrieval. The alpha.3 strip is a capability regression for MCP clients, not a design endpoint.
+
+Direct `db.find({ $fn: ... })` callers are unaffected by both the alpha.3 strip and this restoration - they retain full `$fn` power unconditionally. This item is only about what crosses the MCP wire.
+
+**Fix:** add a named-predicate allowlist to `db.mcp()`. Developers register functions by name on the server; agents reference them by name in the filter; the MCP handler resolves the string to the real function before the filter reaches the Collection API. No code ever crosses the wire.
+
+**Proposed API:**
+
+```js
+const mcp = db.mcp({
+  predicates: {
+    isHighValue: (doc) => doc.items.some((i) => i.price * i.qty > 1000),
+    isOverdue: (doc) => doc.dueAt < Date.now(),
+  },
+});
+```
+
+Agent-supplied filter:
+
+```json
+{ "$fn": "isHighValue" }
+```
+
+Resolution rules in `sanitizeFilter()`:
+1. If `$fn` value is a string and matches a registered predicate name → substitute the real function and keep the filter.
+2. If `$fn` value is a string that does NOT match a registered name → strip, log a warning, continue (current alpha.3 behaviour for unknown names).
+3. If `$fn` value is anything else (a function, an object, code string, etc.) → strip, log a warning, continue. The agent must go through the allowlist; it cannot inject arbitrary predicates.
+4. If no `predicates` option was passed at all → strip everything (alpha.3 default, preserves current behaviour for zero-config setups).
+
+**Why this shape:**
+
+- **Zero-config is still safe.** Developers who don't register any predicates get alpha.3's behaviour by default. No new attack surface for anyone who doesn't opt in.
+- **Opt-in is explicit and auditable.** Every predicate the agent can invoke is a function literal in the developer's own source code. Code review catches the full attack surface in one place.
+- **No code crosses the wire.** The agent sends a string name, not JavaScript. Prompt injection cannot smuggle code through because the MCP layer rejects anything that isn't a known name.
+- **Matches the ergonomics of direct `$fn`.** Developers writing server-side Skalex code already define arbitrary predicates as inline functions. The allowlist surfaces those same functions to the agent without letting the agent rewrite them.
+
+**Scope:**
+
+- `src/connectors/mcp/index.js` - `db.mcp({ predicates })` accepts and stores the map.
+- `src/connectors/mcp/tools.js` - `sanitizeFilter()` gains a `predicates` parameter; `$fn` handling becomes name lookup + substitution instead of unconditional strip.
+- `src/index.d.ts` - `McpOptions.predicates?: Record<string, (doc: any) => boolean>`.
+- `docs/documentation.md` + `agent_docs/security.md` - document the allowlist model, the default-strip behaviour, and the threat model (why this is safer than a sandbox).
+- `CHANGELOG.md` - "Added" entry under alpha.4.
+- `MIGRATION.md` - update the alpha.3 section 8 note to point at alpha.4's restoration path.
+
+**Tests** (new, in `tests/unit/mcp.test.js`):
+1. Predicate registered → agent filter with matching name → filter runs, docs returned match the predicate.
+2. Predicate registered → agent filter with unknown name → `$fn` stripped, warning logged, rest of filter runs.
+3. No predicates registered → agent filter with any `$fn` → `$fn` stripped, warning logged (alpha.3 behaviour regression pin).
+4. Agent filter with `$fn` as an object / function / code string → stripped regardless of registered predicates.
+5. Nested `$fn` inside `$or` / `$and` / `$not` → same resolution rules apply recursively.
+6. Registered predicate that throws at runtime → error surfaces through the normal filter-evaluation error path, not silently swallowed.
+
+**Depends on:** None. Can ship independently of the rest of alpha.4.
+
+**Out of scope:** sandboxing agent-supplied code strings via `vm` or WASM. Node's `vm` module is explicitly not a security boundary per Node's own docs, and a WASM runtime would either be a runtime dependency (banned) or an isomorphism break. The named-allowlist design sidesteps the need for a sandbox by ensuring no untrusted code ever executes.
+
+---
+
 ### 21. Enable `no-console` eslint rule with targeted exception
 
 **Issue:** None

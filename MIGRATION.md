@@ -190,14 +190,18 @@ If you feed user-supplied regex into filters, either compile them yourself with 
 
 If you expose Skalex to an LLM agent over MCP, filters from the agent are sanitised before they reach the Collection API:
 
-- Every `$fn` key is removed (including inside `$or`, `$and`, `$not`) and a warning is logged. Agents can no longer inject JavaScript predicate functions via MCP.
+- Every `$fn` key is removed (including inside `$or`, `$and`, `$not`) and a warning is logged. Agents can no longer inject raw JavaScript predicate functions via MCP because the filter payload is untrusted - a prompt-injected instruction could otherwise smuggle arbitrary code into the host process.
 - Filters nested deeper than 16 levels throw `ValidationError` with `ERR_SKALEX_VALIDATION_FILTER_DEPTH`.
 
-Direct `find()` calls from your own server-side code are **not** affected - only the MCP tool handlers sanitise.
+Direct `find()` calls from your own server-side code are **not** affected - only the MCP tool handlers sanitise. `$fn` remains fully supported for direct callers.
+
+> **Coming in alpha.4:** `db.mcp({ predicates })` will let developers register named server-side predicates that agents invoke by name, restoring `$fn` expressiveness over MCP without letting code cross the wire. Tracked as item #22 in `design/alpha-4.md`. If you are on alpha.3 and need the agent to express a `$fn`-style predicate today, register it as a dedicated MCP tool or a server-side plugin; move to the allowlist model when alpha.4 ships.
 
 #### Migration steps
 
-1. If your agent relied on `$fn` predicates, move the logic into a server-side plugin or an explicit operator. Agents should never be able to execute arbitrary code in the host process.
+1. If your agent relied on `$fn` predicates, pick one of:
+   - **Short-term (alpha.3):** expose the predicate as a dedicated MCP tool or run it inside a server-side plugin. The agent calls the tool instead of sending a function.
+   - **Medium-term (alpha.4):** register the predicate in `db.mcp({ predicates: { myCheck: (doc) => ... } })` and let the agent reference it by name via `{ "$fn": "myCheck" }`.
 2. If you have legitimate compound filters deeper than 16 levels, flatten them. Real filters almost never need more than 4-5 levels of nesting.
 
 ### 9. `Collection.database` property removed
