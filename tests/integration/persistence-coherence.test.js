@@ -7,9 +7,14 @@
  *   #10  Save mutex serializes saveAtomic against concurrent saves
  *   #11  FieldIndex.update() restores old doc on re-index failure
  */
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, readdirSync, existsSync, promises as fsp } from "node:fs";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
+import nodeFs from "node:fs";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
+import FsAdapter from "../../src/connectors/storage/fs.js";
 
 function makeDb(opts = {}) {
   const adapter = new MemoryAdapter();
@@ -342,5 +347,100 @@ describe("save mutex serializes saveAtomic calls", () => {
     expect(logDocs).toHaveLength(1);
     await db2.disconnect();
     await db.disconnect();
+  });
+});
+
+// ─── _meta managed via PersistenceManager ─────────────────────────────────
+
+describe("PersistenceManager  -  _meta ownership", () => {
+  test("getMeta / updateMeta round-trip", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db._persistence.updateMeta(db.collections, { custom: "value" });
+    const meta = db._persistence.getMeta(db.collections);
+    expect(meta.custom).toBe("value");
+    expect(db.collections._meta).toBeDefined();
+  });
+
+  test("_meta store shape matches registry.createStore() output", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db._persistence.updateMeta(db.collections, { foo: 1 });
+    const metaStore = db.collections._meta;
+    expect(metaStore.collectionName).toBe("_meta");
+    expect(metaStore.index).toBeInstanceOf(Map);
+    expect(metaStore.data).toBeInstanceOf(Array);
+    expect("_dirty" in metaStore).toBe(true);
+    expect("fieldIndex" in metaStore).toBe(true);
+    expect("schema" in metaStore).toBe(true);
+    expect("onSchemaError" in metaStore).toBe(true);
+    expect("maxDocs" in metaStore).toBe(true);
+  });
+});
+
+// ─── Orphan cleanup lives on the adapter ──────────────────────────────────
+
+describe("PersistenceManager  -  orphan cleanup delegation", () => {
+  test("delegates to adapter.cleanOrphans on load", async () => {
+    const { db } = makeDb();
+    let called = false;
+    db.fs.cleanOrphans = async () => { called = true; return 0; };
+    await db.connect();
+    expect(called).toBe(true);
+  });
+});
+
+// ─── FsAdapter rename failure + orphan recovery ───────────────────────────
+
+describe("FsAdapter  -  rename failure + orphan recovery", () => {
+  let dir;
+
+  beforeEach(() => {
+    dir = mkdtempSync(nodePath.join(tmpdir(), "skalex-fs-"));
+  });
+
+  afterEach(() => {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  test("writeAll that fails during rename leaves temp files that cleanOrphans removes", async () => {
+    const adapter = new FsAdapter({ dir, format: "json" });
+    const originalRename = nodeFs.promises.rename;
+    let renameCalls = 0;
+    nodeFs.promises.rename = async (...args) => {
+      renameCalls++;
+      // Fail on the first rename attempt to abort the batch mid-commit.
+      if (renameCalls === 1) throw new Error("injected rename failure");
+      return originalRename(...args);
+    };
+
+    try {
+      await expect(
+        adapter.writeAll([
+          { name: "a", data: JSON.stringify({ collectionName: "a", data: [] }) },
+          { name: "b", data: JSON.stringify({ collectionName: "b", data: [] }) },
+        ])
+      ).rejects.toThrow(/injected rename failure/);
+    } finally {
+      nodeFs.promises.rename = originalRename;
+    }
+
+    // Staging wrote temp files; since rename failed, writeAll's catch block
+    // best-effort-unlinked them. Depending on ordering, some may remain.
+    // In any case, cleanOrphans must leave zero `.tmp.` files.
+    await adapter.cleanOrphans();
+    const remaining = readdirSync(dir).filter((f) => f.includes(".tmp."));
+    expect(remaining).toHaveLength(0);
+  });
+
+  test("cleanOrphans removes manually planted temp files", async () => {
+    const adapter = new FsAdapter({ dir, format: "json" });
+    // Plant a fake orphan by hand
+    const orphan = nodePath.join(dir, "foo_abc.tmp.json");
+    await fsp.writeFile(orphan, "partial");
+    expect(existsSync(orphan)).toBe(true);
+    const removed = await adapter.cleanOrphans();
+    expect(removed).toBe(1);
+    expect(existsSync(orphan)).toBe(false);
   });
 });

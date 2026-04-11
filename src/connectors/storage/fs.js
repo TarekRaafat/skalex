@@ -137,6 +137,32 @@ class FsAdapter extends StorageAdapter {
   async readRaw(filePath) {
     return nodeFs.promises.readFile(nodePath.resolve(filePath), "utf8");
   }
+
+  /**
+   * Delete any orphan temp files left by interrupted writes.
+   * Temp files are named `<name>_<uuid>.tmp.<format>` - a partial rename on
+   * the way out of `write()` / `writeAll()` can leave them on disk.
+   * Best-effort: individual unlink failures are ignored.
+   * @returns {Promise<number>} The number of temp files removed.
+   */
+  async cleanOrphans() {
+    try {
+      const files = await nodeFs.promises.readdir(this.dir);
+      const orphans = files.filter(f => f.includes(".tmp."));
+      let removed = 0;
+      for (const orphan of orphans) {
+        const orphanPath = nodePath.join(this.dir, orphan);
+        try {
+          await nodeFs.promises.unlink(orphanPath);
+          removed++;
+        } catch { /* ignore cleanup failures */ }
+      }
+      return removed;
+    } catch (err) {
+      if (err.code === "ENOENT") return 0;
+      throw err;
+    }
+  }
 }
 
 export default FsAdapter;

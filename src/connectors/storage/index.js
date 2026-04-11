@@ -6,7 +6,7 @@
  *
  * CDN / browser ESM usage (browser-compatible adapters only):
  *   import { LocalStorageAdapter, EncryptedAdapter }
- *     from 'https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha/src/connectors/storage/browser.js';
+ *     from 'https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js';
  *
  * Platform-specific adapters (BunSQLiteAdapter, D1Adapter, LibSQLAdapter) are included
  * here for bundler users  -  tree-shaking removes any that are not imported. They access

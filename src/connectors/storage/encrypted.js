@@ -77,6 +77,8 @@ class EncryptedAdapter extends StorageAdapter {
 
   join(...args) { return this._adapter.join?.(...args); }
   ensureDir(dir) { return this._adapter.ensureDir?.(dir); }
+  cleanOrphans() { return this._adapter.cleanOrphans?.(); }
+  get dir() { return this._adapter.dir; }
 
   async writeRaw(path, data) {
     return this._adapter.writeRaw?.(path, await this._encrypt(data));

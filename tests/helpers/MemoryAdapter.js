@@ -5,22 +5,47 @@ import StorageAdapter from "../../src/connectors/storage/base.js";
  * Extends StorageAdapter so instanceof checks and inherited methods work.
  */
 class MemoryAdapter extends StorageAdapter {
-  constructor() {
+  /**
+   * @param {object} [opts]
+   * @param {boolean|((name: string) => boolean)} [opts.throwOnWrite] - fail every write, or per-name.
+   * @param {boolean|((name: string) => boolean)} [opts.throwOnRead]  - fail every read, or per-name.
+   * @param {boolean} [opts.throwOnWriteAll] - fail batch writes.
+   */
+  constructor({ throwOnWrite = false, throwOnRead = false, throwOnWriteAll = false } = {}) {
     super();
     this._store = new Map();
     // Expose join/ensureDir/writeRaw stubs for export() compatibility
     this.dir = "/memory";
+    this.throwOnWrite    = throwOnWrite;
+    this.throwOnRead     = throwOnRead;
+    this.throwOnWriteAll = throwOnWriteAll;
+  }
+
+  _shouldFail(flag, name) {
+    if (typeof flag === "function") return flag(name);
+    return Boolean(flag);
   }
 
   async read(name) {
+    if (this._shouldFail(this.throwOnRead, name)) {
+      throw new Error(`MemoryAdapter: injected read failure for "${name}"`);
+    }
     return this._store.get(name) ?? null;
   }
 
   async write(name, data) {
+    if (this._shouldFail(this.throwOnWrite, name)) {
+      throw new Error(`MemoryAdapter: injected write failure for "${name}"`);
+    }
     this._store.set(name, typeof data === "string" ? data : JSON.stringify(data));
   }
 
   async writeAll(entries) {
+    if (this.throwOnWriteAll) {
+      throw new Error("MemoryAdapter: injected writeAll failure");
+    }
+    // Delegate to write() so test overrides on `adapter.write` are observed
+    // by both single-write and batch-write code paths.
     for (const { name, data } of entries) await this.write(name, data);
   }
 
