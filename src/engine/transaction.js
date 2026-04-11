@@ -4,17 +4,54 @@
  * Owns transaction scope, lazy snapshots, timeout/abort protection,
  * deferred side effects, and rollback.
  */
-import { TransactionError } from "./errors.js";
+import { TransactionError, ValidationError } from "./errors.js";
 
-let _txIdCounter = 0;
+/** Default window of aborted transaction IDs retained for stale-continuation detection. */
+const DEFAULT_ABORTED_ID_WINDOW = 1000;
+
+/**
+ * Valid values for the `deferredEffectErrors` option. Exported so the
+ * Skalex constructor and the per-transaction option path share a single
+ * source of truth and neither can drift from the other.
+ */
+export const DEFERRED_EFFECT_STRATEGIES = /** @type {const} */ (["throw", "warn", "ignore"]);
+
+/**
+ * Validate a `deferredEffectErrors` value. Throws `ValidationError` with a
+ * stable code when the value is defined but not one of the supported
+ * strategies. `undefined` is allowed (caller will fall back to a default).
+ * @param {unknown} value
+ * @param {string} source - Human-readable origin (e.g. "Skalex config", "transaction options").
+ */
+export function validateDeferredEffectErrors(value, source) {
+  if (value === undefined) return;
+  if (!DEFERRED_EFFECT_STRATEGIES.includes(value)) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_DEFERRED_EFFECT_ERRORS",
+      `Invalid deferredEffectErrors in ${source}: "${value}". Expected one of: ${DEFERRED_EFFECT_STRATEGIES.join(", ")}.`,
+      { value, source }
+    );
+  }
+}
 
 class TransactionManager {
-  constructor() {
+  /**
+   * @param {object} [opts]
+   * @param {number} [opts.abortedIdWindow=1000] - Max number of aborted transaction
+   *   IDs retained for stale-continuation detection. Because transactions are
+   *   serialised via a promise-chain lock, no live transaction can reference an
+   *   ID more than this many steps behind the counter, so older IDs are pruned.
+   */
+  constructor({ abortedIdWindow = DEFAULT_ABORTED_ID_WINDOW } = {}) {
     this._txLock = Promise.resolve();
     /** @type {TransactionContext|null} Current active transaction context. */
     this._ctx = null;
     /** @type {Set<number>} IDs of aborted transactions - stale continuations checked against this. */
     this._abortedIds = new Set();
+    /** @type {number} Monotonic per-instance transaction ID counter. */
+    this._idCounter = 0;
+    /** @type {number} Pruning window for _abortedIds. */
+    this._abortedIdWindow = abortedIdWindow;
   }
 
   /** Whether a transaction is currently active. */
@@ -37,9 +74,14 @@ class TransactionManager {
    * @param {object}   db            - The Skalex instance.
    * @param {object}   opts
    * @param {number}   [opts.timeout] - Max ms before abort. 0 = no timeout.
+   * @param {"throw"|"warn"|"ignore"} [opts.deferredEffectErrors]
+   *   Override the Skalex-instance default for this transaction only. See
+   *   `SkalexConfig.deferredEffectErrors`. When omitted, falls back to
+   *   `db._deferredEffectErrors` then to `"warn"`.
    * @returns {Promise<any>}
    */
-  async run(fn, db, { timeout = 0 } = {}) {
+  async run(fn, db, { timeout = 0, deferredEffectErrors } = {}) {
+    validateDeferredEffectErrors(deferredEffectErrors, "transaction() options");
     const execute = async () => {
       await db._ensureConnected();
 
@@ -47,7 +89,7 @@ class TransactionManager {
       const preExisting = new Set(Object.keys(db.collections));
 
       const ctx = {
-        id: ++_txIdCounter,
+        id: ++this._idCounter,
         startedAt: Date.now(),
         aborted: false,
         preExisting,
@@ -61,10 +103,8 @@ class TransactionManager {
 
       // Timeout mechanism
       let timer = null;
-      let timeoutReject = null;
       const timeoutPromise = timeout > 0
-        ? new Promise((_, reject) => {
-          timeoutReject = reject;
+        ? new Promise((_resolve, reject) => {
           timer = setTimeout(() => {
             ctx.aborted = true;
             reject(new TransactionError(
@@ -105,9 +145,15 @@ class TransactionManager {
         },
       });
 
+      /** Set after saveAtomic() succeeds. Errors after this point must NOT trigger rollback. */
+      let committed = false;
+      /** Result of fn(), captured so we can return it after post-commit work. */
+      let result;
+      /** Populated by the post-commit deferred-effect flush. */
+      const deferredErrors = [];
       try {
         const fnPromise = fn(proxy);
-        const result = timeoutPromise
+        result = timeoutPromise
           ? await Promise.race([fnPromise, timeoutPromise])
           : await fnPromise;
 
@@ -120,12 +166,24 @@ class TransactionManager {
         if (touched.length > 0) {
           await db._persistence.saveAtomic(db.collections, touched);
         }
+        committed = true;
 
-        // Flush deferred side effects after successful commit
-        for (const effect of ctx.deferredEffects) await effect();
-
-        return result;
+        // Flush deferred side effects after successful commit. All effects
+        // run regardless of individual failures; the configured error
+        // strategy decides what happens to captured errors afterwards.
+        for (const effect of ctx.deferredEffects) {
+          try {
+            await effect();
+          } catch (effectError) {
+            deferredErrors.push(effectError);
+          }
+        }
       } catch (error) {
+        // Errors during fn() or saveAtomic() trigger rollback.
+        if (committed) {
+          // Shouldn't happen - all post-commit work is outside this try.
+          throw error;
+        }
         // Rollback: restore snapshotted pre-existing collections
         for (const [name, snap] of ctx.snapshots) {
           if (ctx.preExisting.has(name)) {
@@ -149,6 +207,7 @@ class TransactionManager {
         // assertNotAborted() via _abortedIds, not by leaving _ctx set.
         if (ctx.aborted) this._abortedIds.add(ctx.id);
         this._ctx = null;
+        this._pruneAbortedIds();
 
         // Clear tx stamps on any cached Collection instances so they are
         // not permanently poisoned after the transaction ends.
@@ -158,6 +217,27 @@ class TransactionManager {
           if (inst._activeTxId === ctx.id) inst._activeTxId = null;
         }
       }
+
+      // Post-commit: handle deferred effect errors according to strategy.
+      // Runs only if we reached commit; rollback paths skip this.
+      if (deferredErrors.length > 0) {
+        // Precedence: per-transaction option → Skalex instance default → "warn".
+        const strategy = deferredEffectErrors ?? db._deferredEffectErrors ?? "warn";
+        if (strategy === "throw") {
+          throw new AggregateError(
+            deferredErrors,
+            `Deferred effect failures after commit of transaction ${ctx.id} (${deferredErrors.length})`
+          );
+        }
+        if (strategy === "warn") {
+          for (const e of deferredErrors) {
+            db._logger(`[tx ${ctx.id}] deferred effect failed: ${e.message}`, "warn");
+          }
+        }
+        // "ignore" - swallow silently
+      }
+
+      return result;
     };
 
     // Serialise concurrent transactions via promise-chain lock
@@ -210,6 +290,20 @@ class TransactionManager {
         "ERR_SKALEX_TX_ABORTED",
         `Transaction ${ctx.id} was aborted. No further mutations allowed.`
       );
+    }
+  }
+
+  /**
+   * Prune aborted transaction IDs that can no longer produce stale continuations.
+   * Transactions are serialised, so any ID below `counter - abortedIdWindow`
+   * is unreachable from the currently live transaction.
+   */
+  _pruneAbortedIds() {
+    if (this._abortedIds.size === 0) return;
+    const cutoff = this._idCounter - this._abortedIdWindow;
+    if (cutoff <= 0) return;
+    for (const id of this._abortedIds) {
+      if (id <= cutoff) this._abortedIds.delete(id);
     }
   }
 
