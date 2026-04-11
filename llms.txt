@@ -29,14 +29,14 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.2.1 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **v4.0.0-alpha.3 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 **CDN - ESM** (recommended for browser apps; use the browser-specific barrel):
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/dist/skalex.browser.js";
-  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/dist/skalex.browser.js";
+  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js";
 </script>
 ```
 
@@ -56,7 +56,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 **CDN - IIFE** (quick demos, `window.Skalex` global, no connector bundling):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3"></script>
 ```
 
 ## Core API - by workflow
@@ -131,14 +131,14 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Agent Memory
 
-- `db.useMemory(sessionId)` - episodic store backed by `_memory_<sessionId>` collection
-- `memory.remember(text)` → `doc` - store a text episode with embedding
-- `memory.recall(query, opts?)` → `{ docs, scores }` - semantic similarity recall
-- `memory.history(opts?)` → `doc[]` - chronological listing; opts: `since`, `limit`
-- `memory.forget(id)` → `doc | null` - delete a memory entry
-- `memory.context(opts?)` → `string` - LLM-ready context string capped to a token budget; opts: `tokens`
-- `memory.compress(opts?)` - summarise old episodes via LLM; opts: `threshold`, `keepRecent`
-- `memory.tokenCount()` → `{ tokens, count }`
+- `db.useMemory(sessionId)` - episodic store backed by `_memory_<sessionId>` collection. `sessionId` must be 1-56 chars matching `[a-zA-Z0-9_][a-zA-Z0-9_.:-]*`; invalid IDs throw `ValidationError` / `ERR_SKALEX_VALIDATION_SESSION_ID` at construction.
+- `memory.remember(text)` → `Promise<doc>` - store a text episode with embedding
+- `memory.recall(query, opts?)` → `Promise<{ docs, scores }>` - semantic similarity recall
+- `memory.history(opts?)` → `Promise<doc[]>` - chronological listing; opts: `since`, `limit`
+- `memory.forget(id)` → `Promise<doc | null>` - delete a memory entry
+- `memory.context(opts?)` → `Promise<string>` - LLM-ready context string capped to a token budget; opts: `tokens`. **Async**.
+- `memory.compress(opts?)` → `Promise<void>` - summarise old episodes via LLM; opts: `threshold`, `keepRecent`
+- `memory.tokenCount()` → `Promise<{ tokens, count }>` - **async**.
 
 ### MCP Server
 
@@ -150,10 +150,10 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Transactions & Integrity
 
-- `db.transaction(fn)` - in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback; non-transactional writes to a tx-touched collection are not yet isolated from rollback (planned for alpha.4)
+- `db.transaction(fn, opts?)` - in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback; non-transactional writes to a tx-touched collection are not yet isolated from rollback (planned for alpha.4). `opts`: `{ timeout?: number, deferredEffectErrors?: "throw" | "warn" | "ignore" }`. Nested transactions throw `ERR_SKALEX_TX_NESTED`.
 - `db.namespace(id)` - scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
 - `db.seed(fixtures, opts?)` - bulk-insert fixtures; `reset: true` clears first
-- `db.addMigration({ version, up })` - versioned migration; runs automatically on `connect()`
+- `db.addMigration({ version, up })` - versioned migration; `up(db)` receives the Skalex proxy and runs inside a transaction (partial state rolls back on failure, version record is persisted atomically with migration data); runs automatically on `connect()`
 
 ### Observability
 
@@ -179,7 +179,7 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 - Embedding only: `import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors/embedding'`
 - LLM only: `import { OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors/llm'`
 - Individual paths: `skalex/connectors/fs`, `skalex/connectors/local`, `skalex/connectors/encrypted`, `skalex/connectors/bun-sqlite`, `skalex/connectors/d1`, `skalex/connectors/libsql`
-- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/src/connectors/storage/browser.js"`
+- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js"`
 
 ## Storage Adapters
 

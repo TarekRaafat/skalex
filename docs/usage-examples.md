@@ -101,16 +101,18 @@ const db = new Skalex({ path: "./data" });
 db.addMigration({
   version: 1,
   description: "Set default role on all users",
-  up: async (col) => {
-    await col.updateMany({}, { role: "user" });
+  up: async (db) => {
+    const users = db.useCollection("users");
+    await users.updateMany({}, { role: "user" });
   },
 });
 
 db.addMigration({
   version: 2,
   description: "Add active flag",
-  up: async (col) => {
-    await col.updateMany({}, { active: true });
+  up: async (db) => {
+    const users = db.useCollection("users");
+    await users.updateMany({}, { active: true });
   },
 });
 

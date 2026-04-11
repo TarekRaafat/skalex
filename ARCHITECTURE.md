@@ -1,6 +1,6 @@
 # Skalex v4: Architecture
 
-> Internal reference for contributors. Describes the current alpha.2 design of every module, data structure, and subsystem.
+> Internal reference for contributors. Describes the current alpha.3 design of every module, data structure, and subsystem.
 
 ---
 
@@ -55,6 +55,7 @@ src/
     registry.js             - CollectionRegistry (store creation, instance caching, inspection)
     pipeline.js             - MutationPipeline (shared pre/post mutation lifecycle)
     adapters.js             - AI adapter factory functions (embedding + LLM)
+    constants.js            - Shared frozen Ops / Hooks maps
   features/
     aggregation.js          - count, sum, avg, groupBy
     changelog.js            - ChangeLog class (append-only mutation log)
@@ -175,7 +176,8 @@ scripts/
 | Vector | `src/engine/vector.js` | `cosineSimilarity(a, b)`, `stripVector(doc)` |
 | Errors | `src/engine/errors.js` | Typed error hierarchy: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` |
 | Adapters | `src/engine/adapters.js` | Factory functions `createEmbeddingAdapter()` and `createLLMAdapter()` - pure config-to-instance mappers |
-| Migrations | `src/engine/migrations.js` | Migration registration, version ordering, pending-migration execution, status reporting |
+| Migrations | `src/engine/migrations.js` | Migration registration, version ordering, pending-migration execution inside per-migration transactions, status reporting |
+| Constants | `src/engine/constants.js` | Frozen `Ops` and `Hooks` maps - single source of truth for operation and plugin-hook string values |
 | Utils | `src/engine/utils.js` | `generateUniqueId()` (27-char timestamp+random), `logger()`, `resolveDotPath()` (with prototype-pollution guard) |
 | StorageAdapter | `src/connectors/storage/base.js` | Abstract class: `read`, `write`, `delete`, `list`, `writeAll` |
 | FsAdapter | `src/connectors/storage/fs.js` | Node.js adapter: gz-compressed or raw JSON files, atomic temp-then-rename writes |
@@ -646,9 +648,17 @@ File: `src/engine/migrations.js`
 
 Migrations are registered via `db.addMigration({ version, description?, up })` and stored sorted by version. On `connect()`:
 
-1. `_getMeta()` reads applied versions from the `_meta` collection.
-2. `MigrationEngine.run()` filters to pending versions and calls `up(collection)` for each in order.
-3. `_saveMeta()` writes the updated applied-versions list back to `_meta`.
+1. `PersistenceManager.getMeta(collections)` reads applied versions from the `_meta` collection.
+2. `MigrationEngine.run({ runInTx, recordApplied }, appliedVersions)` filters to pending versions and runs each migration inside its own transaction. `runInTx(fn)` is bound to `(fn) => skalex.transaction(fn)`; `fn` receives the Skalex proxy and calls `migration.up(db)`. After `up` returns successfully (but before the transaction commits), the runner calls `recordApplied(nextVersions)` which:
+    - snapshots `_meta` into the active transaction via `_txManager.snapshotIfNeeded()` so the version record participates in rollback, and
+    - mutates `_meta.appliedVersions` through `PersistenceManager.updateMeta()`.
+3. `saveAtomic()` flushes the migration's touched collections **and** `_meta` in a single `writeAll` batch, so the version record and the migration's data are committed together.
+
+If `up()` throws, the transaction rolls back all writes the migration made **and** the `_meta` version bump - the migration re-runs from a clean slate on the next `connect()`. Migrations that committed before a later failure are preserved.
+
+**Atomicity guarantee** depends on the adapter's `writeAll` semantics: fully atomic on `BunSQLiteAdapter` / `LibSQLAdapter` / `D1Adapter`-within-chunk; narrowed failure window on `FsAdapter` (sequential renames, `_meta` always renamed last, incomplete-flush sentinel detects partial commits on next load); not atomic across D1 chunks. Migrations should still be authored idempotently (`upsert`, check-before-mutate).
+
+`Skalex._recordAppliedVersions` throws `TransactionError` with `ERR_SKALEX_TX_INVALID_STATE` if ever called outside an active transaction, so a future refactor that breaks the atomicity invariant surfaces as a test failure.
 
 The `_meta` collection is a regular Skalex collection with a single document keyed `"migrations"`:
 
@@ -825,7 +835,7 @@ Computed in a single loop, O(d) where d = vector dimensions. Returns `0` for zer
 
 ### `collection.search(query, { filter, limit, minScore })`
 
-1. `await this.database.embed(query)` - produce a query vector via the configured adapter.
+1. `await this._ctx.embed(query)` - produce a query vector via the configured adapter (the embed function is wired through `_ctx` rather than reaching into the Skalex instance directly).
 2. Get candidates: `filter` present -> `_findAllRaw(filter)` (structured pre-filter, leverages `IndexEngine`); no filter -> `this._data`.
 3. For each candidate with a `_vector`, compute `cosineSimilarity(queryVector, doc._vector)`.
 4. Drop candidates below `minScore`.

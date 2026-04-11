@@ -264,12 +264,22 @@ results are needed, this scans and sorts everything.
    during scan, avoiding full sort. Or implement cursor-based pagination
    that remembers the last seen sort key.
 
-alpha.4 should implement step 1. Step 2 is pre-GA scope.
+3. **Pre-compile `$regex` once per `find()` call:** today `matchesFilter`
+   calls `compileRegexFilter(filterValue.$regex)` per document, which runs
+   the string-length cap, the ReDoS heuristic, and `new RegExp(...)` every
+   iteration. Pre-compile at the top of `find()` (after `presortFilter`) so
+   each `$regex` is validated and compiled once, then the compiled RegExp is
+   passed to `matchesFilter` via the already-supported pre-compiled-RegExp
+   fast path at `query.js:32-33`.
 
-**Scope:** `src/engine/collection.js`
+alpha.4 should implement step 1 and step 3. Step 2 is pre-GA scope.
+
+**Scope:** `src/engine/collection.js`, `src/engine/query.js`
 
 **Test:** Benchmark `find({}, { limit: 10 })` on a 100k-document collection.
 Assert it completes in O(n) time with early termination, not O(n log n).
+For step 3: benchmark a `find({ text: { $regex: "..." } })` scan before and
+after the pre-compile change; assert the after-path skips per-doc validation.
 
 **Depends on:** None
 
@@ -635,6 +645,114 @@ new `src/connectors/storage/raw-file.js`, new `src/connectors/storage/path-aware
 
 ---
 
+### 18. D1 session-based cross-chunk atomicity
+
+**Issue:** None
+**Severity:** P3 - housekeeping
+**Effort:** Medium
+
+**Problem:** `D1Adapter.writeAll()` chunks statements into 1000-statement batches (the Cloudflare documented per-`batch()` limit, default since alpha.3). Each chunk commits atomically, but a failure in chunk N leaves chunks `0..N-1` committed. For commits larger than 1000 statements, cross-chunk atomicity falls to the incomplete-flush sentinel path in `PersistenceManager._detectIncompleteFlush()` - effectively the same FsAdapter-style "narrowed failure window" documented in alpha.3's migration atomicity notes.
+
+**Fix:** When Cloudflare D1 exposes multi-batch session semantics (D1 Sessions API, currently in beta as of writing), wire `writeAll()` to open a session, submit all chunks inside it, and commit once at the end. A session rollback on failure reverts every chunk. The `batchSize` knob stays for tuning; only the atomicity boundary changes.
+
+**Scope:** `src/connectors/storage/d1.js`. No changes to `PersistenceManager` - the adapter-level fix is invisible above the `writeAll` contract.
+
+**Test:** Mock a D1 binding that supports the session API. Run `writeAll(entries)` with `entries.length > batchSize` where a middle chunk throws. Assert all earlier chunks rolled back (visible via read-after-failure on the mock's state). Documentation-only path if the D1 session API is still unavailable on stable runtimes at the time of alpha.4.
+
+**Depends on:** Cloudflare D1 Sessions API reaching GA (external dependency). Ship docs-only noting the constraint until then.
+
+---
+
+### 19. Sweep remaining bare `Error` throws into the typed hierarchy
+
+**Issue:** None
+**Severity:** P3 - housekeeping
+**Effort:** Small
+
+**Problem:** CLAUDE.md requires every engine throw to use a typed error (`ValidationError`, `AdapterError`, `PersistenceError`, `QueryError`, `TransactionError`, `UniqueConstraintError`) with a stable `ERR_SKALEX_<SUBSYSTEM>_<SPECIFIC>` code. alpha.3 converted the throws in files it touched (`D1Adapter` constructor, `Memory.compress()`, MCP `_validateCollection()`), but roughly 20 bare `throw new Error(...)` / `throw new TypeError(...)` sites remain across the adapter surface:
+
+- `src/connectors/storage/local.js` - browser-environment missing check
+- `src/connectors/storage/base.js` - abstract-method not-implemented stubs
+- `src/connectors/storage/bun-sqlite.js` - invalid table name
+- `src/connectors/storage/libsql.js` - binding required, invalid table name
+- `src/connectors/llm/base.js` - abstract-method not-implemented stubs (`generate`, `summarize`)
+- `src/connectors/llm/openai.js` - missing apiKey, HTTP response errors
+- `src/connectors/llm/ollama.js` - HTTP response errors
+- `src/connectors/llm/anthropic.js` - missing apiKey, HTTP response errors
+- `src/connectors/embedding/base.js` - abstract-method not-implemented stub
+- `src/connectors/embedding/openai.js` - missing apiKey, HTTP response errors
+- `src/connectors/embedding/ollama.js` - HTTP response errors
+
+These aren't broken - they throw with readable messages - but they break programmatic error handling for consumers who want to `catch (e)` on `e.code` or `e instanceof AdapterError`. A typo or auth failure from an AI adapter surfaces as a bare `Error`, inconsistent with the `EncryptedAdapter` and `D1Adapter` patterns.
+
+**Fix:** Convert all ~20 sites to typed throws with stable codes. Suggested mapping:
+
+| Site | Error class | Code |
+|---|---|---|
+| `LocalStorageAdapter` (no browser) | `AdapterError` | `ERR_SKALEX_ADAPTER_NO_LOCALSTORAGE` |
+| `StorageAdapter.read/write/delete/list` abstract | `AdapterError` | `ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED` |
+| `BunSQLiteAdapter` invalid table | `AdapterError` | `ERR_SKALEX_ADAPTER_BUN_INVALID_TABLE` |
+| `LibSQLAdapter` binding required / invalid table | `AdapterError` | `ERR_SKALEX_ADAPTER_LIBSQL_BINDING_REQUIRED`, `ERR_SKALEX_ADAPTER_LIBSQL_INVALID_TABLE` |
+| `LLMAdapter` abstract stubs | `AdapterError` | `ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED` |
+| `EmbeddingAdapter.embed` abstract stub | `AdapterError` | `ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED` |
+| OpenAI/Ollama/Anthropic HTTP errors | `AdapterError` | `ERR_SKALEX_ADAPTER_HTTP` with `{ status, body, adapter }` details |
+| Missing apiKey | `AdapterError` | `ERR_SKALEX_ADAPTER_MISSING_API_KEY` |
+
+**Scope:** `src/connectors/storage/{local,base,bun-sqlite,libsql}.js`, `src/connectors/llm/{base,openai,ollama,anthropic}.js`, `src/connectors/embedding/{base,openai,ollama}.js`.
+
+**Test:** For each converted site, add or update a unit test that asserts `toThrow(AdapterError)` and matches `e.code`. Existing message-substring tests continue to pass because the messages are preserved.
+
+**Depends on:** None. Can run in parallel with any other alpha.4 item.
+
+---
+
+### 20. Remove redundant `async` from non-interface methods
+
+**Issue:** None
+**Severity:** P3 - housekeeping
+**Effort:** Trivial
+
+**Problem:** CLAUDE.md rule: "async only on methods that await". A handful of free-standing methods are declared `async` despite never awaiting, where the `async` keyword does nothing useful except box the return value in an extra promise layer. Found during the alpha.3 sweep: `Memory.forget(id)` just returns `this._col.deleteOne({ _id: id })` - it could be synchronous-returning-a-promise without any behaviour change.
+
+Adapter interface methods (`StorageAdapter.read/write/...`, `LLMAdapter.generate/...`, `EmbeddingAdapter.embed`) are legitimately `async` because they satisfy an abstract contract that callers `await` uniformly, even when a specific implementation is synchronous internally. Those stay.
+
+**Fix:** Drop the `async` keyword from methods that don't await AND don't satisfy an abstract interface contract. `Memory.forget` is the one confirmed site; a codebase-wide sweep via eslint's `require-await` rule would find any others.
+
+**Scope:** `src/features/memory.js`, plus any sites eslint flags once `require-await` is enabled.
+
+**Test:** Existing tests continue to pass (behaviour-preserving). Add `"require-await": "error"` to `eslint.config.js` with a per-file override for `src/connectors/{storage,llm,embedding}/base.js` (abstract classes must match the concrete signature).
+
+**Depends on:** None.
+
+---
+
+### 21. Enable `no-console` eslint rule with targeted exception
+
+**Issue:** None
+**Severity:** P3 - housekeeping
+**Effort:** Trivial
+
+**Problem:** Skalex routes all logging through the configurable `logger` option (defaulting to `_defaultLogger` in `src/engine/utils.js`). Direct `console.log` / `console.error` calls in source code bypass the user's logger and are almost always bugs. Currently only `src/engine/utils.js` uses `console` directly, and that's intentional (it IS the default logger). No enforcement rule catches a future accidental `console.log` added to an engine module.
+
+**Fix:** Add `"no-console": "error"` to the main eslint ruleset, with a per-file override in `src/engine/utils.js` allowing `console.log` and `console.error`:
+
+```js
+{
+  files: ["src/engine/utils.js"],
+  rules: { "no-console": "off" },
+},
+```
+
+This turns accidental `console` calls in engine code into lint errors while preserving the intentional two calls in the default logger.
+
+**Scope:** `eslint.config.js`.
+
+**Test:** `npm run lint` still passes. Temporarily add `console.log("test")` to a random engine file, run lint, assert it errors. Revert.
+
+**Depends on:** None.
+
+---
+
 ## Regression Test Requirements
 
 Every item must ship with at least one targeted regression test:
@@ -658,6 +776,10 @@ Every item must ship with at least one targeted regression test:
 | #15 (adapter tiers) | `export()` on non-FS adapter - clear `AdapterError`; `instanceof` checks pass for each tier |
 | #16 (tx isolation) | Non-tx write to tx-touched collection rejected; write succeeds after commit/rollback; untouched collections unaffected |
 | #17 (DataStore) | All existing tests pass with InMemoryDataStore; no direct `this._data` access in Collection; DataStore interface unit tests pass |
+| #18 (D1 sessions) | Mock D1 session binding, mid-chunk failure rolls back earlier chunks; docs-only if API is not yet GA |
+| #19 (typed errors sweep) | Per-site `toThrow(AdapterError)` assertions with matching `e.code` |
+| #20 (async cleanup) | eslint `require-await` passes across `src/`; existing tests unchanged |
+| #21 (no-console rule) | eslint lint passes; adding a stray `console.log` to any engine file fails lint |
 
 ---
 
@@ -698,8 +820,12 @@ alpha.4 is done when:
 16. Non-tx writes to a tx-touched collection are rejected; rollback cannot clobber outside writes.
 17. `SkalexConfig` type exposes `lenientLoad`; logger level includes `'warn'`.
 18. `DataStore` abstraction replaces all direct `this._data` access in Collection. No `this._data.push`, `splice`, `indexOf`, or direct index assignment remains.
-19. All regression tests exist and pass.
-20. The verification matrix passes.
+19. `D1Adapter.writeAll()` uses a D1 session for cross-chunk atomicity when the D1 Sessions API is GA; otherwise documented as a known limitation.
+20. Every engine throw uses a typed error class with a stable `ERR_SKALEX_*` code. Zero `throw new Error(...)` / `throw new TypeError(...)` sites remain under `src/` (enforced by grep in CI).
+21. Non-interface methods do not use `async` without `await`. `eslint --rule "require-await: error"` passes across `src/`.
+22. `no-console` eslint rule is enabled with a single targeted override for `src/engine/utils.js`. A stray `console.*` call in any other engine file fails lint.
+23. All regression tests exist and pass.
+24. The verification matrix passes.
 
 ---
 
@@ -752,12 +878,18 @@ Recommended sequence:
 8. **#6** (stats caching) - medium, self-contained
 
 **Phase 3 - Adapter & code quality (medium effort):**
-9. **#12** (fetchWithRetry extraction) - dedup 6 adapter retry loops
+9. **#12** (fetchWithRetry extraction) - dedup 6 adapter retry loops. Interacts with #19 (typed errors): ideally land #19 first so `fetchWithRetry` throws typed errors from day one.
 10. **#13** (async zlib) - unblock event loop in FsAdapter
 11. **#14** (ICollectionContext) - testability interface
 12. **#15** (adapter capability tiers) - formalize tiered interfaces
+13. **#18** (D1 session-based atomicity) - gated on upstream API GA
 
 **Phase 4 - Ergonomics (low effort):**
-13. **#7** (browser FsAdapter error) - small, high consumer impact
-14. **#3** (watch backpressure) - medium, needs API decision
-15. **#9-#11** (Symbol.toStringTag, asyncDispose, presortFilter docs) - trivial batch
+14. **#7** (browser FsAdapter error) - small, high consumer impact
+15. **#3** (watch backpressure) - medium, needs API decision
+16. **#9-#11** (Symbol.toStringTag, asyncDispose, presortFilter docs) - trivial batch
+
+**Phase 5 - Code hygiene sweeps (trivial, land early to seed the foundation):**
+17. **#21** (no-console rule) - one eslint config line plus one override. Catches any drift in later phases.
+18. **#20** (async cleanup) - enable `require-await`, drop redundant `async` from `Memory.forget` and anything else eslint finds.
+19. **#19** (typed-error sweep) - ~20 sites across adapters and abstract stubs. Land before #12 so the new `fetchWithRetry` is typed-error-native.

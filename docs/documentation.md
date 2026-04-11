@@ -34,6 +34,7 @@ new Skalex(config?)
 | `autoSave` | `boolean` | `false` | Automatically persist after every write without passing `{ save: true }`. Individual calls can opt out with `{ save: false }`. |
 | `ttlSweepInterval` | `number` | - | Interval in ms to periodically sweep expired TTL documents. Cleared on `disconnect()`. See [TTL Documents](#ttl-documents). |
 | `lenientLoad` | `boolean` | `false` | When `true`, corrupted collection files log a warning and load as empty instead of throwing `PersistenceError`. |
+| `deferredEffectErrors` | `"throw" \| "warn" \| "ignore"` | `"warn"` | Strategy for errors thrown by deferred side effects (watch callbacks, after-* plugin hooks, changelog entries) that run after a transaction commit. `"throw"` aggregates into `AggregateError`, `"warn"` logs and continues, `"ignore"` swallows. All effects run regardless of individual failures. Can be overridden per transaction via `transaction(fn, { deferredEffectErrors })`. |
 
 **`ai` config fields:**
 
@@ -252,17 +253,22 @@ Persists one collection (or all, if no name given) via the storage adapter. Best
 
 #### `addMigration({ version, description?, up })`
 
-Registers a migration. Pending migrations run automatically on `connect()` in version order.
+Registers a migration. Pending migrations run automatically on `connect()` in version order. Each migration runs inside its own transaction: partial state rolls back on failure, and the applied-version record is persisted atomically with the migration's data writes (`_meta.appliedVersions` is flushed in the same `saveAtomic` batch). Migrations that commit successfully are preserved even if a later migration fails.
+
+The `up` callback receives the Skalex instance (transaction proxy). Use `db.useCollection(name)` to obtain any collection the migration needs to touch.
 
 ```javascript
 db.addMigration({
   version: 1,
   description: "Add default role to all users",
-  up: async (col) => {
-    await col.updateMany({}, { role: "user" });
+  up: async (db) => {
+    const users = db.useCollection("users");
+    await users.updateMany({}, { role: "user" });
   },
 });
 ```
+
+Even with automatic rollback, author migrations idempotently (`upsert`, check-before-mutate) so a retry after a partial `FsAdapter` commit (sequential renames) produces the same final state as a clean run.
 
 #### `migrationStatus()`
 
@@ -272,7 +278,7 @@ db.addMigration({
 
 ### Transactions
 
-#### `transaction(fn)`
+#### `transaction(fn, options?)`
 
 Runs `fn` inside a transaction. On success, all changes are flushed to storage. On error, all in-memory state is rolled back to the pre-transaction snapshot - including deletion of any collections that were created inside `fn`.
 
@@ -286,13 +292,24 @@ await db.transaction(async (db) => {
 });
 ```
 
-Transactions support an optional `timeout` (in milliseconds). If `fn()` does not resolve in time, the transaction is aborted and rolled back:
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `timeout` | `number` | `0` (disabled) | Max ms before the transaction aborts. If `fn()` does not resolve in time, the transaction rejects with `TransactionError` `ERR_SKALEX_TX_TIMEOUT` and rolls back. |
+| `deferredEffectErrors` | `"throw" \| "warn" \| "ignore"` | inherits from `SkalexConfig.deferredEffectErrors` (default `"warn"`) | Per-transaction override for how errors in deferred side effects (watch callbacks, after-* plugin hooks, changelog entries) are handled after commit. See the constructor option for semantics. |
 
 ```js
+// Timeout
 await db.transaction(async (tx) => { /* ... */ }, { timeout: 5000 });
+
+// Surface after-hook errors as an AggregateError (overrides the default)
+await db.transaction(async (tx) => { /* ... */ }, { deferredEffectErrors: "throw" });
 ```
 
-Snapshots are lazy (copy-on-first-write): only collections that receive a write inside the transaction are snapshotted. Non-transactional writes during an active transaction are not captured by rollback.
+**Isolation:** Skalex provides read-committed isolation, not snapshot isolation. Snapshots are lazy (copy-on-first-write): only collections that receive a write inside the transaction are snapshotted. Reads on un-written collections see the latest committed state, including mutations from outside the transaction. To get a stable view of a collection, write to it first to trigger a snapshot. Non-transactional writes during an active transaction are not captured by rollback.
+
+**Nested transactions** are rejected at runtime with `TransactionError` `ERR_SKALEX_TX_NESTED`.
 
 ---
 
@@ -397,6 +414,8 @@ const schema = db.schema("users");
 #### `useMemory(sessionId)`
 
 Returns a `Memory` instance scoped to the given session. Backed by a `_memory_<sessionId>` collection. Requires `ai` config with both embedding and language model.
+
+`sessionId` must be 1-56 characters, start with a letter / digit / underscore, and contain only letters, digits, and `_ . : -`. The length cap leaves room for the `_memory_` prefix inside the registry's 64-character collection-name budget. Invalid session IDs throw `ValidationError` with code `ERR_SKALEX_VALIDATION_SESSION_ID` at construction time, so a bad input fails at `useMemory()` rather than at the first Memory operation.
 
 **Returns:** `Memory`
 
@@ -1844,8 +1863,8 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -1862,10 +1881,10 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.2.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.2.1"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.3"></script>
 
 <script>
   // Skalex is available as window.Skalex

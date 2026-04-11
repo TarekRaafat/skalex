@@ -7,6 +7,124 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.3] - 2026-04-11
+
+Runtime safety, adapter consistency, code quality, and platform hardening. No new user-facing features; the release tightens long-lived runtime behaviour, consolidates internal construction paths, adds guardrails around public API boundaries, and wires lint, static analysis, and type-declaration validation into CI.
+
+### Breaking Changes
+
+- **`Memory.tokenCount()` and `Memory.context()` are now async** - both methods now read through the public Collection `find()` API so soft-delete, auto-connect, and future access hooks are honoured. Calls must be `await`ed:
+  ```js
+  const { tokens, count } = await mem.tokenCount();
+  const ctx = await mem.context({ tokens: 4000 });
+  ```
+  Pre-`connect()` calls now trigger auto-connect instead of silently returning empty results.
+- **`Migration.up()` receives the Skalex proxy, not a raw Collection** - the signature changed from `up(collection)` to `up(db)`.
+
+  Before:
+  ```js
+  db.addMigration({ version: 1, up: async (col) => { /* ... */ } });
+  ```
+  After:
+  ```js
+  db.addMigration({ version: 1, up: async (db) => {
+    const users = db.useCollection("users");
+    // ...
+  }});
+  ```
+
+  **Why this change.** The old `col` parameter was always `db.useCollection("_migration_<version>")` - an internal scratch collection named after the migration's version. It wasn't a general-purpose handle to the data being migrated; real migrations ignored it and reached for actual collections via closure (`db.useCollection("users")` from the enclosing scope). The parameter was a vestige.
+
+  Wrapping each migration in a transaction (so partial state rolls back on failure - see the *Fixed* section) requires a *transactional* handle to whatever collections the migration touches. That handle is the Skalex instance inside the transaction, because Skalex's transaction proxy brands collections returned by `tx.useCollection(name)` as participating in the active transaction. Passing a single pre-obtained collection can't give a migration access to *other* collections transactionally.
+
+  Switching the callback argument from the unused `col` to the actually-useful `db` proxy:
+  - removes a parameter nobody was using productively,
+  - gives migrations a transactional handle consistent with `db.transaction(fn)` callbacks,
+  - lets migrations call `db.useCollection(name)` for any collection they need, all inside the same rollback-safe scope.
+
+  The migration required to update existing callbacks is mechanical: replace `async (col) =>` with `async (db) =>` and call `db.useCollection("<name>")` for whatever the migration was actually working against.
+- **`createLLMAdapter()` throws `AdapterError` on unknown provider** - previously returned `null` silently when the provider string did not match any known adapter, which meant a typo like `"opanai"` disabled `db.ask()` without warning. Now matches `createEmbeddingAdapter()` and throws `AdapterError` with `ERR_SKALEX_ADAPTER_UNKNOWN_PROVIDER`. Passing `{ provider: "openai" }` without a `model` still returns `null` (unchanged).
+- **Public API methods reject invalid argument types** - `insertOne`, `insertMany`, `updateOne`, `updateMany`, `upsert`, `upsertMany`, `deleteOne`, `deleteMany`, `restore`, `find`, `findOne`, and `search` now throw `ValidationError` with `ERR_SKALEX_VALIDATION_ARG` when given `null`, primitives, arrays (where an object is expected), or non-object/non-function filters. Previously these failed deep inside with unclear stack traces.
+- **Collection and memory session names are validated against path traversal** - `useCollection()` and `createCollection()` reject names containing `/`, `\`, `..`, `\x00`, or any character outside `[a-zA-Z0-9_.:-]`. Valid names must be 1-64 characters and start with a letter, digit, or underscore. Internal collections (`_meta`, `_changelog`, `_memory_*`) pass this check. `db.useMemory(sessionId)` applies the same validation to the session ID directly (1-56 characters, leaving room for the `_memory_` prefix inside the 64-char collection budget) and throws `ValidationError` / `ERR_SKALEX_VALIDATION_SESSION_ID` with a clear message at construction time, so an invalid session surfaces at `useMemory()` instead of at the first Memory operation.
+- **`applyUpdate()` silently skips `updatedAt`** - user-provided `updatedAt` values in an update descriptor are discarded. This field is system-managed and is always set to the current time on every successful update, matching how `_id` and `createdAt` were already treated.
+- **Nested transactions throw immediately** - calling `db.transaction()` inside another `db.transaction()` callback previously deadlocked. It now throws `TransactionError` with `ERR_SKALEX_TX_NESTED`.
+- **`$regex` string length and ReDoS checks apply in `matchesFilter()`** - the length cap (default 500) and nested-quantifier rejection that alpha.2 applied only to LLM-generated filters in `ask()` now apply to every `$regex` string value passed to `find()`, `findOne`, etc. Pre-compiled `RegExp` instances bypass the cap and are considered trusted.
+
+### Added
+
+- **`deferredEffectErrors` config option** - configurable strategy for errors thrown by deferred side effects (watch callbacks, after-* plugin hooks, changelog entries) that run after a transaction commit. Accepts `"throw"` (aggregate into `AggregateError` after commit), `"warn"` (log and continue, default), or `"ignore"`. All effects run regardless of individual failures. Available as a constructor option and as a per-transaction override in `TransactionOptions`; per-transaction option takes precedence. Both paths share a single validator, so typos like `"warning"` are rejected with `ValidationError` / `ERR_SKALEX_VALIDATION_DEFERRED_EFFECT_ERRORS`.
+- **`TransactionOptions` type declaration** - `{ timeout?: number, deferredEffectErrors?: "throw" | "warn" | "ignore" }`. TypeScript consumers can now pass `db.transaction(fn, { timeout: 5000 })` without a type error.
+- **`D1Adapter.batchSize` option** - `writeAll()` chunks statements into configurable batches (default `1000`, matching Cloudflare D1's documented per-`batch()` limit) so large writes no longer fail unpredictably. Values outside `[1, 1000]` are rejected at construction. Cross-chunk atomicity is NOT guaranteed: a later chunk failing leaves earlier chunks committed.
+- **`FsAdapter.cleanOrphans()`** - orphan temp-file cleanup moved from `PersistenceManager` onto the adapter that knows how to list files. `EncryptedAdapter` forwards the call. Browser/LocalStorage/SQL adapters are no-ops.
+- **Shared `Ops` and `Hooks` constants** - `src/engine/constants.js` exports frozen maps for operation names (`insert`, `update`, `delete`, `restore`) and plugin hook names (`beforeInsert`, `afterInsert`, …). String literals in `collection.js` and `changelog.js` now reference these constants so typos become import errors instead of silent no-ops.
+- **`sanitizeFilter()` in MCP tool handlers** - recursively strips `$fn` keys from AI-agent-supplied filters (including inside `$or`, `$and`, `$not` branches) before they reach the Collection API, preventing an AI-crafted filter from executing arbitrary JavaScript in the host process. A warning is logged per stripped `$fn`. The walker is also depth-bounded (max 16 levels) and throws `ValidationError` / `ERR_SKALEX_VALIDATION_FILTER_DEPTH` on overflow so an adversarial agent cannot blow the call stack with a deeply nested payload.
+- **Per-instance transaction counter + pruning window** - `TransactionManager` carries its own `_idCounter` and `abortedIdWindow` (default 1000) instead of sharing a module-level counter across every Skalex instance in the process. Fixes a latent bug where two independent Skalex instances appeared to share transaction IDs and makes the abort-tracking window testable.
+- **Error classes in `.d.ts`** - `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, and `QueryError` were runtime exports but were missing from `src/index.d.ts`. Now declared so TypeScript consumers can `instanceof`-check and read `.code` / `.details` without `@ts-expect-error`.
+- **`tsd` type-declaration validation** - `tests/types/index.test-d.ts` exercises the full public surface (generics, connectors, plugins, watch, mcp, errors) via `expectType` / `expectAssignable`, run with `npm run types:check`. A deliberate mismatch now fails CI instead of silently drifting.
+- **`eslint` + `madge` static analysis** - minimal flat-config eslint ruleset that catches genuine bugs (`no-undef`, `no-unused-vars`, `no-unreachable`) without enforcing formatting, plus `madge --circular` to block circular imports. Scripts: `npm run lint`, `npm run deps:check`, `npm run types:check`. `npm run test:all` runs all three plus tests and smoke.
+
+### Fixed
+
+- **Migration partial-state corruption + lost version bookkeeping** - migrations now run inside a transaction and record their applied version inside that same transaction via a new `recordApplied` callback that snapshots `_meta` into the touched set. `saveAtomic` then flushes the migration's data and the version record in a single `writeAll` batch. Previously, `MigrationEngine.run()` recorded `appliedVersions` in a post-loop `updateMeta()` call that only marked `_meta` dirty; if the process crashed before the next flush, the version record was lost and the migration re-ran on the next `connect()`. And a migration that mutated state and threw left partial mutations behind, forcing defensive idempotency. Now partial state rolls back automatically, the migration re-runs from a clean slate, and migrations that commit successfully are preserved even if a later migration fails. Performance: exactly one `saveAtomic` per migration. **Atomicity depends on the adapter's `writeAll` semantics**: fully atomic on `BunSQLiteAdapter`, `LibSQLAdapter`, and `D1Adapter` within a single chunk; narrowed on `FsAdapter` (renames are sequential and `_meta` is ordered last, so a crash mid-loop leaves a partial commit that the incomplete-flush sentinel detects on next `connect()`); not atomic across D1 chunks. `Skalex._recordAppliedVersions` throws `ERR_SKALEX_TX_INVALID_STATE` if ever called outside a transaction so the invariant cannot silently regress.
+- **`_abortedIds` unbounded growth** - `TransactionManager` recorded every aborted transaction ID in a `Set` but never pruned it. A long-lived process with repeated timeouts leaked memory. Fixed by pruning IDs older than `counter - abortedIdWindow` on every transaction completion. Safe because transactions are serialised.
+- **Capped collection eviction: atomicity + missing delete events** - `_enforceCapAfterInsert()` spliced evicted documents and removed them from indexes per-doc. If `_removeFromIndex()` threw mid-batch, some docs were removed from `_data` but remained in the field index. Fixed by collecting eviction candidates first and tracking each doc's explicit removal state (untouched / id-index-only / id-and-field-index) so a mid-batch failure restores exactly what was touched. FIFO-evicted documents now also emit a `delete` watch event so listeners see their disappearance alongside the corresponding insert.
+- **`_meta` store shape drift** - `PersistenceManager._getOrCreateMeta()` and `PersistenceManager.loadAll()` both manually constructed `_meta` collection stores with the full 17-field shape, duplicating the definition in `CollectionRegistry.createStore()`. A new store field added to the registry would silently miss the meta path. All three construction paths (runtime create, load-from-disk, auto-create for `_meta`) now funnel through `registry.createStore()`.
+- **Dual `_meta` ownership** - `Skalex._getMeta()` / `_saveMeta()` reached directly into `collections["_meta"].index`, while `PersistenceManager._getOrCreateMeta()` built it from scratch. Consolidated into `PersistenceManager.getMeta()` / `updateMeta()`. The Skalex class no longer accesses `collections["_meta"]` directly.
+- **Per-collection context allocation** - every `Collection` instance received a freshly-built context object. Since the context uses lazy getters that defer to the database, the object is functionally identical across collections. Now built once per database and shared by reference.
+- **`Collection.database` property removed** - the constructor exposed the full `Skalex` instance as `this.database`, breaking the encapsulation that `_ctx` was designed to provide. The class never used it internally. Now removed.
+- **Soft-delete visibility check duplicated 7 times** - extracted to `Collection._isVisible(doc, includeDeleted)`. Behaviour is identical.
+- **`namespace()` config drift** - child databases were built from 18 explicit field forwards. Any new config option silently broke inheritance. Now spreads the stored `_config` object so new options are inherited automatically.
+- **TTL sweep O(n*k) splice loop** - `sweep()` iterated backward and called `data.splice(i, 1)` per expired doc. For `n` documents with `k` expired, this was O(n*k) due to array shifting. Replaced with a single-pass filter-and-reassign for linear time.
+- **Schema drift under `onSchemaError: "warn"`** - warning messages now include the document `_id` and the specific validation errors so drift is auditable. JSDoc clarifies that `"warn"` mode does NOT prevent invalid data from being persisted.
+- **Vitest coverage exclude path** - `vitest.config.js` excluded `src/adapters/storage/d1.js` but the directory is `src/connectors/`. The exclude silently matched nothing. Corrected to `src/connectors/storage/d1.js`.
+- **`D1Adapter` / `Memory.compress()` / MCP tool collection validation now throw typed errors** - previously raised bare `Error` / `TypeError`. `D1Adapter` constructor throws `AdapterError` with codes `ERR_SKALEX_ADAPTER_D1_BINDING_REQUIRED`, `ERR_SKALEX_ADAPTER_D1_INVALID_TABLE`, `ERR_SKALEX_ADAPTER_D1_INVALID_BATCH_SIZE`. `Memory.compress()` throws `AdapterError` with `ERR_SKALEX_ADAPTER_LLM_REQUIRED` when no language model adapter is configured. `_validateCollection()` in the MCP tool handlers throws `ValidationError` with `ERR_SKALEX_VALIDATION_MCP_COLLECTION` for agent-supplied collection names that fail validation. Matches the `EncryptedAdapter` pattern and lets consumers `instanceof`-check / match on stable codes.
+- **Version drift across docs, CDN examples, and the MCP `SERVER_INFO` block** - README, `llms.txt`, `docs/installation.md`, `docs/index.md`, `docs/index.html` (including the `softwareVersion` schema.org metadata), `docs/documentation.md`, `docs/usage-examples.md`, `src/connectors/storage/index.js`, `src/connectors/storage/browser.js`, and `src/connectors/mcp/index.js` all pinned or described stale pre-alpha.3 versions (ranging from `4.0.0-alpha.1` through `4.0.0-alpha.2.1`). All thirteen references are now on `4.0.0-alpha.3`. `docs/documentation.md` and `docs/usage-examples.md` also showed the pre-alpha.3 `up: async (col) => ...` migration signature in examples; both examples now use `up: async (db) => { const col = db.useCollection("users"); ... }` so a reader copying them will not break. A regression test now asserts `serverInfo.version === "4.0.0-alpha.3"` on the MCP `initialize` response so a forgotten version bump during a future release surfaces as a test failure.
+- **Stale `docs/lib/skalex.browser.js`** - the docs-site playground bundle was a manual copy from alpha.1 and had drifted across three releases. Refreshed from the alpha.3 `dist/skalex.browser.js`.
+- **`ARCHITECTURE.md` drift** - the internal contributor reference described the "alpha.2 design" and had three stale references: the Migration Engine section still used the old `_getMeta` / `up(collection)` / `_saveMeta` flow, the `collection.search()` step referenced `this.database.embed()` (the removed `Collection.database` property), and the engine directory listing + module-responsibility table omitted `src/engine/constants.js`. All four updated for alpha.3.
+- **`examples/ai-chat-memory/index.js` missing awaits** - three `memory.context(...)` / `memory.tokenCount()` calls were not awaited after the async breaking change. The example would have run without throwing but printed Promise objects instead of strings. Fixed.
+- **`findOne()` / `findOne(null)` / `findOne(undefined)` crash (pre-existing)** - `_findRaw` read `filter._id` without a nullish guard, so calling `findOne` with no argument (or an explicit `null` / `undefined`) threw `TypeError: Cannot read properties of undefined (reading '_id')` all the way back to alpha.1. The bug was surfaced during the alpha.3 audit pass that added argument-validation guards. A nullish filter now returns the first visible document, matching `find({})`'s "empty filter matches everything" semantics. Regression tests added.
+- **`FsAdapter.cleanOrphans()`, `FsAdapter.writeAll()`, `EncryptedAdapter.writeAll()` / `cleanOrphans()`, `D1Adapter.writeAll()`, and `D1Adapter.batchSize` option** were runtime-exposed in alpha.3 but missing from `src/index.d.ts`. Added the missing declarations so TypeScript consumers can call them directly.
+- **`Memory.compress({ keepRecent })`** - the `keepRecent` option was supported at runtime but not declared in the type. Fixed in `.d.ts`.
+
+### Documented
+
+- **Transaction isolation semantics** - JSDoc on `db.transaction()` now explicitly states that Skalex provides **read-committed**, not snapshot, isolation. Reads on collections that are not written to see the latest committed state, including external mutations. To get a stable view of a collection, write to it first to trigger a snapshot.
+- **Transaction timeout semantics** - the timeout is cooperative, not preemptive. When it fires the outer promise rejects, but in-flight mutations continue until they next reach an `assertTxAlive()` check.
+- **Nested transaction deadlock** - now detected at runtime and thrown instead of silently deadlocking.
+- **`$fn` security surface** - JSDoc on `query.js` now states that `$fn` executes arbitrary JavaScript and must never be passed user-controlled or AI-generated functions. MCP-sourced filters are sanitized via the new `sanitizeFilter()` helper.
+- **Pipeline event ordering contract** - JSDoc on `MutationPipeline.execute()` explicitly states that watch events are emitted before after-hooks run. Observers may see events for mutations whose after-hooks subsequently throw; event dispatch is synchronous and a slow listener blocks the mutation pipeline.
+- **Migration idempotency guidance** - JSDoc on `MigrationEngine.add()` explains the transaction-scoped rollback guarantee and still recommends idempotent write patterns (`upsert`, check-before-mutate) so the narrowed `FsAdapter` failure window cannot produce surprises.
+
+### Tests
+
+New subject-oriented test files:
+
+- `tests/unit/transaction.test.js` - `TransactionManager` unit coverage: bounded `_abortedIds` pruning, per-instance counter isolation, timeout, nested-transaction detection, and the `deferredEffectErrors` strategy (instance default + per-transaction override + validation).
+- `tests/unit/d1-adapter.test.js` - `D1Adapter` chunking, batch-size bounds, and chunk-failure semantics.
+- `tests/unit/adapters.test.js` - `createLLMAdapter` factory (unknown provider, backwards-compat).
+- `tests/unit/constants.test.js` - `Ops` / `Hooks` frozen maps.
+- `tests/integration/migrations-atomicity.test.js` - end-to-end migration atomicity: partial-state rollback, retry from clean state, atomic `_meta` bookkeeping, read-only migrations, and the `_recordAppliedVersions` active-tx invariant.
+- `tests/integration/transaction-behavior.test.js` - observable transaction behaviour (read-committed isolation).
+- `tests/types/index.test-d.ts` - tsd smoke tests for the full public type surface, including deliberate-breakage verification.
+
+Tests added to existing subject files:
+
+- `tests/integration/collection-features.test.js` - capped-collection FIFO eviction events, shared `_ctx`, `Collection.database` removal, `updatedAt` system-managed, `insertOne` / `find` argument validation, watch-before-after-hook ordering.
+- `tests/integration/persistence-coherence.test.js` - `_meta` owned by `PersistenceManager`, `_meta` store shape, orphan cleanup delegation, `FsAdapter` rename failure + orphan recovery.
+- `tests/integration/skalex-core.test.js` - `namespace()` config inheritance, `useCollection` name validation (accepts internal + unusual names, rejects traversal + control chars).
+- `tests/unit/memory.test.js` - `tokenCount()` / `context()` async + auto-connect + soft-delete respect.
+- `tests/unit/ttl.test.js` - linear-time sweep regression.
+- `tests/unit/query.test.js` - `$regex` length cap, ReDoS rejection, pre-compiled RegExp bypass.
+- `tests/unit/mcp.test.js` - `sanitizeFilter` (`$fn` strip + depth guard), `StdioTransport` (parse / buffer split / reassembly / PARSE_ERROR), `HttpTransport` (202, 413 oversized body, SSE endpoint + broadcast).
+
+Total: **784 vitest tests** across 30 files. All four smoke runtimes green: **Node 79** (`node.test.cjs`), **Bun 54** (`bun.test.js` + `bun-sqlite.test.js`), **Deno 47** (`deno.test.js`), **browser 49** (`browser.test.js` ESM build + UMD build). `eslint`, `madge --circular`, and `tsd` all clean.
+
+### Deferred to a later release
+
+- **Prettier** - the only tooling item not in this release. Running `prettier --check` on the full tree would either generate a large formatting diff or require a carefully tuned config, both out of scope here. Will land in a dedicated formatting-only follow-up so the diff stays reviewable.
+
+---
+
 ## [4.0.0-alpha.2.1] - 2026-04-10
 
 Correctness-only patch for two P0 bugs that block the migration and connect-retry models.
