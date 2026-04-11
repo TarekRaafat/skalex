@@ -1,7 +1,7 @@
 /**
  * Unit tests for memory.js  -  Memory class.
  */
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
@@ -94,10 +94,10 @@ describe("Memory  -  remember / recall / history / forget", () => {
 });
 
 describe("Memory  -  tokenCount / context", () => {
-  test("tokenCount() returns 0 for empty memory", () => {
+  test("tokenCount() returns 0 for empty memory", async () => {
     const db = makeDb();
     const mem = db.useMemory("s");
-    const { tokens, count } = mem.tokenCount();
+    const { tokens, count } = await mem.tokenCount();
     expect(tokens).toBe(0);
     expect(count).toBe(0);
   });
@@ -106,7 +106,7 @@ describe("Memory  -  tokenCount / context", () => {
     const db = makeDb();
     const mem = db.useMemory("s");
     await mem.remember("abcd"); // 4 chars → 1 token
-    const { tokens, count } = mem.tokenCount();
+    const { tokens, count } = await mem.tokenCount();
     expect(tokens).toBe(1);
     expect(count).toBe(1);
   });
@@ -116,7 +116,7 @@ describe("Memory  -  tokenCount / context", () => {
     const mem = db.useMemory("s");
     await mem.remember("fact one");
     await mem.remember("fact two");
-    const ctx = mem.context();
+    const ctx = await mem.context();
     expect(ctx).toContain("fact one");
     expect(ctx).toContain("fact two");
   });
@@ -129,7 +129,7 @@ describe("Memory  -  tokenCount / context", () => {
     await mem.remember("bbbb");
     await mem.remember("cccc");
     // Budget of 2 tokens should include at most 2 entries
-    const ctx = mem.context({ tokens: 2 });
+    const ctx = await mem.context({ tokens: 2 });
     const lines = ctx.split("\n").filter(Boolean);
     expect(lines.length).toBeLessThanOrEqual(2);
   });
@@ -139,7 +139,7 @@ describe("Memory  -  tokenCount / context", () => {
     const mem = db.useMemory("s");
     await mem.remember("first memory");
     await mem.remember("second memory");
-    const ctx = mem.context();
+    const ctx = await mem.context();
     expect(ctx).toContain("first memory");
     expect(ctx).toContain("second memory");
   });
@@ -198,5 +198,82 @@ describe("Memory  -  compress", () => {
       await mem.remember(`entry ${i}`);
     }
     await expect(mem.compress({ threshold: 0 })).rejects.toThrow(/language model adapter/);
+  });
+});
+
+// ─── Public API access + soft-delete visibility ───────────────────────────
+
+describe("Memory  -  public API access", () => {
+  test("tokenCount() and context() are async and trigger auto-connect", async () => {
+    // Do not call connect() explicitly - tokenCount and context must trigger
+    // auto-connect via the public find() path.
+    const db = new Skalex({
+      adapter: new MemoryAdapter(),
+      embeddingAdapter: new MockEmbeddingAdapter(),
+    });
+    const mem = db.useMemory("s1");
+    const { tokens, count } = await mem.tokenCount();
+    expect(tokens).toBe(0);
+    expect(count).toBe(0);
+    const ctx = await mem.context();
+    expect(ctx).toBe("");
+  });
+
+  test("respects soft-delete on the underlying collection", async () => {
+    const db = new Skalex({
+      adapter: new MemoryAdapter(),
+      embeddingAdapter: new MockEmbeddingAdapter(),
+    });
+    // Pre-create the collection with soft-delete before any mutations.
+    db.createCollection("_memory_s2", { softDelete: true });
+    const mem = db.useMemory("s2");
+    await mem.remember("keep-me");
+    const doc = await mem.remember("delete-me");
+    await mem._col.deleteOne({ _id: doc._id });
+    const { count } = await mem.tokenCount();
+    expect(count).toBe(1); // soft-deleted doc excluded
+  });
+});
+
+// ─── sessionId validation (fail-fast at construction) ─────────────────────
+
+describe("Memory  -  sessionId validation", () => {
+  test("accepts legitimate session IDs", () => {
+    const db = makeDb();
+    const allowed = [
+      "s",
+      "session-A",
+      "user_42",
+      "conv.12:abc",
+      "a".repeat(56), // max length
+    ];
+    for (const id of allowed) {
+      expect(() => db.useMemory(id), `should accept "${id}"`).not.toThrow();
+    }
+  });
+
+  test("rejects path-traversal / control chars / length overflow at construction", () => {
+    const db = makeDb();
+    // Validation surfaces at useMemory(), not at first Memory operation,
+    // so the error names the right parameter and stops bad input at the edge.
+    const rejected = [
+      "",
+      "bad/id",
+      "a\x00b",
+      "../etc",
+      "-leading-dash",
+      ".leading-dot",
+      "a".repeat(57), // one over
+    ];
+    for (const id of rejected) {
+      expect(() => db.useMemory(id), `should reject "${id}"`).toThrow(/Invalid Memory sessionId/);
+    }
+  });
+
+  test("rejects non-string sessionId", () => {
+    const db = makeDb();
+    expect(() => db.useMemory(null)).toThrow(/Invalid Memory sessionId/);
+    expect(() => db.useMemory(undefined)).toThrow(/Invalid Memory sessionId/);
+    expect(() => db.useMemory(42)).toThrow(/Invalid Memory sessionId/);
   });
 });

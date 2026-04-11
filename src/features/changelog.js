@@ -7,6 +7,8 @@
  * Entry shape:
  *   { op, collection, docId, doc, prev?, timestamp, session? }
  */
+import { Ops } from "../engine/constants.js";
+
 class ChangeLog {
   /**
    * @param {object} db  - Skalex instance
@@ -84,7 +86,7 @@ class ChangeLog {
 
       this._restoring = true;
       try {
-        if (last.op === "delete") {
+        if (last.op === Ops.DELETE) {
           // Document should not exist at this point in time
           const existing = await col.findOne({ _id });
           if (existing) await col.deleteOne({ _id });
@@ -110,9 +112,9 @@ class ChangeLog {
     const state = new Map(); // docId → { doc, deleted }
 
     for (const entry of relevant) {
-      if (entry.op === "insert" || entry.op === "update") {
+      if (entry.op === Ops.INSERT || entry.op === Ops.UPDATE) {
         state.set(entry.docId, { doc: entry.doc, deleted: false });
-      } else if (entry.op === "delete") {
+      } else if (entry.op === Ops.DELETE) {
         state.set(entry.docId, { doc: null, deleted: true });
       }
     }

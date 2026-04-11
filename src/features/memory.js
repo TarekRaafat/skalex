@@ -1,5 +1,18 @@
+import { AdapterError, ValidationError } from "../engine/errors.js";
+
 /** Average characters per token (GPT-style 4-char heuristic). */
 const CHARS_PER_TOKEN = 4;
+
+/**
+ * Session IDs become part of an internal `_memory_<sessionId>` collection
+ * name. The collection registry enforces a 64-char limit with a restricted
+ * character set; we validate against a compatible subset here so failures
+ * surface at `useMemory()` / `new Memory()` instead of at the first method
+ * call, with a message that names the right parameter.
+ *
+ * 56-char cap = 64 (collection name budget) - 8 (`_memory_` prefix).
+ */
+const _SESSION_ID_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,55}$/;
 
 /**
  * memory.js  -  episodic agent memory.
@@ -19,10 +32,24 @@ const CHARS_PER_TOKEN = 4;
  */
 class Memory {
   /**
-   * @param {string} sessionId
+   * @param {string} sessionId - 1-56 characters. Must start with a letter,
+   *   digit, or underscore; subsequent characters may be letters, digits,
+   *   or `_ . : -`. The underlying `_memory_<sessionId>` collection name
+   *   must satisfy the registry's 64-char limit.
    * @param {object} db  - Skalex instance
+   * @throws {ValidationError} ERR_SKALEX_VALIDATION_SESSION_ID when the
+   *   session ID is not a string or does not match the allowed shape.
    */
   constructor(sessionId, db) {
+    if (typeof sessionId !== "string" || !_SESSION_ID_RE.test(sessionId)) {
+      throw new ValidationError(
+        "ERR_SKALEX_VALIDATION_SESSION_ID",
+        `Invalid Memory sessionId "${sessionId}". Must be 1-56 characters, ` +
+        `start with a letter/digit/underscore, and contain only letters, ` +
+        `digits, and "_.:-".`,
+        { sessionId }
+      );
+    }
     this.sessionId = sessionId;
     this._db = db;
     this._col = db.useCollection(`_memory_${sessionId}`);
@@ -40,7 +67,7 @@ class Memory {
       { embed: "text" }
     );
     const maxEntries = this._db._memoryConfig?.maxEntries;
-    if (maxEntries && this._col._data.length > maxEntries) {
+    if (maxEntries && (await this._col.count()) > maxEntries) {
       await this.compress({ threshold: 0 });
     }
     return doc;
@@ -80,21 +107,23 @@ class Memory {
 
   /**
    * Estimate the token count of all stored memories (chars / 4 heuristic).
-   * @returns {{ tokens: number, count: number }}
+   * Async because it reads through the public Collection API.
+   * @returns {Promise<{ tokens: number, count: number }>}
    */
-  tokenCount() {
-    const data = this._col._data;
-    const tokens = data.reduce((sum, d) => sum + this._docTokens(d), 0);
-    return { tokens, count: data.length };
+  async tokenCount() {
+    const { docs } = await this._col.find({});
+    const tokens = docs.reduce((sum, d) => sum + this._docTokens(d), 0);
+    return { tokens, count: docs.length };
   }
 
   /**
    * Return memories as a newline-joined string, newest-first, capped to a token budget.
+   * Async because it reads through the public Collection API.
    * @param {{ tokens?: number }} [opts]
-   * @returns {string}
+   * @returns {Promise<string>}
    */
-  context({ tokens = this._db._memoryConfig?.contextTokens ?? 4000 } = {}) {
-    const sorted = this._sortedData("desc");
+  async context({ tokens = this._db._memoryConfig?.contextTokens ?? 4000 } = {}) {
+    const sorted = await this._sortedData("desc");
     const lines = [];
     let used = 0;
 
@@ -110,21 +139,23 @@ class Memory {
 
   /**
    * Summarise and compact old memories when total tokens exceed a threshold.
-   * Keeps the 10 most recent entries intact; summarises the rest into one entry.
-   * @param {{ threshold?: number }} [opts]
+   * Keeps the most recent `keepRecent` entries intact; summarises the rest
+   * into one entry via the configured language model adapter.
+   * @param {{ threshold?: number, keepRecent?: number }} [opts]
    * @returns {Promise<void>}
    */
   async compress({ threshold = this._db._memoryConfig?.compressionThreshold ?? 8000, keepRecent = this._db._memoryConfig?.keepRecent ?? 10 } = {}) {
-    const { tokens } = this.tokenCount();
+    const { tokens } = await this.tokenCount();
     if (tokens <= threshold) return;
 
     if (!this._db._aiAdapter) {
-      throw new Error(
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_LLM_REQUIRED",
         "memory.compress() requires a language model adapter. Configure { ai: { model: \"...\" } }."
       );
     }
 
-    const sorted = this._sortedData("asc");
+    const sorted = await this._sortedData("asc");
 
     const splitAt = Math.max(0, sorted.length - keepRecent);
     const toCompress = sorted.slice(0, splitAt);
@@ -150,11 +181,14 @@ class Memory {
   }
 
   /**
-   * Return a sorted copy of all memory docs.
+   * Return a sorted copy of all memory docs, read via the public find() API
+   * so soft-delete, auto-connect, and any future access hooks are honoured.
    * @param {"asc"|"desc"} direction - "asc" = oldest-first, "desc" = newest-first
+   * @returns {Promise<object[]>}
    */
-  _sortedData(direction) {
-    return [...this._col._data].sort(
+  async _sortedData(direction) {
+    const { docs } = await this._col.find({});
+    return docs.sort(
       direction === "asc"
         ? (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
         : (a, b) => new Date(b.createdAt) - new Date(a.createdAt)

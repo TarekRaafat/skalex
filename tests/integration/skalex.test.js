@@ -3,7 +3,7 @@
  *
  * All I/O is routed through MemoryAdapter  -  no file system access in CI.
  */
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
@@ -753,7 +753,7 @@ describe("migrations", () => {
     const adapter = new MemoryAdapter();
     const db1 = new Skalex({ adapter });
     let ran = false;
-    db1.addMigration({ version: 1, up: async (col) => { ran = true; } });
+    db1.addMigration({ version: 1, up: async () => { ran = true; } });
     await db1.connect();
     expect(ran).toBe(true);
     await db1.disconnect();
@@ -792,8 +792,8 @@ describe("migrations", () => {
     const { db } = makeDb();
     db.addMigration({
       version: 1,
-      up: async () => {
-        const users = db.useCollection("users");
+      up: async (txDb) => {
+        const users = txDb.useCollection("users");
         await users.insertOne({ name: "seed-user" });
       },
     });
@@ -817,8 +817,8 @@ describe("migrations", () => {
     const db2 = new Skalex({ adapter });
     db2.addMigration({
       version: 1,
-      up: async () => {
-        const config = db2.useCollection("config");
+      up: async (txDb) => {
+        const config = txDb.useCollection("config");
         await config.updateOne({ _id: "app" }, { version: 2 });
       },
     });

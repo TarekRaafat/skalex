@@ -52,7 +52,7 @@ class PluginEngine {
 
   /**
    * Run all registered handlers for a given hook name.
-   * @param {string} hook - e.g. "beforeInsert"
+   * @param {string} hook - One of the `Hooks` values from src/engine/constants.js.
    * @param {object} context - The context object passed to each handler.
    * @returns {Promise<void>}
    */

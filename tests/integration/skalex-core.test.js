@@ -5,6 +5,7 @@
  *   search / similar · db.ask() · slowQueryCount / clearSlowQueries
  */
 import { describe, test, expect } from "vitest";
+import { rmSync } from "node:fs";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockEmbeddingAdapter from "../helpers/MockEmbeddingAdapter.js";
@@ -1011,5 +1012,68 @@ describe("slowQueryCount() / clearSlowQueries()", () => {
   test("clearSlowQueries() is a no-op when no log is configured", () => {
     const { db } = makeDb();
     expect(() => db.clearSlowQueries()).not.toThrow();
+  });
+});
+
+// ─── namespace() config inheritance ────────────────────────────────────────
+
+describe("namespace()  -  config inheritance", () => {
+  test("child inherits every option except path", () => {
+    // Use a tmp FS path - namespace() refuses custom adapters by design.
+    const tmp = `./.tmp-skalex-ns-${Date.now()}`;
+    const parent = new Skalex({
+      path: tmp,
+      debug: true,
+      autoSave: true,
+      regexMaxLength: 123,
+      ttlSweepInterval: 1000,
+    });
+    const child = parent.namespace("scope");
+    expect(child.debug).toBe(true);
+    expect(child._autoSave).toBe(true);
+    expect(child._regexMaxLength).toBe(123);
+    expect(child._ttlSweepInterval).toBe(1000);
+    expect(child.dataDirectory).toBe(`${tmp}/scope`);
+    try { rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+});
+
+// ─── useCollection / createCollection  -  name validation ─────────────────
+
+describe("useCollection  -  collection name validation", () => {
+  test("accepts legitimate internal and unusual names", () => {
+    const { db } = makeDb();
+    const allowed = [
+      "_meta",
+      "_changelog",
+      "_memory_session-A",
+      "_memory_session.with.dots",
+      "_memory_session:with:colons",
+      "_migration_1",
+      "valid_name-1.0",
+      "a",
+      "1col",
+      "users",
+    ];
+    for (const name of allowed) {
+      expect(() => db.useCollection(name), `should accept "${name}"`).not.toThrow();
+    }
+  });
+
+  test("rejects traversal / control characters / length overflow", () => {
+    const { db } = makeDb();
+    const rejected = [
+      "",
+      "../etc",
+      "a\x00b",
+      "/abs",
+      ".leading-dot",
+      "-leading-dash",
+      "a".repeat(65),
+      "a b",
+    ];
+    for (const name of rejected) {
+      expect(() => db.useCollection(name), `should reject "${name}"`).toThrow(/collection name/i);
+    }
   });
 });

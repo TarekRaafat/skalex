@@ -84,7 +84,7 @@ for (let i = 0; i < recalled.length; i++) {
 
 // ── Step 3: Build a token-budgeted context string ─────────────────────────────
 
-const ctx = memory.context({ tokens: 300 });
+const ctx = await memory.context({ tokens: 300 });
 
 console.log("\n─── LLM-ready context string (300 token budget) ───\n");
 console.log(ctx);
@@ -100,7 +100,7 @@ console.log("     })");
 
 // ── Step 4: Inspect token usage and memory size ───────────────────────────────
 
-const usage = memory.tokenCount();
+const usage = await memory.tokenCount();
 console.log(`\n─── Memory stats ───\n`);
 console.log(`  entries : ${usage.count}`);
 console.log(`  tokens  : ~${usage.tokens}`);
@@ -120,7 +120,7 @@ for (const entry of recent) {
 console.log("\n─── Compressing memory (threshold: 200 tokens) ───");
 await memory.compress({ threshold: 200 });
 
-const after = memory.tokenCount();
+const after = await memory.tokenCount();
 console.log(`  before: ~${usage.tokens} tokens / ${usage.count} entries`);
 console.log(`  after : ~${after.tokens} tokens / ${after.count} entries`);
 if (after.count < usage.count) {

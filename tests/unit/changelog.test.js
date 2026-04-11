@@ -1,7 +1,7 @@
 /**
  * Unit tests for changelog.js  -  ChangeLog class.
  */
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect } from "vitest";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 

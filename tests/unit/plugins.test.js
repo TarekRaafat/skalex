@@ -1,7 +1,7 @@
 /**
  * Unit tests for the PluginEngine + db.use() integration.
  */
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect } from "vitest";
 import PluginEngine from "../../src/features/plugins.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
