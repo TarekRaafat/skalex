@@ -278,13 +278,11 @@ describe("#5 stale transaction proxy after commit/timeout", () => {
 
 describe("#6 save:true awaits actual disk write", () => {
   test("concurrent saves both await actual persistence", async () => {
-    let writeCount = 0;
     const adapter = new MemoryAdapter();
     const originalWrite = adapter.write.bind(adapter);
 
     // Slow adapter to create write contention
     adapter.write = async (name, data) => {
-      writeCount++;
       await new Promise(r => setTimeout(r, 50));
       return originalWrite(name, data);
     };

@@ -58,16 +58,23 @@ function computeExpiry(ttl) {
 function sweep(data, idIndex, removeFromIndexes = null) {
   const now = Date.now();
   let removed = 0;
-  let i = data.length;
 
-  while (i--) {
-    const doc = data[i];
+  // Single-pass filter-and-reassign. O(n) instead of O(n*k) for k expired docs
+  // when using in-place splice on a backing array.
+  const remaining = [];
+  for (const doc of data) {
     if (doc._expiresAt && new Date(doc._expiresAt).getTime() <= now) {
-      data.splice(i, 1);
       idIndex.delete(doc._id);
       if (removeFromIndexes) removeFromIndexes(doc);
       removed++;
+    } else {
+      remaining.push(doc);
     }
+  }
+
+  if (removed > 0) {
+    data.length = 0;
+    for (const doc of remaining) data.push(doc);
   }
 
   return removed;

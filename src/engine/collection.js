@@ -6,6 +6,7 @@ import { cosineSimilarity, stripVector } from "./vector.js";
 import { count as aggCount, sum as aggSum, avg as aggAvg, groupBy as aggGroupBy } from "../features/aggregation.js";
 import { ValidationError, UniqueConstraintError, PersistenceError, QueryError, AdapterError } from "./errors.js";
 import MutationPipeline from "./pipeline.js";
+import { Ops, Hooks } from "./constants.js";
 
 /**
  * Resolve a query filter into plain key-value pairs suitable for insertion.
@@ -35,6 +36,39 @@ function resolveFilterToValues(filter) {
 const _DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /**
+ * Assert a value is a plain object suitable for insert/update/upsert bodies.
+ * @param {string} method - Name of the calling method, included in the error.
+ * @param {*} value
+ * @param {string} [what="item"] - Noun describing the argument.
+ */
+function _assertPlainObject(method, value, what = "item") {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_ARG",
+      `${method}() expects a plain object ${what}, got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}`,
+      { method, got: value === null ? "null" : Array.isArray(value) ? "array" : typeof value }
+    );
+  }
+}
+
+/**
+ * Assert a value is a filter argument (object or function).
+ * @param {string} method
+ * @param {*} value
+ */
+function _assertFilter(method, value) {
+  if (value == null) return;
+  const type = typeof value;
+  if (type === "function") return;
+  if (type === "object" && !Array.isArray(value)) return;
+  throw new ValidationError(
+    "ERR_SKALEX_VALIDATION_ARG",
+    `${method}() expects a filter object or function, got ${Array.isArray(value) ? "array" : type}`,
+    { method, got: Array.isArray(value) ? "array" : type }
+  );
+}
+
+/**
  * Recursively strip dangerous keys from a value before storing.
  * Returns the value unchanged for non-object types and arrays.
  * @param {*} val
@@ -60,10 +94,13 @@ class Collection {
    */
   constructor(collectionData, database) {
     this.name = collectionData.collectionName;
-    this.database = database;
 
-    /** @type {CollectionContext} Narrow dependency surface for Collection operations. */
-    this._ctx = database._buildCollectionContext();
+    /**
+     * @type {CollectionContext} Narrow dependency surface for Collection operations.
+     * Shared across all collections of a Skalex instance - the ctx uses lazy
+     * getters that defer to the database, so a single allocation suffices.
+     */
+    this._ctx = database._collectionContext;
 
     this._store = collectionData;
     this._pipeline = new MutationPipeline(this);
@@ -118,6 +155,7 @@ class Collection {
    * @returns {Promise<object>}
    */
   async insertOne(item, options = {}) {
+    _assertPlainObject("insertOne", item);
     const { save, ifNotExists, ttl, embed, session } = options;
 
     if (ifNotExists) {
@@ -137,6 +175,14 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async insertMany(items, options = {}) {
+    if (!Array.isArray(items)) {
+      throw new ValidationError(
+        "ERR_SKALEX_VALIDATION_ARG",
+        `insertMany() expects an array of objects, got ${items === null ? "null" : typeof items}`,
+        { method: "insertMany", got: items === null ? "null" : typeof items }
+      );
+    }
+    for (let i = 0; i < items.length; i++) _assertPlainObject("insertMany", items[i], `item at index ${i}`);
     const { save, ttl, embed, session } = options;
     const { docs } = await this._insertCore(items, { ttl, embed, session, save });
     return docs.map(stripVector);
@@ -150,9 +196,9 @@ class Collection {
    */
   async _insertCore(items, { ttl, embed, session, save }) {
     return this._pipeline.execute({
-      op: "insert",
+      op: Ops.INSERT,
       beforeHook: null, // handled per-item inside mutate
-      afterHook: "afterInsert",
+      afterHook: Hooks.AFTER_INSERT,
       hookPayload: null,
       save,
       session,
@@ -161,7 +207,7 @@ class Collection {
         const batchIds = new Set();
         for (const item of items) {
           const validated = this._applyValidation(item);
-          await this._ctx.plugins.run("beforeInsert", { collection: this.name, doc: validated });
+          await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
           const newItem = await this._buildDoc(validated, { ttl, embed });
           if (this._index.has(newItem._id) || batchIds.has(newItem._id)) {
             throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newItem._id}" in collection "${this.name}"`, { id: newItem._id, collection: this.name });
@@ -175,7 +221,16 @@ class Collection {
         for (const newItem of newItems) this._addToIndex(newItem);
         this._data.push(...newItems);
         for (const newItem of newItems) this._index.set(newItem._id, newItem);
-        this._enforceCapAfterInsert();
+        const evicted = this._enforceCapAfterInsert();
+        // Emit delete events for FIFO-evicted documents so watch listeners
+        // observe their disappearance alongside the corresponding inserts.
+        for (const doc of evicted) {
+          this._ctx.emitEvent(this.name, {
+            op: Ops.DELETE,
+            collection: this.name,
+            doc: stripVector(doc),
+          });
+        }
 
         return { docs: newItems };
       },
@@ -192,6 +247,8 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async updateOne(filter, update, options = {}) {
+    _assertFilter("updateOne", filter);
+    _assertPlainObject("updateOne", update, "update");
     await this._ctx.ensureConnected();
     const oldDoc = this._findRaw(filter);
     if (!oldDoc) return null;
@@ -209,6 +266,8 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async updateMany(filter, update, options = {}) {
+    _assertFilter("updateMany", filter);
+    _assertPlainObject("updateMany", update, "update");
     await this._ctx.ensureConnected();
     const oldDocs = this._findAllRaw(filter);
     if (oldDocs.length === 0) return [];
@@ -223,9 +282,9 @@ class Collection {
    */
   async _updateCore(oldDocs, filter, update, { save, session }) {
     return this._pipeline.execute({
-      op: "update",
-      beforeHook: "beforeUpdate",
-      afterHook: "afterUpdate",
+      op: Ops.UPDATE,
+      beforeHook: Hooks.BEFORE_UPDATE,
+      afterHook: Hooks.AFTER_UPDATE,
       hookPayload: { collection: this.name, filter, update },
       save,
       session,
@@ -255,8 +314,10 @@ class Collection {
   /**
    * Apply an update descriptor to a document in place.
    * Supports $inc, $push, and direct assignment. Increments _version when versioning is on.
-   * Skips _id and createdAt (immutable). Does NOT update indexes - the caller
-   * is responsible for index maintenance (see _commitUpdatedDoc).
+   * Skips _id, createdAt, and updatedAt - these are system-managed. A user-provided
+   * `updatedAt` value is silently discarded; the field is always set to the current
+   * time on every successful update. Does NOT update indexes - the caller is
+   * responsible for index maintenance (see _commitUpdatedDoc).
    * @param {object} item
    * @param {object} update
    * @returns {object} The mutated document.
@@ -264,7 +325,7 @@ class Collection {
   applyUpdate(item, update) {
     for (const field in update) {
       if (_DANGEROUS_KEYS.has(field)) continue;
-      if (field === "_id" || field === "createdAt") continue;
+      if (field === "_id" || field === "createdAt" || field === "updatedAt") continue;
       const updateValue = update[field];
 
       if (Array.isArray(updateValue)) {
@@ -390,6 +451,8 @@ class Collection {
    * @returns {Promise<object>}
    */
   async upsert(filter, doc, options = {}) {
+    _assertFilter("upsert", filter);
+    _assertPlainObject("upsert", doc, "doc");
     await this._ctx.ensureConnected();
     const existing = this._findRaw(filter);
     if (existing) {
@@ -407,6 +470,21 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async upsertMany(docs, matchKey, options = {}) {
+    if (!Array.isArray(docs)) {
+      throw new ValidationError(
+        "ERR_SKALEX_VALIDATION_ARG",
+        `upsertMany() expects an array of documents, got ${docs === null ? "null" : typeof docs}`,
+        { method: "upsertMany" }
+      );
+    }
+    if (typeof matchKey !== "string" || !matchKey) {
+      throw new ValidationError(
+        "ERR_SKALEX_VALIDATION_ARG",
+        `upsertMany() expects matchKey to be a non-empty string, got ${typeof matchKey}`,
+        { method: "upsertMany" }
+      );
+    }
+    for (let i = 0; i < docs.length; i++) _assertPlainObject("upsertMany", docs[i], `doc at index ${i}`);
     await this._ctx.ensureConnected();
     const { save, ...rest } = options;
 
@@ -429,6 +507,7 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async restore(filter, options = {}) {
+    _assertFilter("restore", filter);
     if (!this._softDelete) throw new QueryError("ERR_SKALEX_QUERY_SOFT_DELETE_REQUIRED", `restore() requires softDelete on "${this.name}"`, { collection: this.name });
     await this._ctx.ensureConnected();
     const { save, session } = options;
@@ -437,7 +516,7 @@ class Collection {
     if (!item || !item._deletedAt) return null;
 
     const { docs } = await this._pipeline.execute({
-      op: "restore",
+      op: Ops.RESTORE,
       beforeHook: null,
       afterHook: null,
       hookPayload: null,
@@ -573,6 +652,7 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async findOne(filter, options = {}) {
+    _assertFilter("findOne", filter);
     await this._ctx.ensureConnected();
     const { populate, select, includeDeleted = false } = options;
     const item = this._findRaw(filter, { includeDeleted });
@@ -590,11 +670,12 @@ class Collection {
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
   async find(filter, options = {}) {
+    _assertFilter("find", filter);
     await this._ctx.ensureConnected();
     const _t0 = Date.now();
     const { populate, select, sort, page = 1, limit, session, includeDeleted = false } = options;
 
-    await this._ctx.plugins.run("beforeFind", { collection: this.name, filter, options });
+    await this._ctx.plugins.run(Hooks.BEFORE_FIND, { collection: this.name, filter, options });
 
     const candidates = this._getCandidates(filter);
     const sortedFilter = presortFilter(
@@ -605,7 +686,7 @@ class Collection {
     let results = [];
 
     for (const item of candidates) {
-      if (this._softDelete && item._deletedAt && !includeDeleted) continue;
+      if (!this._isVisible(item, includeDeleted)) continue;
       if (!matchesFilter(item, sortedFilter)) continue;
       const newItem = this._projectDoc(item, select);
       if (populate) await this._populateDoc(newItem, item, populate);
@@ -635,7 +716,7 @@ class Collection {
 
     this._ctx.queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
     this._ctx.sessionStats.recordRead(session);
-    await this._ctx.plugins.run("afterFind", { collection: this.name, filter, options, docs: results });
+    await this._ctx.plugins.run(Hooks.AFTER_FIND, { collection: this.name, filter, options, docs: results });
     return extra ? { docs: results, ...extra } : { docs: results };
   }
 
@@ -650,9 +731,17 @@ class Collection {
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
   async search(query, { filter, limit = 10, minScore = 0, session } = {}) {
+    if (typeof query !== "string") {
+      throw new ValidationError(
+        "ERR_SKALEX_VALIDATION_ARG",
+        `search() expects query to be a string, got ${typeof query}`,
+        { method: "search" }
+      );
+    }
+    _assertFilter("search", filter);
     await this._ctx.ensureConnected();
     const _t0 = Date.now();
-    await this._ctx.plugins.run("beforeSearch", { collection: this.name, query, options: { filter, limit, minScore } });
+    await this._ctx.plugins.run(Hooks.BEFORE_SEARCH, { collection: this.name, query, options: { filter, limit, minScore } });
     const queryVector = await this._ctx.embed(query);
 
     const candidates = filter ? this._findAllRaw(filter) : this._data;
@@ -672,7 +761,7 @@ class Collection {
 
     const docs = top.map(r => stripVector(r.doc));
     const scores = top.map(r => r.score);
-    await this._ctx.plugins.run("afterSearch", { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
+    await this._ctx.plugins.run(Hooks.AFTER_SEARCH, { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
 
     return { docs, scores };
   }
@@ -715,6 +804,7 @@ class Collection {
    * @returns {Promise<object|null>}
    */
   async deleteOne(filter, options = {}) {
+    _assertFilter("deleteOne", filter);
     await this._ctx.ensureConnected();
     const { save, session } = options;
 
@@ -740,6 +830,7 @@ class Collection {
    * @returns {Promise<object[]>}
    */
   async deleteMany(filter, options = {}) {
+    _assertFilter("deleteMany", filter);
     await this._ctx.ensureConnected();
     const { save, session } = options;
 
@@ -761,9 +852,9 @@ class Collection {
    */
   async _deleteCore(mode, items, filter, { save, session }) {
     return this._pipeline.execute({
-      op: "delete",
-      beforeHook: "beforeDelete",
-      afterHook: "afterDelete",
+      op: Ops.DELETE,
+      beforeHook: Hooks.BEFORE_DELETE,
+      afterHook: Hooks.AFTER_DELETE,
       hookPayload: { collection: this.name, filter },
       save,
       session,
@@ -903,7 +994,13 @@ class Collection {
     if (!errors.length) return item;
     switch (this._onSchemaError) {
       case "warn":
-        this._ctx.logger(`[${this.name}] Validation warning: ${errors.join("; ")}`, "warn");
+        // `warn` mode admits invalid docs silently - log the id and errors so
+        // schema drift is auditable. Callers should prefer `throw` in strict
+        // pipelines; `warn` does NOT prevent invalid data from being persisted.
+        this._ctx.logger(
+          `[${this.name}] Validation warning for doc "${item._id ?? "(new)"}": ${errors.join("; ")}`,
+          "warn"
+        );
         return item;
       case "strip":
         return stripInvalidFields(item, this._schema);
@@ -915,29 +1012,87 @@ class Collection {
   /**
    * Evict oldest documents when the collection exceeds `maxDocs`.
    * FIFO: the earliest-inserted documents are removed first.
+   *
+   * Atomicity: candidates are collected first, then removed from all indexes.
+   * Each doc is tracked by removal state so that a mid-batch failure can
+   * restore exactly the indexes that were touched, leaving `_data` and both
+   * indexes internally consistent.
+   *
+   * `_data.splice()` runs only after every index removal succeeds, so a
+   * failure leaves `_data` untouched - callers can rely on "either every
+   * eviction committed or none did".
+   *
+   * @returns {object[]} The evicted documents (for caller-side event emission).
    */
   _enforceCapAfterInsert() {
     const max = this._maxDocs;
-    if (!max || this._data.length <= max) return;
-    const toEvict = this._data.splice(0, this._data.length - max);
-    for (const doc of toEvict) {
-      this._index.delete(doc._id);
-      this._removeFromIndex(doc);
+    if (!max || this._data.length <= max) return [];
+    const evictCount = this._data.length - max;
+    const toEvict = this._data.slice(0, evictCount);
+
+    // Per-doc removal state:
+    //   0 = untouched
+    //   1 = removed from id-index
+    //   2 = removed from id-index AND field-index
+    const states = new Array(toEvict.length).fill(0);
+    try {
+      for (let i = 0; i < toEvict.length; i++) {
+        const doc = toEvict[i];
+        this._index.delete(doc._id);
+        states[i] = 1;
+        this._removeFromIndex(doc);
+        states[i] = 2;
+      }
+      this._data.splice(0, evictCount);
+      return toEvict;
+    } catch (err) {
+      // Restore in reverse order. For each doc, undo exactly the steps that
+      // were committed. This leaves `_data` + both indexes consistent.
+      for (let i = toEvict.length - 1; i >= 0; i--) {
+        const doc = toEvict[i];
+        if (states[i] === 0) continue;
+        if (states[i] === 2) {
+          try { this._addToIndex(doc); } catch { /* best-effort */ }
+        }
+        // states 1 and 2 both require id-index restore
+        this._index.set(doc._id, doc);
+      }
+      throw err;
     }
+  }
+
+  /**
+   * Whether a document is visible given the collection's soft-delete setting.
+   * @param {object} doc
+   * @param {boolean} [includeDeleted]
+   * @returns {boolean}
+   */
+  _isVisible(doc, includeDeleted = false) {
+    return !this._softDelete || !doc._deletedAt || includeDeleted;
   }
 
   _findRaw(filter, { includeDeleted = false } = {}) {
     if (typeof filter === "function") {
       for (const doc of this._data) {
-        if (this._softDelete && doc._deletedAt && !includeDeleted) continue;
+        if (!this._isVisible(doc, includeDeleted)) continue;
         if (filter(doc)) return doc;
+      }
+      return null;
+    }
+    // Null, undefined, or empty filter: return the first visible doc.
+    // Matches matchesFilter's "everything matches" semantics for nullish
+    // and empty-object filters, and keeps `findOne()` / `findOne(null)`
+    // working (they used to crash on `filter._id`).
+    if (filter == null) {
+      for (const doc of this._data) {
+        if (this._isVisible(doc, includeDeleted)) return doc;
       }
       return null;
     }
     if (filter._id) {
       const item = this._index.get(filter._id) || null;
       if (!item) return null;
-      if (this._softDelete && item._deletedAt && !includeDeleted) return null;
+      if (!this._isVisible(item, includeDeleted)) return null;
       if (Object.keys(filter).length > 1) {
         return matchesFilter(item, filter) ? item : null;
       }
@@ -953,7 +1108,7 @@ class Collection {
           const candidates = this._fieldIndex._lookupIterable(key, val);
           if (candidates !== null) {
             for (const doc of candidates) {
-              if (this._softDelete && doc._deletedAt && !includeDeleted) continue;
+              if (!this._isVisible(doc, includeDeleted)) continue;
               if (matchesFilter(doc, filter)) return doc;
             }
             return null;
@@ -963,7 +1118,7 @@ class Collection {
     }
 
     for (const doc of this._data) {
-      if (this._softDelete && doc._deletedAt && !includeDeleted) continue;
+      if (!this._isVisible(doc, includeDeleted)) continue;
       if (matchesFilter(doc, filter)) return doc;
     }
     return null;
@@ -973,12 +1128,12 @@ class Collection {
     if (filter && typeof filter !== "function" && filter._id) {
       const item = this._index.get(filter._id);
       if (!item) return [];
-      if (this._softDelete && item._deletedAt && !includeDeleted) return [];
+      if (!this._isVisible(item, includeDeleted)) return [];
       return matchesFilter(item, filter) ? [item] : [];
     }
     const results = [];
     for (const doc of this._getCandidates(filter)) {
-      if (this._softDelete && doc._deletedAt && !includeDeleted) continue;
+      if (!this._isVisible(doc, includeDeleted)) continue;
       if (matchesFilter(doc, filter)) results.push(doc);
     }
     return results;

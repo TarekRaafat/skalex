@@ -90,4 +90,24 @@ describe("sweep", () => {
     const idIndex = new Map([["1", doc]]);
     expect(sweep(data, idIndex)).toBe(0);
   });
+
+  test("sweep removes all expired docs in one linear pass", () => {
+    // Regression: sweep() used to splice-in-place, making it O(n*k). Now
+    // it filters once; this test pins the linear behaviour (large n, many
+    // expired) so a regression to the splice loop would time out or fail
+    // to remove everything on the first pass.
+    const past = new Date(Date.now() - 1000);
+    const future = new Date(Date.now() + 100000);
+    const data = [];
+    const idIndex = new Map();
+    for (let i = 0; i < 100; i++) {
+      const doc = { _id: `d${i}`, _expiresAt: i < 50 ? past : future };
+      data.push(doc);
+      idIndex.set(doc._id, doc);
+    }
+    const removed = sweep(data, idIndex);
+    expect(removed).toBe(50);
+    expect(data).toHaveLength(50);
+    for (const doc of data) expect(idIndex.has(doc._id)).toBe(true);
+  });
 });

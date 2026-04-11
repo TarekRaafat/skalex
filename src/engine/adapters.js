@@ -100,7 +100,11 @@ function createLLMAdapter({ provider, apiKey, model, host, baseUrl, apiVersion, 
         ...(summarizePrompt !== undefined && { summarizePrompt }),
       });
     default:
-      return null;
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_UNKNOWN_PROVIDER",
+        `Unknown LLM provider: "${provider}". Supported: "openai", "anthropic", "ollama".`,
+        { provider }
+      );
   }
 }
 

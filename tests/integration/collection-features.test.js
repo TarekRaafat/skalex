@@ -961,3 +961,120 @@ describe("schema enforcement on updates", () => {
     await db.disconnect();
   });
 });
+
+// ─── capped collection FIFO eviction emits delete events ────────────────────
+
+describe("capped collection  -  eviction events", () => {
+  test("emits delete event for FIFO-evicted documents", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    db.createCollection("cap", { maxDocs: 2 });
+    const col = db.useCollection("cap");
+
+    const events = [];
+    db.watch((e) => events.push({ op: e.op, id: e.doc?._id, collection: e.collection }));
+
+    const a = await col.insertOne({ n: 1 });
+    await col.insertOne({ n: 2 });
+    await col.insertOne({ n: 3 }); // evicts `a`
+
+    const deleteEvents = events.filter(e => e.op === "delete");
+    expect(deleteEvents).toHaveLength(1);
+    expect(deleteEvents[0].id).toBe(a._id);
+    expect(col._data).toHaveLength(2);
+  });
+});
+
+// ─── shared collection context ─────────────────────────────────────────────
+
+describe("Collection  -  shared _ctx reference", () => {
+  test("all collection instances share the same ctx reference", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const a = db.useCollection("a");
+    const b = db.useCollection("b");
+    expect(a._ctx).toBe(b._ctx);
+    expect(a._ctx).toBe(db._collectionContext);
+  });
+
+  test("collection instance has no `database` own property", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("users");
+    expect(Object.prototype.hasOwnProperty.call(col, "database")).toBe(false);
+  });
+});
+
+// ─── applyUpdate ignores system-managed fields ─────────────────────────────
+
+describe("Collection  -  applyUpdate discards user-provided updatedAt", () => {
+  test("updateOne ignores user-provided updatedAt", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("users");
+    const doc = await col.insertOne({ name: "Alice" });
+    const fake = new Date("2000-01-01");
+    const updated = await col.updateOne({ _id: doc._id }, { name: "Bob", updatedAt: fake });
+    expect(new Date(updated.updatedAt).getTime()).not.toBe(fake.getTime());
+    expect(updated.name).toBe("Bob");
+  });
+});
+
+// ─── Public API argument validation ────────────────────────────────────────
+
+describe("Collection  -  argument validation", () => {
+  test("insertOne rejects null / primitive / array", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("users");
+    await expect(col.insertOne(null)).rejects.toThrow(/plain object/);
+    await expect(col.insertOne("string")).rejects.toThrow(/plain object/);
+    await expect(col.insertOne(123)).rejects.toThrow(/plain object/);
+    await expect(col.insertOne([])).rejects.toThrow(/plain object/);
+  });
+  test("find rejects non-object filter", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("users");
+    await expect(col.find(123)).rejects.toThrow(/filter/);
+  });
+
+  // Regression: findOne() with no argument (or null/undefined) used to crash
+  // on `filter._id` property access. It now returns the first visible doc,
+  // consistent with find({})'s "everything matches" semantics.
+  test("findOne() with no / null / undefined filter returns the first visible doc", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("users");
+    await col.insertOne({ name: "Alice" });
+    await col.insertOne({ name: "Bob" });
+    expect((await col.findOne()).name).toBe("Alice");
+    expect((await col.findOne(null)).name).toBe("Alice");
+    expect((await col.findOne(undefined)).name).toBe("Alice");
+  });
+
+  test("findOne() returns null on an empty collection (no filter)", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("users");
+    expect(await col.findOne()).toBeNull();
+    expect(await col.findOne(null)).toBeNull();
+  });
+});
+
+// ─── watch-before-after-hook event ordering contract ──────────────────────
+
+describe("Collection  -  watch event / after-hook ordering", () => {
+  test("watch event fires before the after-insert plugin hook", async () => {
+    const { db } = makeDb();
+    const order = [];
+    db.use({
+      async afterInsert() { order.push("afterInsert"); },
+    });
+    await db.connect();
+    db.watch((e) => { if (e.op === "insert") order.push("watch"); });
+    const col = db.useCollection("users");
+    await col.insertOne({ name: "Alice" });
+    expect(order).toEqual(["watch", "afterInsert"]);
+  });
+});
