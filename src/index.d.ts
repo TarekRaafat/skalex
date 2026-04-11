@@ -139,6 +139,21 @@ export interface SkalexConfig {
   autoSave?: boolean;
   /** Interval in ms to run a periodic TTL sweep. Disabled when omitted. */
   ttlSweepInterval?: number;
+  /**
+   * Strategy for errors thrown by deferred side effects (watch callbacks,
+   * after-* plugin hooks, changelog entries) that run after a transaction commit.
+   * - `"throw"`   rethrows an AggregateError after all effects have run
+   * - `"warn"`    logs each error and continues (default)
+   * - `"ignore"`  swallows silently
+   * All effects run regardless of individual failures.
+   */
+  deferredEffectErrors?: 'throw' | 'warn' | 'ignore';
+  /**
+   * When `true`, collections whose persisted data fails to deserialize
+   * are logged and replaced with an empty in-memory store instead of
+   * aborting `connect()`. Default: false.
+   */
+  lenientLoad?: boolean;
 }
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -187,12 +202,18 @@ export declare class FsAdapter extends StorageAdapter {
   constructor(opts: { dir: string; format?: 'gz' | 'json' });
   read(name: string): Promise<string | null>;
   write(name: string, data: string): Promise<void>;
+  writeAll(entries: Array<{ name: string; data: string }>): Promise<void>;
   delete(name: string): Promise<void>;
   list(): Promise<string[]>;
   join(...parts: string[]): string;
   ensureDir(dir: string): void;
   writeRaw(filePath: string, content: string): Promise<void>;
   readRaw(filePath: string): Promise<string>;
+  /**
+   * Remove orphan temp files (`*.tmp.*`) left by interrupted writes.
+   * Returns the number of files removed. Best-effort per-file unlink.
+   */
+  cleanOrphans(): Promise<number>;
 }
 
 export declare class LocalStorageAdapter extends StorageAdapter {
@@ -209,15 +230,25 @@ export declare class EncryptedAdapter extends StorageAdapter {
   constructor(adapter: StorageAdapter, key: string | Uint8Array);
   read(name: string): Promise<string | null>;
   write(name: string, data: string): Promise<void>;
+  writeAll(entries: Array<{ name: string; data: string }>): Promise<void>;
   delete(name: string): Promise<void>;
   list(): Promise<string[]>;
+  /** Forwarded to the wrapped adapter if supported. */
+  cleanOrphans?(): Promise<number>;
 }
 
 export declare class D1Adapter extends StorageAdapter {
-  /** @param d1 - The D1Database binding from your Cloudflare Worker environment. */
-  constructor(d1: object, opts?: { table?: string });
+  /**
+   * @param d1 - The D1Database binding from your Cloudflare Worker environment.
+   * @param opts.table - Table name. Default: "skalex_store".
+   * @param opts.batchSize - Max statements per `d1.batch()` call. Default: 1000
+   *   (matching Cloudflare's documented per-batch limit). Values outside
+   *   `[1, 1000]` are rejected at construction.
+   */
+  constructor(d1: object, opts?: { table?: string; batchSize?: number });
   read(name: string): Promise<string | null>;
   write(name: string, data: string): Promise<void>;
+  writeAll(entries: Array<{ name: string; data: string }>): Promise<void>;
   delete(name: string): Promise<void>;
   list(): Promise<string[]>;
 }
@@ -457,16 +488,40 @@ export interface SearchResult<T = Document> {
 
 // ─── Migration ────────────────────────────────────────────────────────────────
 
+/**
+ * Migration.
+ *
+ * `up()` runs inside a transaction. If it throws, every write it made
+ * rolls back, and the migration will retry from a clean state on the next
+ * `connect()`. Migrations that commit successfully are not re-run.
+ */
 export interface Migration {
   version: number;
   description?: string;
-  up: (collection: Collection) => Promise<void>;
+  /**
+   * Migration logic. Receives the Skalex instance (transaction proxy);
+   * use `db.useCollection(name)` to obtain collections.
+   */
+  up: (db: Skalex) => Promise<void>;
 }
 
 export interface MigrationStatus {
   current: number;
   applied: number[];
   pending: number[];
+}
+
+// ─── Transactions ─────────────────────────────────────────────────────────────
+
+export interface TransactionOptions {
+  /** Max ms before the transaction aborts. 0 or omitted = no timeout. */
+  timeout?: number;
+  /**
+   * Per-transaction override for the deferred-effect error strategy.
+   * Defaults to the Skalex instance setting (`SkalexConfig.deferredEffectErrors`),
+   * which itself defaults to `"warn"`.
+   */
+  deferredEffectErrors?: 'throw' | 'warn' | 'ignore';
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
@@ -563,9 +618,9 @@ export declare class Memory {
   recall(query: string, options?: { limit?: number; minScore?: number }): Promise<SearchResult<Document>>;
   history(options?: { since?: string | Date; limit?: number }): Promise<Document[]>;
   forget(id: string): Promise<Document | null>;
-  tokenCount(): { tokens: number; count: number };
-  context(options?: { tokens?: number }): string;
-  compress(options?: { threshold?: number }): Promise<void>;
+  tokenCount(): Promise<{ tokens: number; count: number }>;
+  context(options?: { tokens?: number }): Promise<string>;
+  compress(options?: { threshold?: number; keepRecent?: number }): Promise<void>;
 }
 
 // ─── ChangeLog ────────────────────────────────────────────────────────────────
@@ -639,7 +694,7 @@ export declare class Skalex {
   namespace(id: string): Skalex;
 
   // Transaction
-  transaction<R = unknown>(fn: (db: Skalex) => Promise<R>): Promise<R>;
+  transaction<R = unknown>(fn: (db: Skalex) => Promise<R>, options?: TransactionOptions): Promise<R>;
 
   // Seeding
   seed(fixtures: Record<string, Record<string, unknown>[]>, options?: { reset?: boolean }): Promise<void>;
@@ -692,3 +747,34 @@ export declare class Skalex {
 }
 
 export default Skalex;
+
+// ─── Error hierarchy ──────────────────────────────────────────────────────────
+
+/**
+ * Base error for all Skalex engine errors.
+ * Every instance carries a stable `code` (e.g. `"ERR_SKALEX_VALIDATION_REQUIRED"`)
+ * and a structured `details` object for programmatic consumers.
+ */
+export declare class SkalexError extends Error {
+  constructor(code: string, message: string, details?: Record<string, unknown>);
+  readonly code: string;
+  readonly details: Record<string, unknown>;
+}
+
+/** Schema parsing or document validation failure. */
+export declare class ValidationError extends SkalexError {}
+
+/** Insert or update violates a unique field constraint. */
+export declare class UniqueConstraintError extends SkalexError {}
+
+/** Transaction timeout, abort, nested call, or rollback failure. */
+export declare class TransactionError extends SkalexError {}
+
+/** Load, save, serialization, or flush failure. */
+export declare class PersistenceError extends SkalexError {}
+
+/** Storage or AI adapter misconfiguration or missing dependency. */
+export declare class AdapterError extends SkalexError {}
+
+/** Query filter, operator, or execution failure. */
+export declare class QueryError extends SkalexError {}

@@ -7,7 +7,7 @@ import { parseSchema } from "./engine/validator.js";
 import { sweep } from "./engine/ttl.js";
 import { SkalexError, PersistenceError, TransactionError, AdapterError, ValidationError, UniqueConstraintError, QueryError } from "./engine/errors.js";
 import PersistenceManager from "./engine/persistence.js";
-import TransactionManager from "./engine/transaction.js";
+import TransactionManager, { validateDeferredEffectErrors } from "./engine/transaction.js";
 import CollectionRegistry from "./engine/registry.js";
 import { createEmbeddingAdapter, createLLMAdapter } from "./engine/adapters.js";
 import EncryptedAdapter from "./connectors/storage/encrypted.js";
@@ -19,9 +19,6 @@ import QueryLog from "./features/query-log.js";
 import SessionStats from "./features/session-stats.js";
 import PluginEngine from "./features/plugins.js";
 import SkalexMCPServer from "./connectors/mcp/index.js";
-
-/** Key used to store migration state in the _meta collection. */
-const META_KEY = "migrations";
 
 /**
  * BigInt- and Date-safe JSON serializer. Encodes BigInt values as tagged objects
@@ -95,8 +92,15 @@ class Skalex {
    * @param {Function} [config.deserializer]             - Custom deserializer for storage reads. Default: JSON.parse.
    * @param {boolean} [config.autoSave=false]            - Automatically persist after every write without passing { save: true }.
    * @param {number}  [config.ttlSweepInterval]          - Interval in ms to periodically sweep expired TTL documents.
+   * @param {boolean} [config.lenientLoad=false]         - On `connect()`, log and skip collections that fail to deserialize instead of aborting. Use with care.
+   * @param {"throw"|"warn"|"ignore"} [config.deferredEffectErrors="warn"] - Strategy for errors thrown by deferred side effects (watch callbacks, after-* plugin hooks, changelog entries) after a transaction commit. `"throw"` aggregates into `AggregateError`, `"warn"` logs and continues, `"ignore"` swallows. Can be overridden per transaction via `transaction(fn, { deferredEffectErrors })`.
    */
-  constructor({ path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, queryCache, memory, logger, plugins, llmAdapter, embeddingAdapter, regexMaxLength, idGenerator, serializer, deserializer, autoSave, ttlSweepInterval, lenientLoad } = {}) {
+  constructor(config = {}) {
+    const { path = "./.db", format = "gz", debug = false, adapter, ai, encrypt, slowQueryLog, queryCache, memory, logger, plugins, llmAdapter, embeddingAdapter, regexMaxLength, idGenerator, serializer, deserializer, autoSave, ttlSweepInterval, lenientLoad, deferredEffectErrors = "warn" } = config;
+    validateDeferredEffectErrors(deferredEffectErrors, "Skalex config");
+    this._deferredEffectErrors = deferredEffectErrors;
+    /** Preserve the original config so namespace() can inherit every option. */
+    this._config = config;
     this.dataDirectory = path;
     this.dataFormat = format;
     this.debug = debug;
@@ -124,6 +128,10 @@ class Skalex {
     this._registry = new CollectionRegistry(Collection);
     this.collections = this._registry.stores;
     this._collectionInstances = this._registry._instances;
+    // Built eagerly so Collection constructors can reference a stable object.
+    // The ctx uses lazy getters that defer resolution to the database, so
+    // referring to it before later fields are initialised is safe.
+    this._collectionContext = this._buildCollectionContext();
     this._migrations = new MigrationEngine();
     this._connectPromise = null;
     this.isConnected = false;
@@ -151,6 +159,7 @@ class Skalex {
       logger: this._logger,
       debug: this.debug,
       lenientLoad: lenientLoad ?? false,
+      registry: this._registry,
     });
     this._changeLog = new ChangeLog(this);
     this._queryCache = new QueryCache(queryCache || {});
@@ -194,17 +203,17 @@ class Skalex {
       this._bootstrapping = true;
 
       // Restore persisted query cache
-      const meta = this._getMeta();
+      const meta = this._persistence.getMeta(this.collections);
       if (meta.queryCache) this._queryCache.fromJSON(meta.queryCache);
 
-      // Run pending migrations
+      // Run pending migrations. Each migration runs in its own transaction
+      // and records its version in `_meta` atomically with its data writes
+      // via the `recordApplied` closure below. No post-loop flush needed.
       if (this._migrations._migrations.length > 0) {
         const applied = meta.appliedVersions || [];
-        const newApplied = await this._migrations.run(
-          (version) => this.useCollection(`_migration_${version}`),
-          applied
-        );
-        this._saveMeta({ appliedVersions: newApplied });
+        const runInTx = (fn) => this.transaction(fn);
+        const recordApplied = (versions) => this._recordAppliedVersions(versions);
+        await this._migrations.run({ runInTx, recordApplied }, applied);
       }
 
       // Sweep expired TTL documents
@@ -283,7 +292,7 @@ class Skalex {
     return this._registry.create(collectionName, options, this);
   }
 
-  /** @private Create a bare collection store (used internally by persistence). */
+  /** @private Create a bare collection store (used internally by persistence/tests). */
   _createCollectionStore(collectionName, options = {}) {
     this._registry.createStore(collectionName, options);
   }
@@ -364,7 +373,7 @@ class Skalex {
    * @returns {{ current: number, applied: number[], pending: number[] }}
    */
   migrationStatus() {
-    const meta = this._getMeta();
+    const meta = this._persistence.getMeta(this.collections);
     return this._migrations.status(meta.appliedVersions || []);
   }
 
@@ -385,25 +394,12 @@ class Skalex {
     // Strip path separators and traversal sequences  -  only alphanumeric, dash, and underscore allowed.
     const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
     if (!safeId) throw new ValidationError("ERR_SKALEX_VALIDATION_NAMESPACE_ID", "namespace: id must contain at least one alphanumeric character", { id });
+    // Inherit every option from the parent by spreading the stored config,
+    // then override only the path. Any new config option added to the
+    // constructor is automatically inherited without touching this method.
     return new Skalex({
+      ...this._config,
       path: `${this.dataDirectory}/${safeId}`,
-      format: this.dataFormat,
-      debug: this.debug,
-      ai: this._aiConfig || undefined,
-      encrypt: this._encryptConfig || undefined,
-      slowQueryLog: this._queryLog ? { threshold: this._queryLog._threshold, maxEntries: this._queryLog._maxEntries } : undefined,
-      queryCache: this._queryCache ? { maxSize: this._queryCache._maxSize, ttl: this._queryCache._ttl } : undefined,
-      plugins: this._pluginsConfig || undefined,
-      memory: this._memoryConfig || undefined,
-      logger: this._logger !== _defaultLogger ? this._logger : undefined,
-      llmAdapter: this._aiAdapter && !this._aiConfig ? this._aiAdapter : undefined,
-      embeddingAdapter: this._embeddingAdapter && !this._aiConfig ? this._embeddingAdapter : undefined,
-      regexMaxLength: this._regexMaxLength !== 500 ? this._regexMaxLength : undefined,
-      idGenerator: this._idGenerator || undefined,
-      serializer: this._serializer !== _serialize ? this._serializer : undefined,
-      deserializer: this._deserializer !== _deserialize ? this._deserializer : undefined,
-      autoSave: this._autoSave || undefined,
-      ttlSweepInterval: this._ttlSweepInterval || undefined,
     });
   }
 
@@ -488,22 +484,93 @@ class Skalex {
     }
   }
 
+  /**
+   * Record the applied-migrations list into `_meta` atomically with the
+   * active transaction. Called by the migration runner inside `up()`'s
+   * transaction callback; must NOT be called outside a transaction.
+   *
+   * Ensures `_meta` exists, snapshots it into the active tx so rollback
+   * reverts the version record on failure, and mutates it via the
+   * persistence manager. Bypasses the tx proxy's `collections` blockade
+   * by closing over `this` directly - the write is still covered by
+   * rollback because we went through `snapshotIfNeeded` first.
+   *
+   * @param {number[]} versions - Sorted list of applied migration versions.
+   * @private
+   */
+  _recordAppliedVersions(versions) {
+    // Defensive: this function's atomicity contract depends on running
+    // inside an active transaction. Without a tx, snapshotIfNeeded is a
+    // no-op and the _meta mutation would persist via a future save
+    // instead of being atomically bundled with the migration's data
+    // flush. Fail loud so any future refactor that breaks this invariant
+    // shows up in tests instead of silently regressing to the pre-F1 bug.
+    if (!this._txManager.active) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_INVALID_STATE",
+        "_recordAppliedVersions must be called inside an active transaction."
+      );
+    }
+    // Ensure _meta exists so we can snapshot and mutate it. If a fresh
+    // database has no _meta yet, create it via the registry's single
+    // canonical construction path.
+    if (!this.collections["_meta"]) {
+      this._registry.createStore("_meta");
+    }
+    const metaStore = this.collections["_meta"];
+    // Snapshot _meta into the active transaction. This adds `_meta` to
+    // touchedCollections, so saveAtomic() will flush it alongside the
+    // migration's data, AND on rollback the snapshot restores _meta to
+    // its pre-migration state.
+    this._txManager.snapshotIfNeeded(
+      "_meta",
+      metaStore,
+      (col) => this._snapshotCollection(col)
+    );
+    this._persistence.updateMeta(this.collections, { appliedVersions: versions });
+  }
+
   // ─── Transaction ─────────────────────────────────────────────────────────
 
   /**
    * Run a callback inside a transaction.
    *
-   * Lazy snapshots: only collections that receive a write are snapshotted,
-   * on first mutation - not all collections upfront.
+   * Isolation: Skalex provides **read-committed** isolation, not snapshot
+   * isolation. Only collections that receive a write are snapshotted
+   * (lazily, on first mutation). Reads on untouched collections see the
+   * latest committed state, including mutations from outside the transaction.
+   * To guarantee a stable view of a collection, perform a write on it first
+   * (or a read-then-write) to trigger a snapshot.
+   *
+   * Nested transactions: transactions are serialised via a promise-chain lock.
+   * Calling `transaction()` inside another transaction's callback will throw
+   * `TransactionError` with `ERR_SKALEX_TX_NESTED`.
+   *
+   * Timeout: the timeout is cooperative, not preemptive. When it fires the
+   * outer promise rejects, but any in-flight mutation continues until it
+   * next reaches an `assertTxAlive()` check. Deferred side effects for the
+   * aborted transaction are discarded.
    *
    * Side effects (watch() callbacks, after-* plugin hooks, changelog entries)
    * are deferred during fn() and flushed after successful commit.
    *
    * @param {(db: Skalex) => Promise<any>} fn
-   * @param {{ timeout?: number }} [opts] - timeout in ms (0 = no timeout).
+   * @param {object} [opts]
+   * @param {number} [opts.timeout] - Max ms before abort. 0 = no timeout.
+   * @param {"throw"|"warn"|"ignore"} [opts.deferredEffectErrors]
+   *   Per-transaction override for the `deferredEffectErrors` strategy.
+   *   Defaults to the Skalex instance setting.
    * @returns {Promise<any>} The return value of fn.
+   * @throws {TransactionError} ERR_SKALEX_TX_NESTED - called inside another transaction.
+   * @throws {TransactionError} ERR_SKALEX_TX_TIMEOUT - timeout elapsed before commit.
    */
   async transaction(fn, opts = {}) {
+    if (this._txManager.active) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_NESTED",
+        "Nested transactions are not supported. Calling transaction() inside another transaction's callback would deadlock."
+      );
+    }
     return this._txManager.run(fn, this, opts);
   }
 
@@ -616,7 +683,7 @@ class Skalex {
       const warnings = validateLLMFilter(filter, schema);
       if (warnings.length) warnings.forEach(w => this._log(`[ask] ${w}`));
       this._queryCache.set(collectionName, schema, nlQuery, filter);
-      this._saveMeta({ queryCache: this._queryCache.toJSON() });
+      this._persistence.updateMeta(this.collections, { queryCache: this._queryCache.toJSON() });
     }
 
     return col.find(processLLMFilter(filter, { regexMaxLength: this._regexMaxLength }), { limit });
@@ -723,28 +790,6 @@ class Skalex {
   }
 
   // ─── Private ─────────────────────────────────────────────────────────────
-
-  _getMeta() {
-    const metaCol = this.collections["_meta"];
-    if (!metaCol) return {};
-    return metaCol.index.get(META_KEY) || {};
-  }
-
-  _saveMeta(data) {
-    if (!this.collections["_meta"]) {
-      this._createCollectionStore("_meta");
-    }
-    const col = this.collections["_meta"];
-    const existing = col.index.get(META_KEY);
-    if (existing) {
-      Object.assign(existing, data);
-    } else {
-      const doc = { _id: META_KEY, ...data };
-      col.data.push(doc);
-      col.index.set(META_KEY, doc);
-    }
-    this._persistence.markDirty(this.collections, "_meta");
-  }
 
   /** Sweep expired TTL documents from all collections. */
   _sweepTtl() {
