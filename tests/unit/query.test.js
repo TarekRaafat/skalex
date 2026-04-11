@@ -222,3 +222,25 @@ describe("plain-object filter value (structural equality)", () => {
     expect(matchesFilter({ metadata: { a: 1 } }, { metadata: {} })).toBe(false);
   });
 });
+
+// ─── $regex security hardening ─────────────────────────────────────────────
+
+describe("matchesFilter  -  $regex security", () => {
+  const doc = { msg: "hello" };
+
+  test("$regex string longer than the cap throws", () => {
+    const huge = "a".repeat(501);
+    expect(() => matchesFilter(doc, { msg: { $regex: huge } })).toThrow(/too long/);
+  });
+
+  test("pre-compiled RegExp bypasses the length cap", () => {
+    // Pre-compiled patterns are considered trusted by the caller - the cap
+    // applies only to strings that come in via plain filter literals.
+    const rx = new RegExp("a".repeat(600));
+    expect(matchesFilter(doc, { msg: { $regex: rx } })).toBe(false);
+  });
+
+  test("nested-quantifier patterns are rejected to block ReDoS", () => {
+    expect(() => matchesFilter(doc, { msg: { $regex: "(a+)+" } })).toThrow(/ReDoS/);
+  });
+});

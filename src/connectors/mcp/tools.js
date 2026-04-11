@@ -19,6 +19,16 @@
  *   read   -  collections, schema, find, search, ask
  *   write  -  insert, update, delete
  */
+import { ValidationError } from "../../engine/errors.js";
+
+/**
+ * Maximum allowed depth of a filter tree sanitized from agent input.
+ * Real filters rarely exceed 3-4 levels (`$or` → branch → field op); 16
+ * gives 4× headroom for complex compound queries. Deeper trees are
+ * almost certainly malicious (stack-overflow attempts) or buggy and are
+ * rejected with a stable error code.
+ */
+const MAX_FILTER_DEPTH = 16;
 
 /**
  * Validate a collection name supplied by an AI agent.
@@ -28,13 +38,66 @@
  * @returns {string} The validated name
  */
 function _validateCollection(name) {
-  if (typeof name !== "string" || !name.trim())
-    throw new Error("collection name must be a non-empty string");
-  if (/[/\\]/.test(name) || name.includes("..") || name.includes("\0"))
-    throw new Error(`invalid collection name: "${name}"`);
-  if (name.trim().startsWith("_"))
-    throw new Error(`access to system collection "${name}" is not permitted`);
+  if (typeof name !== "string" || !name.trim()) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_MCP_COLLECTION",
+      "collection name must be a non-empty string",
+      { name }
+    );
+  }
+  if (/[/\\]/.test(name) || name.includes("..") || name.includes("\0")) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_MCP_COLLECTION",
+      `invalid collection name: "${name}"`,
+      { name }
+    );
+  }
+  if (name.trim().startsWith("_")) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_MCP_COLLECTION",
+      `access to system collection "${name}" is not permitted`,
+      { name }
+    );
+  }
   return name.trim();
+}
+
+/**
+ * Recursively strip `$fn` keys from an MCP-sourced filter. The `$fn` operator
+ * accepts arbitrary JavaScript functions and would let an AI agent execute
+ * code in the host process. Traverses into `$or`, `$and`, `$not` branches.
+ *
+ * Enforces a maximum traversal depth ({@link MAX_FILTER_DEPTH}) so an
+ * adversarial agent cannot send a deeply nested payload to blow the call
+ * stack before the filter reaches the query engine.
+ *
+ * @param {*} filter
+ * @param {(msg: string, level?: string) => void} [logger]
+ * @param {number} [depth=0] - Current recursion depth (internal).
+ * @returns {*} A new filter with all `$fn` keys removed.
+ * @throws {ValidationError} ERR_SKALEX_VALIDATION_FILTER_DEPTH when the
+ *   filter tree nests deeper than {@link MAX_FILTER_DEPTH}.
+ */
+function sanitizeFilter(filter, logger, depth = 0) {
+  if (depth > MAX_FILTER_DEPTH) {
+    throw new ValidationError(
+      "ERR_SKALEX_VALIDATION_FILTER_DEPTH",
+      `Filter nested too deeply (> ${MAX_FILTER_DEPTH} levels). This limit ` +
+      `protects against stack-overflow attacks from agent-supplied filters.`,
+      { maxDepth: MAX_FILTER_DEPTH }
+    );
+  }
+  if (filter === null || typeof filter !== "object") return filter;
+  if (Array.isArray(filter)) return filter.map(f => sanitizeFilter(f, logger, depth + 1));
+  const out = {};
+  for (const key of Object.keys(filter)) {
+    if (key === "$fn") {
+      if (logger) logger(`[MCP] $fn stripped from agent-supplied filter`, "warn");
+      continue;
+    }
+    out[key] = sanitizeFilter(filter[key], logger, depth + 1);
+  }
+  return out;
 }
 
 const TOOL_DEFS = [
@@ -156,6 +219,7 @@ const TOOL_DEFS = [
  * @returns {Promise<object>} Plain value to be JSON.stringify'd into content text.
  */
 async function callTool(name, args, db) {
+  const log = db._logger;
   switch (name) {
     case "skalex_collections":
       return Object.keys(db.collections).filter(n => !n.startsWith("_"));
@@ -170,7 +234,7 @@ async function callTool(name, args, db) {
       const opts = {};
       if (args.limit) opts.limit = args.limit;
       if (args.sort)  opts.sort  = args.sort;
-      return col.find(args.filter || {}, opts);
+      return col.find(sanitizeFilter(args.filter || {}, log), opts);
     }
 
     case "skalex_insert": {
@@ -180,14 +244,16 @@ async function callTool(name, args, db) {
 
     case "skalex_update": {
       const col = db.useCollection(_validateCollection(args.collection));
-      if (args.many) return col.updateMany(args.filter || {}, args.update || {});
-      return col.updateOne(args.filter || {}, args.update || {});
+      const filter = sanitizeFilter(args.filter || {}, log);
+      if (args.many) return col.updateMany(filter, args.update || {});
+      return col.updateOne(filter, args.update || {});
     }
 
     case "skalex_delete": {
       const col = db.useCollection(_validateCollection(args.collection));
-      if (args.many) return col.deleteMany(args.filter || {});
-      return col.deleteOne(args.filter || {});
+      const filter = sanitizeFilter(args.filter || {}, log);
+      if (args.many) return col.deleteMany(filter);
+      return col.deleteOne(filter);
     }
 
     case "skalex_search": {
@@ -195,7 +261,7 @@ async function callTool(name, args, db) {
       return col.search(args.query, {
         limit:    args.limit    ?? 10,
         minScore: args.minScore ?? 0,
-        filter:   args.filter,
+        filter:   sanitizeFilter(args.filter, log),
       });
     }
 
@@ -207,4 +273,4 @@ async function callTool(name, args, db) {
   }
 }
 
-export { TOOL_DEFS, callTool };
+export { TOOL_DEFS, callTool, sanitizeFilter };

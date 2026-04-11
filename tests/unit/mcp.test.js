@@ -1,11 +1,20 @@
 /**
- * Unit tests for the SkalexMCPServer (MCP protocol + tools + access control).
- * All tests use MockTransport  -  no real I/O.
+ * Unit tests for the SkalexMCPServer and its transports.
+ *
+ * Protocol + tool + access-control tests use MockTransport (no I/O).
+ * Transport-layer tests exercise StdioTransport and HttpTransport
+ * directly with stubbed stdin / ephemeral ports.
+ * Filter-sanitization tests exercise sanitizeFilter() directly.
  */
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { EventEmitter } from "node:events";
+import http from "node:http";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockTransport from "../helpers/MockTransport.js";
+import StdioTransport from "../../src/connectors/mcp/transports/stdio.js";
+import HttpTransport from "../../src/connectors/mcp/transports/http.js";
+import { sanitizeFilter } from "../../src/connectors/mcp/tools.js";
 
 function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });
@@ -34,6 +43,9 @@ describe("MCP protocol  -  initialize", () => {
     expect(res.result.protocolVersion).toBe("2024-11-05");
     expect(res.result.capabilities).toHaveProperty("tools");
     expect(res.result.serverInfo.name).toBe("skalex");
+    // Pin the version to the current package version so a forgotten bump
+    // during a release surfaces as a test failure.
+    expect(res.result.serverInfo.version).toBe("4.0.0-alpha.3");
   });
 
   test("responds to ping", async () => {
@@ -307,5 +319,248 @@ describe("db.mcp() factory", () => {
     const db = makeDb();
     const server = db.mcp({ transport: "http", port: 9999 });
     expect(server.transport).toBe("http");
+  });
+});
+
+// ─── sanitizeFilter ────────────────────────────────────────────────────────
+
+describe("sanitizeFilter", () => {
+  test("strips $fn recursively from agent-supplied filters", () => {
+    const logs = [];
+    const input = {
+      active: true,
+      $fn: (doc) => doc.x > 1,
+      $or: [
+        { $fn: () => true },
+        { name: "Alice" },
+      ],
+      nested: { $fn: () => true, v: 1 },
+    };
+    const out = sanitizeFilter(input, (m) => logs.push(m));
+    expect(out.$fn).toBeUndefined();
+    expect(out.$or[0].$fn).toBeUndefined();
+    expect(out.nested.$fn).toBeUndefined();
+    expect(out.nested.v).toBe(1);
+    expect(out.active).toBe(true);
+    expect(logs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("enforces a max recursion depth against stack-overflow payloads", () => {
+    let deep = { inner: "leaf" };
+    for (let i = 0; i < 20; i++) deep = { nested: deep };
+    expect(() => sanitizeFilter(deep)).toThrow(/nested too deeply/i);
+    // Shallow filter (4 levels) passes through untouched.
+    const shallow = { $or: [{ $and: [{ name: { $eq: "Alice" } }] }] };
+    expect(() => sanitizeFilter(shallow)).not.toThrow();
+  });
+});
+
+// ─── StdioTransport ────────────────────────────────────────────────────────
+
+describe("StdioTransport", () => {
+  let stdinBackup;
+  let stdoutBackup;
+  let stdin;
+  let writes;
+
+  beforeEach(() => {
+    // Replace process.stdin with an EventEmitter we control. Avoid triggering
+    // any `'end'` event - the real transport calls process.exit(0) on end.
+    stdinBackup = process.stdin;
+    stdin = new EventEmitter();
+    stdin.setEncoding = () => {};
+    Object.defineProperty(process, "stdin", {
+      value: stdin,
+      configurable: true,
+      writable: true,
+    });
+
+    // Capture stdout writes instead of leaking them into test output.
+    writes = [];
+    stdoutBackup = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk) => { writes.push(String(chunk)); return true; };
+  });
+
+  afterEach(() => {
+    process.stdout.write = stdoutBackup;
+    Object.defineProperty(process, "stdin", {
+      value: stdinBackup,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  test("parses a single newline-delimited message", async () => {
+    const transport = new StdioTransport();
+    const received = [];
+    transport.onMessage(async (msg) => { received.push(msg); });
+    transport.start();
+
+    stdin.emit("data", JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) + "\n");
+    // Let microtasks flush
+    await new Promise((r) => setImmediate(r));
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ id: 1, method: "ping" });
+
+    transport.stop();
+  });
+
+  test("handles two messages in a single chunk", async () => {
+    const transport = new StdioTransport();
+    const received = [];
+    transport.onMessage(async (msg) => { received.push(msg); });
+    transport.start();
+
+    const chunk =
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "a" }) + "\n" +
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "b" }) + "\n";
+    stdin.emit("data", chunk);
+    await new Promise((r) => setImmediate(r));
+
+    expect(received.map((m) => m.id)).toEqual([1, 2]);
+    transport.stop();
+  });
+
+  test("reassembles a message split across two chunks", async () => {
+    const transport = new StdioTransport();
+    const received = [];
+    transport.onMessage(async (msg) => { received.push(msg); });
+    transport.start();
+
+    const payload = JSON.stringify({ jsonrpc: "2.0", id: 42, method: "split" });
+    stdin.emit("data", payload.slice(0, 10));
+    stdin.emit("data", payload.slice(10) + "\n");
+    await new Promise((r) => setImmediate(r));
+
+    expect(received).toHaveLength(1);
+    expect(received[0].id).toBe(42);
+    transport.stop();
+  });
+
+  test("malformed JSON triggers a PARSE_ERROR response and does not invoke handler", async () => {
+    const transport = new StdioTransport();
+    const received = [];
+    transport.onMessage(async (msg) => { received.push(msg); });
+    transport.start();
+
+    stdin.emit("data", "{ this is not json }\n");
+    await new Promise((r) => setImmediate(r));
+
+    expect(received).toHaveLength(0);
+    const last = JSON.parse(writes.at(-1));
+    expect(last.error).toBeDefined();
+    expect(last.error.code).toBe(-32700); // PARSE_ERROR per JSON-RPC spec
+    transport.stop();
+  });
+});
+
+// ─── HttpTransport ─────────────────────────────────────────────────────────
+
+describe("HttpTransport", () => {
+  /** Helper: POST a string body to the transport and return { status, body }. */
+  async function post(url, body, { contentLength } = {}) {
+    const u = new URL(url);
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: u.hostname,
+          port: u.port,
+          path: u.pathname,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": contentLength ?? Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let data = "";
+          res.setEncoding("utf8");
+          res.on("data", (c) => { data += c; });
+          res.on("end", () => resolve({ status: res.statusCode, body: data }));
+        }
+      );
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
+  }
+
+  test("POST /message with valid JSON returns 202 and invokes the handler", async () => {
+    const transport = new HttpTransport({ port: 0 });
+    const received = [];
+    transport.onMessage(async (msg) => { received.push(msg); });
+    await transport.start();
+    const { port } = transport._server.address();
+
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" });
+    const { status } = await post(`http://127.0.0.1:${port}/message`, body);
+    expect(status).toBe(202);
+
+    // Handler runs async on req.end - wait a tick.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(received).toHaveLength(1);
+    expect(received[0].id).toBe(1);
+
+    await transport.stop();
+  });
+
+  test("POST /message rejects oversized body with 413", async () => {
+    const transport = new HttpTransport({ port: 0, maxBodySize: 1024 });
+    const received = [];
+    transport.onMessage(async (msg) => { received.push(msg); });
+    await transport.start();
+    const { port } = transport._server.address();
+
+    const oversized = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "x", payload: "a".repeat(2000) });
+    let result;
+    try {
+      result = await post(`http://127.0.0.1:${port}/message`, oversized);
+    } catch (err) {
+      // req.destroy() can surface as a client-side ECONNRESET before the
+      // 413 response reaches us - that still counts as rejection.
+      result = { status: err.code === "ECONNRESET" ? 413 : null };
+    }
+    expect(result.status).toBe(413);
+    // Even if a short part of the body arrived, the handler must not run.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(received).toHaveLength(0);
+
+    await transport.stop();
+  });
+
+  test("GET /sse serves the initial endpoint event and later broadcasts", async () => {
+    const transport = new HttpTransport({ port: 0 });
+    transport.onMessage(async () => {});
+    await transport.start();
+    const { port } = transport._server.address();
+
+    // Open an SSE client and collect incoming chunks.
+    const chunks = [];
+    const req = http.request({ hostname: "127.0.0.1", port, path: "/sse", method: "GET" });
+    const open = new Promise((resolve, reject) => {
+      req.on("response", (res) => {
+        res.setEncoding("utf8");
+        res.on("data", (c) => { chunks.push(c); });
+        resolve(res);
+      });
+      req.on("error", reject);
+    });
+    req.end();
+    const res = await open;
+
+    // Wait for the initial endpoint event.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(chunks.join("")).toMatch(/event: endpoint/);
+    expect(chunks.join("")).toMatch(/data: \/message/);
+
+    // Broadcast from the server.
+    chunks.length = 0;
+    transport.send({ jsonrpc: "2.0", id: 7, result: "hi" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(chunks.join("")).toMatch(/"result":"hi"/);
+
+    res.destroy();
+    await transport.stop();
   });
 });

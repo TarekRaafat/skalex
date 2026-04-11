@@ -6,9 +6,63 @@
  *
  * Supported operators: $eq $ne $gt $gte $lt $lte $in $nin $regex $fn
  * Supported syntax: nested dot-notation, RegExp as direct value, function as filter
+ *
+ * SECURITY
+ * --------
+ * - `$fn` executes arbitrary JavaScript in the host process. Never pass
+ *   user-controlled or AI-generated functions to `$fn`. MCP-sourced filters
+ *   are sanitized by `sanitizeFilter()` in src/connectors/mcp/tools.js.
+ * - `$regex` strings (not pre-compiled RegExp instances) are length-capped
+ *   and rejected if they contain nested quantifiers that could cause
+ *   catastrophic backtracking (ReDoS).
  */
 import { resolveDotPath } from "./utils.js";
 import { QueryError } from "./errors.js";
+
+/** Default max length of a `$regex` string (pre-compiled RegExp instances bypass this). */
+const DEFAULT_REGEX_MAX_LENGTH = 500;
+
+/**
+ * Validate and compile a `$regex` filter value. Pre-compiled RegExp instances
+ * are trusted and returned as-is. Strings are length-capped and rejected if
+ * they contain nested quantifiers like `(a+)+`, `(a|a)*`, `(x+){2,}`.
+ * @param {string|RegExp} value
+ * @param {number} [maxLength]
+ * @returns {RegExp}
+ */
+function compileRegexFilter(value, maxLength = DEFAULT_REGEX_MAX_LENGTH) {
+  if (value instanceof RegExp) return value;
+  if (typeof value !== "string") {
+    throw new QueryError(
+      "ERR_SKALEX_QUERY_INVALID_REGEX",
+      "$regex must be a string or RegExp instance",
+      { operator: "$regex" }
+    );
+  }
+  if (value.length > maxLength) {
+    throw new QueryError(
+      "ERR_SKALEX_QUERY_REGEX_TOO_LONG",
+      `$regex pattern too long (${value.length} > ${maxLength}). Use a pre-compiled RegExp instance to bypass this cap.`,
+      { operator: "$regex", length: value.length, maxLength }
+    );
+  }
+  if (/\([^)]*[+*][^)]*\)[+*{]/.test(value)) {
+    throw new QueryError(
+      "ERR_SKALEX_QUERY_REGEX_REDOS",
+      "$regex pattern rejected: nested quantifiers risk catastrophic backtracking (ReDoS)",
+      { operator: "$regex" }
+    );
+  }
+  try {
+    return new RegExp(value);
+  } catch {
+    throw new QueryError(
+      "ERR_SKALEX_QUERY_INVALID_REGEX",
+      `Invalid $regex pattern: "${value}"`,
+      { operator: "$regex" }
+    );
+  }
+}
 
 /**
  * Structural deep equality for plain values.
@@ -99,7 +153,7 @@ function matchesFilter(item, filter) {
         if ("$in" in filterValue && !filterValue.$in.includes(itemValue)) return false;
         if ("$nin" in filterValue && filterValue.$nin.includes(itemValue)) return false;
         if ("$regex" in filterValue) {
-          const rx = filterValue.$regex instanceof RegExp ? filterValue.$regex : new RegExp(filterValue.$regex);
+          const rx = compileRegexFilter(filterValue.$regex);
           if (!rx.test(String(itemValue))) return false;
         }
         if ("$fn" in filterValue && !filterValue.$fn(itemValue)) return false;
