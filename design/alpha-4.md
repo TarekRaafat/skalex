@@ -820,6 +820,31 @@ This turns accidental `console` calls in engine code into lint errors while pres
 
 ---
 
+### 23. Add `afterRestore` plugin hook
+
+**Issue:** #21
+**Severity:** P2 - consistency
+**Effort:** Small
+
+**Problem:** Every mutation method fires a corresponding `after*` plugin hook (`afterInsert`, `afterUpdate`, `afterDelete`, `afterFind`, `afterSearch`). `restore()` is the only mutation that has no `after*` hook. Plugins cannot react to soft-delete restores, breaking the plugin system's consistency contract.
+
+**Fix:** Add an `afterRestore` hook call at the end of `restore()` in `src/engine/collection.js`, following the same pattern as `afterUpdate`. The hook payload should include `{ collection, filter, docs }` where `docs` is the array of restored documents.
+
+**Steps:**
+1. Add `"afterRestore"` to the `Hooks` map in `src/engine/constants.js`.
+2. Fire the hook at the end of `Collection.restore()` after the mutation pipeline completes.
+3. Update `src/index.d.ts` with `afterRestore` in the plugin hook types.
+4. Update `docs/documentation.md` plugin hooks table.
+
+**Tests:**
+1. Plugin with `afterRestore` receives the correct payload after `restore()`.
+2. `afterRestore` error respects the `deferredEffectErrors` strategy.
+3. `Hooks.AFTER_RESTORE` exists and is frozen.
+
+**Depends on:** None.
+
+---
+
 ## Regression Test Requirements
 
 Every item must ship with at least one targeted regression test:
@@ -847,6 +872,8 @@ Every item must ship with at least one targeted regression test:
 | #19 (typed errors sweep) | Per-site `toThrow(AdapterError)` assertions with matching `e.code` |
 | #20 (async cleanup) | eslint `require-await` passes across `src/`; existing tests unchanged |
 | #21 (no-console rule) | eslint lint passes; adding a stray `console.log` to any engine file fails lint |
+| #22 ($fn allowlist) | Registered predicate resolves by name; unknown name stripped; non-string $fn stripped; no-predicates config strips all |
+| #23 (afterRestore hook) | Plugin receives correct payload; error respects deferredEffectErrors strategy |
 
 ---
 

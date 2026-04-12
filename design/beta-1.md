@@ -4,8 +4,100 @@
 **Version:** v4.0.0-beta.1
 **Prerequisite:** All alpha.4 items resolved and shipped.
 **Gate:** beta.1 does not ship until every item passes regression tests and all existing tests remain green.
-**Rule:** beta.1 introduces feature-level improvements deferred from alpha. Each item must be fully tested and backwards-compatible.
-**Theme:** Bulk operation performance, feature backlog items deferred from alpha.
+**Rule:** beta.1 introduces feature-level improvements deferred from alpha and production-grade reliability guarantees. Each item must be fully tested and backwards-compatible.
+**Theme:** Production-grade reliability (WAL, crash-safe transactions), serialization correctness, bulk operation performance.
+
+---
+
+## P0 - Reliability
+
+### 4. Write-ahead log for crash-safe multi-collection transactions
+
+**Issue:** #6, #12
+**Severity:** P0 - critical
+**Effort:** Large
+
+**Problem:** `transaction()` calls `saveData()` after `fn()` resolves. `saveData()` flushes all touched collections in parallel via `Promise.all()`. Two failure modes:
+
+1. **Process crash mid-flush (#6):** If the process crashes (OOM, SIGKILL, power loss) partway through the concurrent writes, some collections are persisted at the new state and others remain at the pre-transaction state. The database wakes up inconsistent with no detection or recovery path.
+
+2. **Adapter error mid-flush (#12):** If any single collection write fails (disk full, adapter error, I/O timeout), already-written collections are not reverted. The `Promise.all` rejects but the partial commit is permanent.
+
+Alpha.3 narrowed the window (sequential `_meta` ordering, flush sentinel detection on next `connect()`), but the fundamental issue remains: there is no atomicity guarantee across multiple collection files.
+
+**Fix:** Implement a write-ahead log (WAL):
+
+1. Before flushing any collection, write a single `_wal` entry describing the intended commit: which collections will be written and a checksum or version for each.
+2. Flush all collections (parallel or sequential).
+3. After all collections are successfully written, delete the `_wal` entry.
+4. On `connect()`, if a `_wal` entry exists, the previous commit was interrupted. Depending on what was written:
+   - If no collections were flushed: discard the WAL (clean rollback).
+   - If some collections were flushed: either replay the remaining writes from pre-commit snapshots embedded in the WAL, or revert the written collections to the pre-transaction state.
+
+**Design considerations:**
+- The WAL must work across all adapter tiers. `FsAdapter` writes a `_wal.json` file. `BunSQLiteAdapter` / `LibSQLAdapter` can use a WAL table. `D1Adapter` needs a WAL row. `MemoryAdapter` and `BrowserAdapter` may skip WAL (no crash recovery needed for in-memory or localStorage).
+- WAL size: embedding full pre-commit snapshots makes the WAL large but recovery simple. Embedding only deltas is smaller but recovery is complex. Start with full snapshots; optimize later if WAL size is a problem.
+- The WAL is an adapter capability tier (alpha.4 #15). Adapters that don't support WAL should document the limitation.
+- Performance: WAL adds one extra write per transaction. For most workloads this is negligible. For high-frequency micro-transactions, the overhead must be measured and documented.
+
+**Scope:**
+- New `src/engine/wal.js` module (or integrated into `persistence.js`)
+- `src/engine/persistence.js` - commit path writes WAL before flush, deletes after
+- `src/index.js` - `connect()` checks for incomplete WAL on startup
+- Adapter interface: `writeWal(entry)`, `readWal()`, `deleteWal()` methods
+- `src/connectors/storage/fs.js`, `encrypted.js`, `d1.js`, `sqlite.js` - WAL methods
+- `src/index.d.ts` - WAL-related adapter interface
+- `docs/documentation.md` - transaction durability guarantees
+- `CHANGELOG.md`, `MIGRATION.md`
+
+**Tests:**
+1. Normal transaction: WAL written before flush, deleted after. No WAL present after successful commit.
+2. Simulated crash mid-flush (fail adapter write for one collection): WAL survives, next `connect()` detects incomplete commit, recovers to consistent state.
+3. All collections failed to flush: WAL present, next `connect()` rolls back cleanly.
+4. WAL recovery: inject a WAL entry with known state, call `connect()`, assert database is in the pre-transaction or fully-committed state (not mixed).
+5. Adapter without WAL support: transaction still works, degraded durability is logged as warning on first transaction.
+6. Performance: measure transaction overhead with WAL vs without on 1000-doc batch.
+
+**Depends on:** alpha.4 #15 (adapter capability tiers), alpha.4 #17 (DataStore abstraction)
+
+---
+
+### 5. Out-of-band type metadata to eliminate `__skalex_bigint__` key collision
+
+**Issue:** #19
+**Severity:** P1 - correctness
+**Effort:** Medium
+
+**Problem:** The BigInt-safe serializer encodes BigInt values as tagged objects embedded directly in the data: `{ __skalex_bigint__: "9007199254740993" }`. Any document that legitimately stores an object with a `__skalex_bigint__` key is incorrectly revived as a BigInt on load. This is a silent data corruption vector.
+
+**Fix:** Move type metadata out of the data and into a parallel structure, similar to the approach used by superjson and devalue:
+
+```json
+{
+  "data": { "n": "9007199254740993" },
+  "meta": { "types": { "n": "bigint" } }
+}
+```
+
+The serializer writes both `data` and `meta` on save. The deserializer checks for `meta.types` on load and reconstructs typed values without polluting the document shape. If `meta` is absent (pre-beta.1 data), fall back to the current `__skalex_bigint__` tag detection for backwards compatibility.
+
+**Steps:**
+1. Refactor the serializer/deserializer to emit and consume the parallel `meta.types` structure.
+2. Maintain backwards-compatible read path for existing `__skalex_bigint__` tags.
+3. On re-save, old-format documents automatically migrate to the new format (tag is removed, `meta.types` is written).
+4. Extend the approach to `Date` values (currently tagged as `__skalex_date__`) for consistency.
+5. Update `.d.ts` if the serializer is part of the public surface.
+6. Document the format change in CHANGELOG and MIGRATION.
+
+**Tests:**
+1. Round-trip: BigInt value saves and loads correctly in new format.
+2. Round-trip: Date value saves and loads correctly in new format.
+3. Backwards compat: old-format `__skalex_bigint__` tag loads correctly.
+4. Auto-migration: old-format document re-saved uses new format.
+5. Collision: document with a literal `__skalex_bigint__` key is NOT revived as BigInt.
+6. Nested BigInt/Date values at arbitrary depth are handled.
+
+**Depends on:** None. Can ship independently.
 
 ---
 
@@ -247,6 +339,8 @@ If too heavy, at minimum add `types` entries pointing to `.d.ts` files in `src/`
 | #1 (upsertMany batch) | 1000-doc upsert - hooks fire once, changelog per-doc, events per-doc, tx rollback reverts all |
 | #2 (changelog restore) | Restore preserves exact `createdAt`, `updatedAt`, `_version`, `_expiresAt` from archived state |
 | #3 (connector exports) | `require()` and `import` resolve for each connector subpath; `types:check` passes for consumer imports |
+| #4 (WAL) | WAL written before flush, deleted after; simulated crash mid-flush recovers to consistent state; adapter without WAL degrades gracefully |
+| #5 (BigInt out-of-band) | Round-trip BigInt/Date; backwards compat; auto-migration; literal `__skalex_bigint__` key not misinterpreted |
 
 ---
 
@@ -269,13 +363,15 @@ beta.1 is not done when only the new tests pass. The release must also verify:
 
 beta.1 is done when:
 
-1. `upsertMany` uses `executeBatch()` - per-batch overhead is amortized (single connection check, single snapshot, single hook pair, single dirty mark, single save).
-2. Per-document correctness is preserved (changelog, events, tx guards).
-3. Changelog restore rehydrates exact archived documents - `createdAt`, `updatedAt`, `_version`, `_expiresAt` match historical state.
-4. Every connector subpath has `import` / `require` / `types` entries, does not bypass build outputs.
-5. All existing tests pass unchanged.
-6. All regression tests exist and pass.
-7. The verification matrix passes.
+1. Multi-collection transactions are crash-safe via WAL. A simulated crash mid-flush recovers to a consistent pre-transaction or fully-committed state on next `connect()`.
+2. BigInt/Date serialization uses out-of-band `meta.types` structure. Old-format data auto-migrates. Documents with literal `__skalex_bigint__` keys are not misinterpreted.
+3. `upsertMany` uses `executeBatch()` - per-batch overhead is amortized (single connection check, single snapshot, single hook pair, single dirty mark, single save).
+4. Per-document correctness is preserved (changelog, events, tx guards).
+5. Changelog restore rehydrates exact archived documents - `createdAt`, `updatedAt`, `_version`, `_expiresAt` match historical state.
+6. Every connector subpath has `import` / `require` / `types` entries, does not bypass build outputs.
+7. All existing tests pass unchanged.
+8. All regression tests exist and pass.
+9. The verification matrix passes.
 
 ---
 
@@ -296,6 +392,8 @@ beta.1 is done when:
 
 ## Execution Order
 
-1. **#2** (changelog restore) - correctness fix, depends on alpha.4 #2
-2. **#3** (connector exports) - packaging fix, no code dependency
-3. **#1** (upsertMany batch pipeline) - performance, depends on alpha.4 #2
+1. **#4** (WAL) - crash-safe transactions, depends on alpha.4 #15 + #17
+2. **#5** (BigInt out-of-band) - serialization correctness, no code dependency
+3. **#2** (changelog restore) - correctness fix, depends on alpha.4 #2
+4. **#3** (connector exports) - packaging fix, no code dependency
+5. **#1** (upsertMany batch pipeline) - performance, depends on alpha.4 #2
