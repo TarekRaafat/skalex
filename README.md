@@ -233,6 +233,15 @@ See what's shipping next: **[Roadmap](https://tarekraafat.github.io/skalex/#/roa
 
 ---
 
+## Also by the Author
+
+| Project | Description |
+|---------|-------------|
+| [autoComplete.js](https://github.com/TarekRaafat/autoComplete.js) | Simple, lightweight, pure vanilla JavaScript autocomplete library with zero dependencies |
+| [Eleva.js](https://github.com/TarekRaafat/eleva) | Ultra-lightweight (~2.5KB) pure vanilla JavaScript framework with signal-based reactivity |
+
+---
+
 ## License
 
 Released under the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
