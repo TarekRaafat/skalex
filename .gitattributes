@@ -1,2 +1,5 @@
-docs/*.html linguist-documentation=true
-tests/smoke/*.html linguist-detectable=false
+docs/** linguist-documentation=true
+tests/** linguist-documentation=true
+coverage/** linguist-generated=true
+*.min.js linguist-generated=true
+*.map linguist-generated=true
