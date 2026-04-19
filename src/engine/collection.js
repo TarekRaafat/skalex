@@ -1,12 +1,15 @@
-import { generateUniqueId } from "./utils.js";
 import { matchesFilter, presortFilter } from "./query.js";
 import { validateDoc, stripInvalidFields } from "./validator.js";
-import { computeExpiry } from "./ttl.js";
-import { cosineSimilarity, stripVector } from "./vector.js";
+import { stripVector } from "./vector.js";
 import { count as aggCount, sum as aggSum, avg as aggAvg, groupBy as aggGroupBy } from "../features/aggregation.js";
-import { ValidationError, UniqueConstraintError, PersistenceError, QueryError, AdapterError } from "./errors.js";
+import { ValidationError, UniqueConstraintError, PersistenceError, QueryError } from "./errors.js";
 import MutationPipeline from "./pipeline.js";
 import { Ops, Hooks } from "./constants.js";
+import { buildDoc } from "./document-builder.js";
+import { findRaw, findAllRaw, getCandidates, findIndex } from "./query-planner.js";
+import { vectorSearch, similarByVector } from "./vector-search.js";
+import { exportData } from "./exporter.js";
+import InMemoryDataStore from "./datastore.js";
 
 /**
  * Resolve a query filter into plain key-value pairs suitable for insertion.
@@ -102,7 +105,7 @@ class Collection {
      */
     this._ctx = database._collectionContext;
 
-    this._store = collectionData;
+    this._setStore(collectionData);
     this._pipeline = new MutationPipeline(this);
 
     /** @type {number|null} If created inside a transaction, the tx ID. */
@@ -112,9 +115,17 @@ class Collection {
     this._activeTxId = null;
   }
 
-  get _data() { return this._store.data; }
-  set _data(val) { this._store.data = val; }
-  get _index() { return this._store.index; }
+  /** Update the backing store and re-wrap the DataStore. Called by loadData sync. */
+  _setStore(store) {
+    this.__store = store;
+    this._ds = new InMemoryDataStore(store);
+  }
+  get _store() { return this.__store; }
+  set _store(val) { this._setStore(val); }
+
+  get _data() { return this.__store.data; }
+  set _data(val) { this.__store.data = val; }
+  get _index() { return this.__store.index; }
 
   /** @returns {import("./indexes")|null} Secondary field index engine. */
   get _fieldIndex() { return this._store.fieldIndex || null; }
@@ -209,7 +220,7 @@ class Collection {
           const validated = this._applyValidation(item);
           await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
           const newItem = await this._buildDoc(validated, { ttl, embed });
-          if (this._index.has(newItem._id) || batchIds.has(newItem._id)) {
+          if (this._ds.has(newItem._id) || batchIds.has(newItem._id)) {
             throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newItem._id}" in collection "${this.name}"`, { id: newItem._id, collection: this.name });
           }
           batchIds.add(newItem._id);
@@ -219,8 +230,7 @@ class Collection {
         assertTxAlive(); // guard before first in-memory state change
         if (this._fieldIndex) this._fieldIndex.assertUniqueBatch(newItems);
         for (const newItem of newItems) this._addToIndex(newItem);
-        this._data.push(...newItems);
-        for (const newItem of newItems) this._index.set(newItem._id, newItem);
+        this._ds.push(...newItems);
         const evicted = this._enforceCapAfterInsert();
         // Emit delete events for FIFO-evicted documents so watch listeners
         // observe their disappearance alongside the corresponding inserts.
@@ -299,8 +309,8 @@ class Collection {
         // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
         const targets = new Set(oldDocs);
         const positions = new Map();
-        for (let i = 0; i < this._data.length; i++) {
-          if (targets.has(this._data[i])) positions.set(this._data[i], i);
+        for (let i = 0; i < this._ds.data.length; i++) {
+          if (targets.has(this._ds.data[i])) positions.set(this._ds.data[i], i);
         }
         for (let i = 0; i < oldDocs.length; i++) {
           this._commitUpdatedDoc(oldDocs[i], nextDocs[i], positions);
@@ -422,12 +432,11 @@ class Collection {
    *   to avoid O(n) indexOf per call. When omitted, falls back to indexOf.
    */
   _commitUpdatedDoc(oldDoc, newDoc, positions) {
-    const idx = positions ? positions.get(oldDoc) : this._data.indexOf(oldDoc);
+    const idx = positions ? positions.get(oldDoc) : this._ds.indexOf(oldDoc);
     if (idx === undefined || idx === -1) {
       throw new PersistenceError("ERR_SKALEX_PERSISTENCE_DOC_MISSING", `Document "${oldDoc._id}" no longer exists in collection "${this.name}"`, { id: oldDoc._id, collection: this.name });
     }
-    this._data[idx] = newDoc;
-    this._index.set(newDoc._id, newDoc);
+    this._ds.replaceAt(idx, newDoc);
     this._updateInIndex(oldDoc, newDoc);
   }
 
@@ -526,7 +535,7 @@ class Collection {
         assertTxAlive();
         delete item._deletedAt;
         item.updatedAt = new Date();
-        this._index.set(item._id, item);
+        this._ds.setInIndex(item._id, item);
         return { docs: [item] };
       },
     });
@@ -538,38 +547,46 @@ class Collection {
   /**
    * Watch for mutation events on this collection.
    *
-   * Callback form  -  returns an unsubscribe function:
+   * Callback form - returns an unsubscribe function:
    *   const unsub = col.watch({ status: "active" }, event => console.log(event));
    *   unsub(); // stop watching
    *
-   * AsyncIterator form  -  no callback:
+   * AsyncIterator form - no callback:
    *   for await (const event of col.watch({ status: "active" })) { ... }
+   *
+   * The iterator form accepts an options object as the second argument:
+   *   col.watch(filter, { maxBufferSize: 500 })
+   *
+   * When the buffer is full, the oldest events are dropped. The `dropped`
+   * property on the returned iterator reports how many events were lost.
    *
    * Event shape: { op: "insert"|"update"|"delete"|"restore", collection, doc, prev? }
    *
    * @param {object|Function} [filter]
-   * @param {Function} [callback]
+   * @param {Function|object} [callbackOrOpts] - callback function or { maxBufferSize }
    * @returns {(() => void)|AsyncIterableIterator}
    */
-  watch(filter, callback) {
-    // watch(callback) shorthand  -  no filter
-    if (typeof filter === "function") { callback = filter; filter = null; }
+  watch(filter, callbackOrOpts) {
+    // watch(callback) shorthand - no filter
+    if (typeof filter === "function") { callbackOrOpts = filter; filter = null; }
 
-    if (callback) {
-      // Callback-based API  -  returns unsub fn
+    if (typeof callbackOrOpts === "function") {
+      // Callback-based API - returns unsub fn
       return this._ctx.eventBus.on(this.name, event => {
-        if (!filter || matchesFilter(event.doc, filter)) callback(event);
+        if (!filter || matchesFilter(event.doc, filter)) callbackOrOpts(event);
       });
     }
 
     // AsyncIterator API
-    return this._watchIterator(filter);
+    const { maxBufferSize = 1000 } = callbackOrOpts || {};
+    return this._watchIterator(filter, maxBufferSize);
   }
 
-  _watchIterator(filter) {
+  _watchIterator(filter, maxBufferSize) {
     const queue = [];
     let resolve = null;
     let done = false;
+    let dropped = 0;
 
     const unsub = this._ctx.eventBus.on(this.name, event => {
       if (filter && !matchesFilter(event.doc, filter)) return;
@@ -577,12 +594,17 @@ class Collection {
         const r = resolve; resolve = null;
         r({ value: event, done: false });
       } else {
+        if (queue.length >= maxBufferSize) {
+          queue.shift();
+          dropped++;
+        }
         queue.push(event);
       }
     });
 
     return {
       [Symbol.asyncIterator]() { return this; },
+      get dropped() { return dropped; },
       next() {
         if (queue.length > 0) return Promise.resolve({ value: queue.shift(), done: false });
         if (done) return Promise.resolve({ value: undefined, done: true });
@@ -742,28 +764,15 @@ class Collection {
     await this._ctx.ensureConnected();
     const _t0 = Date.now();
     await this._ctx.plugins.run(Hooks.BEFORE_SEARCH, { collection: this.name, query, options: { filter, limit, minScore } });
-    const queryVector = await this._ctx.embed(query);
 
-    const candidates = filter ? this._findAllRaw(filter) : this._data;
+    const candidates = filter ? this._findAllRaw(filter) : this._ds.data;
+    const result = await vectorSearch(query, candidates, (t) => this._ctx.embed(t), { limit, minScore });
 
-    const scored = [];
-    for (const doc of candidates) {
-      if (!doc._vector) continue;
-      const score = cosineSimilarity(queryVector, doc._vector);
-      if (score >= minScore) scored.push({ doc, score });
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, limit);
-
-    this._ctx.queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: top.length });
+    this._ctx.queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: result.docs.length });
     this._ctx.sessionStats.recordRead(session);
+    await this._ctx.plugins.run(Hooks.AFTER_SEARCH, { collection: this.name, query, options: { filter, limit, minScore }, docs: result.docs, scores: result.scores });
 
-    const docs = top.map(r => stripVector(r.doc));
-    const scores = top.map(r => r.score);
-    await this._ctx.plugins.run(Hooks.AFTER_SEARCH, { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
-
-    return { docs, scores };
+    return result;
   }
 
   /**
@@ -775,23 +784,9 @@ class Collection {
    */
   async similar(id, { limit = 10, minScore = 0 } = {}) {
     await this._ctx.ensureConnected();
-    const source = this._index.get(id);
+    const source = this._ds.getById(id);
     if (!source || !source._vector) return { docs: [], scores: [] };
-
-    const scored = [];
-    for (const doc of this._data) {
-      if (doc._id === id || !doc._vector) continue;
-      const score = cosineSimilarity(source._vector, doc._vector);
-      if (score >= minScore) scored.push({ doc, score });
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, limit);
-
-    return {
-      docs: top.map(r => stripVector(r.doc)),
-      scores: top.map(r => r.score),
-    };
+    return similarByVector(source._vector, id, this._ds.data, { limit, minScore });
   }
 
   // ─── Delete ──────────────────────────────────────────────────────────────
@@ -866,7 +861,7 @@ class Collection {
           for (const item of items) {
             item._deletedAt = now;
             item.updatedAt = now;
-            this._index.set(item._id, item);
+            this._ds.setInIndex(item._id, item);
           }
           return { docs: items };
         }
@@ -874,8 +869,7 @@ class Collection {
         if (mode === "hard") {
           const idx = this._findIndex(filter);
           if (idx === -1) return { docs: [] };
-          const deletedItem = this._data.splice(idx, 1)[0];
-          this._index.delete(deletedItem._id);
+          const deletedItem = this._ds.spliceAt(idx);
           this._removeFromIndex(deletedItem);
           return { docs: [deletedItem] };
         }
@@ -883,16 +877,16 @@ class Collection {
         // hardMany
         const deletedItems = [];
         const remainingItems = [];
-        for (const item of this._data) {
+        for (const item of this._ds) {
           if (matchesFilter(item, filter)) {
             deletedItems.push(item);
-            this._index.delete(item._id);
+            this._ds.deleteFromIndex(item._id);
             this._removeFromIndex(item);
           } else {
             remainingItems.push(item);
           }
         }
-        this._data = remainingItems;
+        this._ds.replaceAll(remainingItems);
         return { docs: deletedItems };
       },
     });
@@ -906,50 +900,7 @@ class Collection {
    * @param {{ dir?: string, name?: string, format?: "json"|"csv" }} [options]
    */
   async export(filter = {}, options = {}) {
-    const { dir, name, format = "json" } = options;
-
-    try {
-      const filteredData = this._data.filter(item => matchesFilter(item, filter));
-
-      if (filteredData.length === 0) {
-        throw new QueryError("ERR_SKALEX_QUERY_EXPORT_EMPTY", `export(): no documents matched the filter in "${this.name}"`, { collection: this.name });
-      }
-
-      let content;
-      if (format === "json") {
-        content = JSON.stringify(filteredData, null, 2);
-      } else {
-        const escapeCsv = (v) => {
-          if (v == null) return "";
-          const s = (typeof v === "object") ? JSON.stringify(v) : String(v);
-          // Escape if value contains comma, quote, or newline (RFC 4180)
-          return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
-            ? `"${s.replace(/"/g, '""')}"` : s;
-        };
-        const header = Object.keys(filteredData[0]).map(escapeCsv).join(",");
-        const rows = filteredData.map(item =>
-          Object.values(item).map(escapeCsv).join(",")
-        );
-        content = [header, ...rows].join("\n");
-      }
-
-      if (typeof this._ctx.fs.writeRaw !== "function") {
-        throw new AdapterError(
-          "ERR_SKALEX_ADAPTER_NO_RAW_WRITE",
-          `export() requires a file-system adapter (FsAdapter). The current adapter does not support raw file writes.`
-        );
-      }
-
-      const exportDir = dir || `${this._ctx.dataDirectory}/exports`;
-      const fileName = `${name || this.name}.${format}`;
-      const filePath = this._ctx.fs.join(exportDir, fileName);
-
-      this._ctx.fs.ensureDir(exportDir);
-      await this._ctx.fs.writeRaw(filePath, content);
-    } catch (error) {
-      this._ctx.logger(`Error exporting "${this.name}": ${error.message}`, "error");
-      throw error;
-    }
+    return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
@@ -1026,9 +977,9 @@ class Collection {
    */
   _enforceCapAfterInsert() {
     const max = this._maxDocs;
-    if (!max || this._data.length <= max) return [];
-    const evictCount = this._data.length - max;
-    const toEvict = this._data.slice(0, evictCount);
+    if (!max || this._ds.count() <= max) return [];
+    const evictCount = this._ds.count() - max;
+    const toEvict = this._ds.slice(0, evictCount);
 
     // Per-doc removal state:
     //   0 = untouched
@@ -1038,16 +989,16 @@ class Collection {
     try {
       for (let i = 0; i < toEvict.length; i++) {
         const doc = toEvict[i];
-        this._index.delete(doc._id);
+        this._ds.deleteFromIndex(doc._id);
         states[i] = 1;
         this._removeFromIndex(doc);
         states[i] = 2;
       }
-      this._data.splice(0, evictCount);
+      this._ds.spliceRange(0, evictCount);
       return toEvict;
     } catch (err) {
       // Restore in reverse order. For each doc, undo exactly the steps that
-      // were committed. This leaves `_data` + both indexes consistent.
+      // were committed. This leaves data + both indexes consistent.
       for (let i = toEvict.length - 1; i >= 0; i--) {
         const doc = toEvict[i];
         if (states[i] === 0) continue;
@@ -1055,7 +1006,7 @@ class Collection {
           try { this._addToIndex(doc); } catch { /* best-effort */ }
         }
         // states 1 and 2 both require id-index restore
-        this._index.set(doc._id, doc);
+        this._ds.setInIndex(doc._id, doc);
       }
       throw err;
     }
@@ -1071,108 +1022,20 @@ class Collection {
     return !this._softDelete || !doc._deletedAt || includeDeleted;
   }
 
-  _findRaw(filter, { includeDeleted = false } = {}) {
-    if (typeof filter === "function") {
-      for (const doc of this._data) {
-        if (!this._isVisible(doc, includeDeleted)) continue;
-        if (filter(doc)) return doc;
-      }
-      return null;
-    }
-    // Null, undefined, or empty filter: return the first visible doc.
-    // Matches matchesFilter's "everything matches" semantics for nullish
-    // and empty-object filters, and keeps `findOne()` / `findOne(null)`
-    // working (they used to crash on `filter._id`).
-    if (filter == null) {
-      for (const doc of this._data) {
-        if (this._isVisible(doc, includeDeleted)) return doc;
-      }
-      return null;
-    }
-    if (filter._id) {
-      const item = this._index.get(filter._id) || null;
-      if (!item) return null;
-      if (!this._isVisible(item, includeDeleted)) return null;
-      if (Object.keys(filter).length > 1) {
-        return matchesFilter(item, filter) ? item : null;
-      }
-      return item;
-    }
-
-    // Try O(1) indexed field lookup first
-    if (this._fieldIndex) {
-      for (const key in filter) {
-        if (key === "$or" || key === "$and" || key === "$not") continue;
-        const val = filter[key];
-        if (typeof val !== "object" || val === null) {
-          const candidates = this._fieldIndex._lookupIterable(key, val);
-          if (candidates !== null) {
-            for (const doc of candidates) {
-              if (!this._isVisible(doc, includeDeleted)) continue;
-              if (matchesFilter(doc, filter)) return doc;
-            }
-            return null;
-          }
-        }
-      }
-    }
-
-    for (const doc of this._data) {
-      if (!this._isVisible(doc, includeDeleted)) continue;
-      if (matchesFilter(doc, filter)) return doc;
-    }
-    return null;
+  _findRaw(filter, opts) {
+    return findRaw(filter, this._ds.data, this._ds.index, this._fieldIndex, (doc, incl) => this._isVisible(doc, incl), opts);
   }
 
-  _findAllRaw(filter, { includeDeleted = false } = {}) {
-    if (filter && typeof filter !== "function" && filter._id) {
-      const item = this._index.get(filter._id);
-      if (!item) return [];
-      if (!this._isVisible(item, includeDeleted)) return [];
-      return matchesFilter(item, filter) ? [item] : [];
-    }
-    const results = [];
-    for (const doc of this._getCandidates(filter)) {
-      if (!this._isVisible(doc, includeDeleted)) continue;
-      if (matchesFilter(doc, filter)) results.push(doc);
-    }
-    return results;
+  _findAllRaw(filter, opts) {
+    return findAllRaw(filter, this._ds.data, this._ds.index, this._fieldIndex, (doc, incl) => this._isVisible(doc, incl), opts);
   }
 
   _getCandidates(filter) {
-    if (!this._fieldIndex) return this._data;
-
-    // Try compound index first - matches more fields in one lookup
-    if (this._fieldIndex._compoundIndexes.size > 0) {
-      const eqFields = {};
-      for (const key in filter) {
-        if (key === "$or" || key === "$and" || key === "$not") continue;
-        const val = filter[key];
-        if (typeof val !== "object" || val === null) eqFields[key] = val;
-      }
-      if (Object.keys(eqFields).length >= 2) {
-        const candidates = this._fieldIndex.lookupCompound(eqFields);
-        if (candidates !== null) return candidates;
-      }
-    }
-
-    // Fall back to single-field index
-    for (const key in filter) {
-      if (key === "$or" || key === "$and" || key === "$not") continue;
-      const val = filter[key];
-      if (typeof val !== "object" || val === null) {
-        const candidates = this._fieldIndex._lookupIterable(key, val);
-        if (candidates !== null) return candidates;
-      }
-    }
-    return this._data;
+    return getCandidates(filter, this._ds.data, this._fieldIndex);
   }
 
   _findIndex(filter) {
-    for (let i = 0; i < this._data.length; i++) {
-      if (matchesFilter(this._data[i], filter)) return i;
-    }
-    return -1;
+    return findIndex(filter, this._ds.data);
   }
 
   // ─── Private index helpers ────────────────────────────────────────────────
@@ -1199,25 +1062,15 @@ class Collection {
    * @returns {Promise<object>}
    */
   async _buildDoc(item, { ttl, embed } = {}) {
-    const newItem = {
-      ...item,
-      _id: item._id ?? (this._ctx.idGenerator ?? generateUniqueId)(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const resolvedTtl = ttl ?? this._defaultTtl;
-    if (resolvedTtl) newItem._expiresAt = computeExpiry(resolvedTtl);
-
-    const resolvedEmbed = embed ?? this._defaultEmbed;
-    if (resolvedEmbed) {
-      const text = typeof resolvedEmbed === "function" ? resolvedEmbed(newItem) : newItem[resolvedEmbed];
-      newItem._vector = await this._ctx.embed(String(text));
-    }
-
-    if (this._versioning) newItem._version = 1;
-
-    return newItem;
+    return buildDoc(item, {
+      ttl,
+      embed,
+      defaultTtl: this._defaultTtl,
+      defaultEmbed: this._defaultEmbed,
+      versioning: this._versioning,
+      idGenerator: this._ctx.idGenerator,
+      embedFn: (text) => this._ctx.embed(text),
+    });
   }
 
   // ─── Private projection / population helpers ──────────────────────────────

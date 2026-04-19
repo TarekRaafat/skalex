@@ -362,6 +362,16 @@ export interface MutationEvent<T = Document> {
   prev?: T;
 }
 
+export interface WatchOptions {
+  /** Maximum number of buffered events before oldest are dropped. Default: 1000. */
+  maxBufferSize?: number;
+}
+
+export interface WatchIterator<T = Document> extends AsyncIterableIterator<MutationEvent<T>> {
+  /** Number of events dropped due to buffer overflow. */
+  readonly dropped: number;
+}
+
 // ─── Query Operators ─────────────────────────────────────────────────────────
 
 export interface QueryOperators<T = unknown> {
@@ -598,11 +608,11 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   avg(field: string, filter?: Filter<T>): Promise<number | null>;
   groupBy(field: string, filter?: Filter<T>): Promise<Record<string, DocOf<T>[]>>;
 
-  // Watch  -  callback form
+  // Watch - callback form
   watch(callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
   watch(filter: Filter<T>, callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
-  // Watch  -  AsyncIterableIterator form
-  watch(filter?: Filter<T>): AsyncIterableIterator<MutationEvent<DocOf<T>>>;
+  // Watch - AsyncIterableIterator form with backpressure
+  watch(filter?: Filter<T>, options?: WatchOptions): WatchIterator<DocOf<T>>;
 
   // I/O
   export(filter?: Filter<T>, options?: ExportOptions): Promise<void>;

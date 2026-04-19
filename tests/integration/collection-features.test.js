@@ -1064,7 +1064,7 @@ describe("Collection  -  argument validation", () => {
 
 // ─── watch-before-after-hook event ordering contract ──────────────────────
 
-describe("Collection  -  watch event / after-hook ordering", () => {
+describe("Collection - watch event / after-hook ordering", () => {
   test("watch event fires before the after-insert plugin hook", async () => {
     const { db } = makeDb();
     const order = [];
@@ -1076,5 +1076,89 @@ describe("Collection  -  watch event / after-hook ordering", () => {
     const col = db.useCollection("users");
     await col.insertOne({ name: "Alice" });
     expect(order).toEqual(["watch", "afterInsert"]);
+  });
+});
+
+// ─── watch iterator backpressure ──────────────────────────────────────────
+
+describe("Collection - watch iterator backpressure", () => {
+  test("default buffer holds up to 1000 events", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const iter = col.watch();
+
+    for (let i = 0; i < 1000; i++) await col.insertOne({ i });
+    // Consume one to prove they are there
+    const first = await iter.next();
+    expect(first.done).toBe(false);
+    expect(first.value.doc.i).toBe(0);
+    expect(iter.dropped).toBe(0);
+    await iter.return();
+  });
+
+  test("drops oldest events when buffer overflows", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const iter = col.watch(null, { maxBufferSize: 5 });
+
+    for (let i = 0; i < 10; i++) await col.insertOne({ i });
+
+    expect(iter.dropped).toBe(5);
+
+    // The 5 retained events should be the last 5 (i = 5..9)
+    const retained = [];
+    for (let n = 0; n < 5; n++) {
+      const { value } = await iter.next();
+      retained.push(value.doc.i);
+    }
+    expect(retained).toEqual([5, 6, 7, 8, 9]);
+    await iter.return();
+  });
+
+  test("filtered watch respects backpressure on matching events only", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const iter = col.watch({ even: true }, { maxBufferSize: 3 });
+
+    for (let i = 0; i < 10; i++) await col.insertOne({ i, even: i % 2 === 0 });
+
+    // 5 matching events (0,2,4,6,8), buffer holds 3, so 2 dropped
+    expect(iter.dropped).toBe(2);
+
+    const retained = [];
+    for (let n = 0; n < 3; n++) {
+      const { value } = await iter.next();
+      retained.push(value.doc.i);
+    }
+    expect(retained).toEqual([4, 6, 8]);
+    await iter.return();
+  });
+
+  test("callback form is unaffected by backpressure option", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const events = [];
+    const unsub = col.watch(e => events.push(e));
+
+    for (let i = 0; i < 5; i++) await col.insertOne({ i });
+
+    expect(events).toHaveLength(5);
+    unsub();
+  });
+
+  test("dropped counter is readable after return()", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const iter = col.watch(null, { maxBufferSize: 2 });
+
+    for (let i = 0; i < 5; i++) await col.insertOne({ i });
+    await iter.return();
+
+    expect(iter.dropped).toBe(3);
   });
 });
