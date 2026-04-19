@@ -80,4 +80,58 @@ function sweep(data, idIndex, removeFromIndexes = null) {
   return removed;
 }
 
-export { computeExpiry, sweep };
+/**
+ * TtlScheduler - owns the periodic sweep timer lifecycle.
+ *
+ * Extracted from Skalex so the main class stays a thin facade.
+ * The scheduler is stateless except for the interval handle.
+ *
+ * @param {object} opts
+ * @param {number} opts.interval - Sweep interval in ms. 0 = no periodic sweep.
+ * @param {object} opts.persistence - PersistenceManager reference.
+ * @param {Function} opts.log - Debug logger (message) => void.
+ */
+class TtlScheduler {
+  constructor({ interval, persistence, log }) {
+    this._interval = interval ?? 0;
+    this._persistence = persistence;
+    this._log = log;
+    this._timer = null;
+  }
+
+  /**
+   * Sweep all collections once, removing expired TTL documents.
+   * @param {object} collections - The live collection store map.
+   */
+  sweep(collections) {
+    for (const name in collections) {
+      const col = collections[name];
+      const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
+      if (removed > 0) {
+        this._persistence.markDirty(collections, name);
+        this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+      }
+    }
+  }
+
+  /**
+   * Start periodic sweeping if an interval was configured.
+   * @param {object} collections - The live collection store map.
+   */
+  start(collections) {
+    if (this._interval > 0) {
+      this._timer = setInterval(() => this.sweep(collections), this._interval);
+      if (this._timer?.unref) this._timer.unref();
+    }
+  }
+
+  /** Stop the periodic sweep timer. */
+  stop() {
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+  }
+}
+
+export { computeExpiry, sweep, TtlScheduler };

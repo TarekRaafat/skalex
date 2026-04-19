@@ -4,8 +4,10 @@ import FsAdapter from "./connectors/storage/fs.js";
 import MigrationEngine from "./engine/migrations.js";
 import IndexEngine from "./engine/indexes.js";
 import { parseSchema } from "./engine/validator.js";
-import { sweep } from "./engine/ttl.js";
+import { TtlScheduler } from "./engine/ttl.js";
 import { SkalexError, PersistenceError, TransactionError, AdapterError, ValidationError, UniqueConstraintError, QueryError } from "./engine/errors.js";
+import SkalexAI from "./engine/ai.js";
+import SkalexImporter from "./engine/importer.js";
 import PersistenceManager from "./engine/persistence.js";
 import TransactionManager, { validateDeferredEffectErrors } from "./engine/transaction.js";
 import CollectionRegistry from "./engine/registry.js";
@@ -13,7 +15,6 @@ import { createEmbeddingAdapter, createLLMAdapter } from "./engine/adapters.js";
 import EncryptedAdapter from "./connectors/storage/encrypted.js";
 import Memory from "./features/memory.js";
 import ChangeLog from "./features/changelog.js";
-import { QueryCache, processLLMFilter, validateLLMFilter } from "./features/ask.js";
 import EventBus from "./features/events.js";
 import QueryLog from "./features/query-log.js";
 import SessionStats from "./features/session-stats.js";
@@ -141,17 +142,12 @@ class Skalex {
     this._encryptConfig = encrypt || null;
     this._pluginsConfig = Array.isArray(plugins) ? plugins : null;
     this._memoryConfig = memory || null;
-    this._regexMaxLength = regexMaxLength ?? 500;
     this._idGenerator = idGenerator ?? null;
     this._serializer = serializer ?? _serialize;
     this._deserializer = deserializer ?? _deserialize;
     this._autoSave = autoSave ?? false;
     this._txManager = new TransactionManager();
-    this._ttlSweepInterval = ttlSweepInterval ?? 0;
-    this._ttlTimer = null;
     this._logger = logger ?? _defaultLogger;
-    this._embeddingAdapter = embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null);
-    this._aiAdapter = llmAdapter ?? (ai ? createLLMAdapter(ai) : null);
     this._persistence = new PersistenceManager({
       adapter: this.fs,
       serializer: this._serializer,
@@ -162,7 +158,6 @@ class Skalex {
       registry: this._registry,
     });
     this._changeLog = new ChangeLog(this);
-    this._queryCache = new QueryCache(queryCache || {});
     this._eventBus = new EventBus();
     this._queryLog = slowQueryLog ? new QueryLog(slowQueryLog) : null;
     this._sessionStats = new SessionStats();
@@ -171,6 +166,28 @@ class Skalex {
     if (Array.isArray(plugins)) {
       for (const p of plugins) this._plugins.register(p);
     }
+
+    // ── Extracted subsystems ──────────────────────────────────────────────
+    this._ai = new SkalexAI({
+      aiAdapter: llmAdapter ?? (ai ? createLLMAdapter(ai) : null),
+      embeddingAdapter: embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null),
+      queryCacheConfig: queryCache || {},
+      regexMaxLength: regexMaxLength ?? 500,
+      persistence: this._persistence,
+      getCollections: () => this.collections,
+      getCollection: (name) => this.useCollection(name),
+      getSchema: (name) => this.schema(name),
+      log: (msg) => this._log(msg),
+    });
+    this._ttlScheduler = new TtlScheduler({
+      interval: ttlSweepInterval ?? 0,
+      persistence: this._persistence,
+      log: (msg) => this._log(msg),
+    });
+    this._importer = new SkalexImporter({
+      fs: this.fs,
+      getCollection: (name) => this.useCollection(name),
+    });
   }
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -204,7 +221,7 @@ class Skalex {
 
       // Restore persisted query cache
       const meta = this._persistence.getMeta(this.collections);
-      if (meta.queryCache) this._queryCache.fromJSON(meta.queryCache);
+      if (meta.queryCache) this._ai.queryCache.fromJSON(meta.queryCache);
 
       // Run pending migrations. Each migration runs in its own transaction
       // and records its version in `_meta` atomically with its data writes
@@ -216,14 +233,9 @@ class Skalex {
         await this._migrations.run({ runInTx, recordApplied }, applied);
       }
 
-      // Sweep expired TTL documents
-      this._sweepTtl();
-
-      // Start periodic TTL sweep if configured
-      if (this._ttlSweepInterval > 0) {
-        this._ttlTimer = setInterval(() => this._sweepTtl(), this._ttlSweepInterval);
-        if (this._ttlTimer?.unref) this._ttlTimer.unref();
-      }
+      // Sweep expired TTL documents and start periodic sweep if configured
+      this._ttlScheduler.sweep(this.collections);
+      this._ttlScheduler.start(this.collections);
 
       this.isConnected = true;
       this._log("> - Connected to the database (√)");
@@ -241,10 +253,7 @@ class Skalex {
    */
   async disconnect() {
     try {
-      if (this._ttlTimer) {
-        clearInterval(this._ttlTimer);
-        this._ttlTimer = null;
-      }
+      this._ttlScheduler.stop();
       await this.saveData();
       this._registry.clear();
       this.collections = this._registry.stores;
@@ -625,16 +634,7 @@ class Skalex {
    * @returns {Promise<Document[]>}
    */
   async import(filePath) {
-    const content = await this.fs.readRaw(filePath);
-    let docs;
-    try {
-      docs = JSON.parse(content);
-    } catch {
-      throw new PersistenceError("ERR_SKALEX_PERSISTENCE_INVALID_JSON", `import: invalid JSON in file "${filePath}"`, { filePath });
-    }
-    const name = filePath.split("/").pop().replace(/\.[^.]+$/, "");
-    const col = this.useCollection(name);
-    return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
+    return this._importer.import(filePath);
   }
 
   // ─── Embedding ───────────────────────────────────────────────────────────
@@ -645,13 +645,7 @@ class Skalex {
    * @returns {Promise<number[]>}
    */
   async embed(text) {
-    if (!this._embeddingAdapter) {
-      throw new AdapterError(
-        "ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED",
-        "db.embed() requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor."
-      );
-    }
-    return this._embeddingAdapter.embed(text);
+    return this._ai.embed(text);
   }
 
   // ─── AI Query ─────────────────────────────────────────────────────────────
@@ -665,28 +659,8 @@ class Skalex {
    * @param {{ limit?: number }} [opts]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
-  async ask(collectionName, nlQuery, { limit = 20 } = {}) {
-    if (!this._aiAdapter) {
-      throw new AdapterError(
-        "ERR_SKALEX_ADAPTER_LLM_REQUIRED",
-        'db.ask() requires a language model adapter. Configure { ai: { provider, model: "..." } }.'
-      );
-    }
-
-    const col = this.useCollection(collectionName);
-    const schema = this.schema(collectionName);
-
-    // Cache lookup
-    let filter = this._queryCache.get(collectionName, schema, nlQuery);
-    if (!filter) {
-      filter = await this._aiAdapter.generate(schema, nlQuery);
-      const warnings = validateLLMFilter(filter, schema);
-      if (warnings.length) warnings.forEach(w => this._log(`[ask] ${w}`));
-      this._queryCache.set(collectionName, schema, nlQuery, filter);
-      this._persistence.updateMeta(this.collections, { queryCache: this._queryCache.toJSON() });
-    }
-
-    return col.find(processLLMFilter(filter, { regexMaxLength: this._regexMaxLength }), { limit });
+  async ask(collectionName, nlQuery, opts) {
+    return this._ai.ask(collectionName, nlQuery, opts);
   }
 
   // ─── Schema ──────────────────────────────────────────────────────────────
@@ -791,18 +765,6 @@ class Skalex {
 
   // ─── Private ─────────────────────────────────────────────────────────────
 
-  /** Sweep expired TTL documents from all collections. */
-  _sweepTtl() {
-    for (const name in this.collections) {
-      const col = this.collections[name];
-      const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
-      if (removed > 0) {
-        this._persistence.markDirty(this.collections, name);
-        this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
-      }
-    }
-  }
-
   /**
    * Build a lazy context that resolves properties at call time.
    * This is safe to call during the constructor before all fields are
@@ -838,6 +800,23 @@ class Skalex {
   _log(msg) {
     if (this.debug) this._logger(msg, "info");
   }
+
+  // ── Backward-compatible accessors for extracted subsystem internals ────
+  // Tests and internal code may reach for these directly. The canonical
+  // owners are _ai, _ttlScheduler, and _importer.
+
+  get _embeddingAdapter() { return this._ai._embeddingAdapter; }
+  set _embeddingAdapter(v) { this._ai._embeddingAdapter = v; }
+
+  get _aiAdapter() { return this._ai._aiAdapter; }
+  set _aiAdapter(v) { this._ai._aiAdapter = v; }
+
+  get _queryCache() { return this._ai.queryCache; }
+
+  get _regexMaxLength() { return this._ai._regexMaxLength; }
+
+  get _ttlTimer() { return this._ttlScheduler._timer; }
+  get _ttlSweepInterval() { return this._ttlScheduler._interval; }
 
   /**
    * Return a deep snapshot of a collection's mutable state.
