@@ -103,12 +103,18 @@ function _precompileRegex(filter) {
     if (key === "$or" || key === "$and") {
       if (Array.isArray(val)) {
         const compiled = val.map(sub => _precompileRegex(sub));
+        // Only allocate a copy if a child filter actually compiled something.
+        if (compiled.some((c, i) => c !== val[i])) {
+          if (!copy) copy = { ...filter };
+          copy[key] = compiled;
+        }
+      }
+    } else if (key === "$not") {
+      const compiled = _precompileRegex(val);
+      if (compiled !== val) {
         if (!copy) copy = { ...filter };
         copy[key] = compiled;
       }
-    } else if (key === "$not") {
-      if (!copy) copy = { ...filter };
-      copy[key] = _precompileRegex(val);
     } else if (val && typeof val === "object" && !Array.isArray(val) && "$regex" in val && !(val.$regex instanceof RegExp)) {
       if (!copy) copy = { ...filter };
       copy[key] = { ...val, $regex: compileRegexFilter(val.$regex) };

@@ -433,7 +433,7 @@ class PersistenceManager {
     if (typeof this._adapter.cleanOrphans !== "function") return;
     try {
       const removed = await this._adapter.cleanOrphans();
-      if (removed > 0) this._log(`Cleaned ${removed} orphan temp file(s)`);
+      if (removed > 0) this._logger(`Cleaned ${removed} orphan temp file(s) (indicates prior incomplete write)`, "warn");
     } catch { /* ignore cleanup failures */ }
   }
 

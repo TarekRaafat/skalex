@@ -119,7 +119,7 @@ class TtlScheduler {
    * @param {object} collections - The live collection store map.
    */
   start(collections) {
-    if (this._interval > 0) {
+    if (this._interval > 0 && !this._timer) {
       this._timer = setInterval(() => this.sweep(collections), this._interval);
       if (this._timer?.unref) this._timer.unref();
     }

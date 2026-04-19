@@ -122,13 +122,16 @@ class Skalex {
     }
 
     this._adapterConfig = adapter ?? null; // track whether a custom adapter was explicitly provided
-    // Detect browser environments where FsAdapter will fail because
-    // node:fs/path/zlib are stubbed. Uses `document` presence instead of
-    // `window` because Deno defines `window` and has real file system access.
-    if (!adapter && typeof globalThis.document !== "undefined") {
+    // Detect browser/worker environments where FsAdapter will fail because
+    // node:fs/path/zlib are unavailable. Checks for `document` (browsers)
+    // or `importScripts` (web/service workers), while excluding Deno and
+    // Node.js which both define `process` and have real file system access.
+    const _isBrowserLike = typeof globalThis.process === "undefined"
+      && (typeof globalThis.document !== "undefined" || typeof globalThis.importScripts === "function");
+    if (!adapter && _isBrowserLike) {
       throw new AdapterError(
         "ERR_SKALEX_ADAPTER_REQUIRED",
-        "Browser usage requires an explicit adapter (e.g. LocalStorageAdapter or a custom adapter). " +
+        "Browser/worker usage requires an explicit adapter (e.g. LocalStorageAdapter or a custom adapter). " +
         "Pass { adapter: new LocalStorageAdapter() } to the Skalex constructor."
       );
     }

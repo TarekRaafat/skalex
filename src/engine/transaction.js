@@ -156,12 +156,17 @@ class TransactionManager {
                   if (typeof v !== "function") return v;
                   return function (...args) {
                     colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
-                    const result = v.apply(colTarget, args);
-                    if (result && typeof result.then === "function") {
-                      return result.finally(() => { colTarget._txProxyCallDepth--; });
+                    try {
+                      const result = v.apply(colTarget, args);
+                      if (result && typeof result.then === "function") {
+                        return result.finally(() => { colTarget._txProxyCallDepth--; });
+                      }
+                      colTarget._txProxyCallDepth--;
+                      return result;
+                    } catch (e) {
+                      colTarget._txProxyCallDepth--;
+                      throw e;
                     }
-                    colTarget._txProxyCallDepth--;
-                    return result;
                   };
                 },
               });
@@ -224,7 +229,13 @@ class TransactionManager {
           if (!ctx.preExisting.has(name)) {
             delete db.collections[name];
             delete db._collectionInstances[name];
+            if (db._registry?._statsCache) db._registry._statsCache.delete(name);
           }
+        }
+        // Clear stats cache for rolled-back collections so stale sizes
+        // don't survive the rollback.
+        for (const name of ctx.touchedCollections) {
+          if (db._registry?._statsCache) db._registry._statsCache.delete(name);
         }
 
         throw error;

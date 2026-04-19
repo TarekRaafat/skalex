@@ -30,7 +30,8 @@ class SkalexImporter {
     } catch {
       throw new PersistenceError("ERR_SKALEX_PERSISTENCE_INVALID_JSON", `import: invalid JSON in file "${filePath}"`, { filePath });
     }
-    const name = filePath.split("/").pop().replace(/\.[^.]+$/, "");
+    // Handle both forward-slash and backslash path separators (Windows).
+    const name = filePath.split(/[/\\]/).pop().replace(/\.[^.]+$/, "");
     const col = this._getCollection(name);
     return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
   }

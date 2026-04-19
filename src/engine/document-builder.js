@@ -1,5 +1,6 @@
 import { computeExpiry } from "./ttl.js";
 import { generateUniqueId } from "./utils.js";
+import { AdapterError } from "./errors.js";
 
 /**
  * Build a new document from a raw item: assign _id/timestamps, apply TTL,
@@ -29,6 +30,12 @@ async function buildDoc(item, { ttl, embed, defaultTtl, defaultEmbed, versioning
 
   const resolvedEmbed = embed ?? defaultEmbed;
   if (resolvedEmbed) {
+    if (typeof embedFn !== "function") {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED",
+        "Document embedding requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor.",
+      );
+    }
     const text = typeof resolvedEmbed === "function" ? resolvedEmbed(newItem) : newItem[resolvedEmbed];
     newItem._vector = await embedFn(String(text));
   }
