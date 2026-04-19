@@ -177,6 +177,14 @@ function matchesFilter(item, filter) {
  *   4. Regex / function ($regex, $fn, RegExp value, function filter)
  *
  * Returns a new filter object with keys in the optimal order.
+ *
+ * Implementation note: relies on ES2015+ object property insertion-order
+ * iteration guarantee (non-integer string keys iterate in creation order,
+ * specified in ECMA-262 section 13.7.5.15). This is supported by all target
+ * runtimes (Node 18+, modern browsers, Bun, Deno). The returned filter's
+ * key order determines matchesFilter's evaluation order, so indexed fields
+ * are checked first for early rejection.
+ *
  * @param {object} filter
  * @param {Set<string>} [indexedFields]
  * @returns {object}
