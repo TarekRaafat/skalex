@@ -938,12 +938,13 @@ class Collection {
         for (const item of this._ds) {
           if (matchesFilter(item, filter)) {
             deletedItems.push(item);
-            this._ds.deleteFromIndex(item._id);
             this._removeFromIndex(item);
           } else {
             remainingItems.push(item);
           }
         }
+        // replaceAll clears and rebuilds the _id index from remaining docs,
+        // so per-item deleteFromIndex calls are unnecessary.
         this._ds.replaceAll(remainingItems);
         return { docs: deletedItems };
       },

@@ -1,11 +1,11 @@
 import nodePath from "node:path";
 import nodeFs from "node:fs";
 import zlib from "node:zlib";
-import { promisify } from "node:util";
 import StorageAdapter from "./base.js";
 
-const _deflate = promisify(zlib.deflate);
-const _inflate = promisify(zlib.inflate);
+/** Async zlib wrappers - avoids node:util import that breaks browser builds. */
+const _deflate = (data) => new Promise((resolve, reject) => zlib.deflate(data, (err, buf) => err ? reject(err) : resolve(buf)));
+const _inflate = (data) => new Promise((resolve, reject) => zlib.inflate(data, (err, buf) => err ? reject(err) : resolve(buf)));
 
 /**
  * FsAdapter  -  file-system storage for Node.js, Bun, and Deno.
