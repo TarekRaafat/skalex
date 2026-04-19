@@ -1,6 +1,6 @@
 # Skalex v4: Architecture
 
-> Internal reference for contributors. Describes the current alpha.3 design of every module, data structure, and subsystem.
+> Internal reference for contributors. Describes the current alpha.4 design of every module, data structure, and subsystem.
 
 ---
 
@@ -41,17 +41,25 @@ src/
   index.js                  - Skalex class (database entry point)
   index.d.ts                - TypeScript declarations (source of truth)
   engine/
+    ai.js                   - SkalexAI (extracted AI facade: ask, embed, memory, schema)
     collection.js           - Collection class (per-collection CRUD)
+    collection-context.js   - ICollectionContext interface (narrow dependency surface for Collection)
+    datastore.js            - DataStore abstraction (interface between Collection and raw data)
+    document-builder.js     - DocumentBuilder (document creation, system fields, TTL, embedding)
+    exporter.js             - CollectionExporter (JSON/CSV export via storage adapter)
+    importer.js             - Importer (JSON file import via storage adapter)
     query.js                - matchesFilter + presortFilter
+    query-planner.js        - QueryPlanner (index-aware candidate selection, filter optimization)
     indexes.js              - IndexEngine (secondary field + compound indexes)
     validator.js            - parseSchema, validateDoc, inferSchema, stripInvalidFields
     ttl.js                  - computeExpiry, sweep
     migrations.js           - MigrationEngine
     vector.js               - cosineSimilarity, stripVector
+    vector-search.js        - VectorSearch (search + similar extracted from Collection)
     utils.js                - generateUniqueId, logger, resolveDotPath
     errors.js               - Typed error hierarchy (SkalexError and subclasses)
     persistence.js          - PersistenceManager (load, save, dirty tracking, write coalescing)
-    transaction.js          - TransactionManager (lazy snapshots, timeout, rollback)
+    transaction.js          - TransactionManager (lazy snapshots, timeout, rollback, collection locking)
     registry.js             - CollectionRegistry (store creation, instance caching, inspection)
     pipeline.js             - MutationPipeline (shared pre/post mutation lifecycle)
     adapters.js             - AI adapter factory functions (embedding + LLM)
@@ -66,6 +74,8 @@ src/
     session-stats.js        - SessionStats (per-session read/write tracking)
     query-log.js            - SlowQueryLog (threshold-based ring buffer)
   connectors/
+    shared/
+      fetch.js              - fetchWithRetry() shared utility for all AI adapters
     storage/
       base.js               - StorageAdapter abstract class
       fs.js                 - FsAdapter (Node.js file system, atomic writes, gz/json)
@@ -163,12 +173,20 @@ scripts/
 
 | Module | File | Responsibility |
 |---|---|---|
-| Skalex | `src/index.js` | Lifecycle (`connect`/`disconnect`), collection facade, migrations, transactions, seeding, namespaces, import/export, debug logging, serialization (BigInt/Date-safe) |
-| Collection | `src/engine/collection.js` | All CRUD operations, upsert, find with sort/pagination/populate/select, export, search, similar, index maintenance around mutations |
+| Skalex | `src/index.js` | Lifecycle (`connect`/`disconnect`), collection facade, migrations, transactions, seeding, namespaces, debug logging, serialization (BigInt/Date-safe), `Symbol.asyncDispose` |
+| SkalexAI | `src/engine/ai.js` | AI facade extracted from Skalex: `ask()`, `embed()`, `useMemory()`, `schema()` |
+| Collection | `src/engine/collection.js` | CRUD operations, upsert, find with sort/pagination/populate/select, delegates to extracted modules |
+| CollectionContext | `src/engine/collection-context.js` | `ICollectionContext` interface - narrow dependency surface for Collection; enables isolated testing |
+| DataStore | `src/engine/datastore.js` | Abstraction between Collection and raw `_data` array; prerequisite for disk-backed engines |
+| DocumentBuilder | `src/engine/document-builder.js` | Document creation, system field assignment (`_id`, `createdAt`, `updatedAt`), TTL, embedding |
+| QueryPlanner | `src/engine/query-planner.js` | Index-aware candidate selection, filter optimization, compound index routing |
+| VectorSearch | `src/engine/vector-search.js` | `search()` and `similar()` extracted from Collection |
+| CollectionExporter | `src/engine/exporter.js` | JSON/CSV export via storage adapter, extracted from Collection |
+| Importer | `src/engine/importer.js` | JSON file import via storage adapter, extracted from Skalex |
 | CollectionRegistry | `src/engine/registry.js` | Store creation, lazy instance caching, renames, inspection, schema access, index building |
 | MutationPipeline | `src/engine/pipeline.js` | Shared mutation lifecycle: ensureConnected, txSnapshot, beforePlugin, mutate, markDirty, save, changelog, sessionStats, event, afterPlugin |
 | PersistenceManager | `src/engine/persistence.js` | Load orchestration, save/saveDirty/saveAtomic, dirty tracking, write coalescing, flush sentinel, orphan temp-file cleanup, save mutex |
-| TransactionManager | `src/engine/transaction.js` | Transaction scope, lazy copy-on-first-write snapshots, timeout/abort, stale proxy detection, deferred side effects, rollback |
+| TransactionManager | `src/engine/transaction.js` | Transaction scope, lazy copy-on-first-write snapshots, timeout/abort, stale proxy detection, deferred side effects, rollback, collection locking |
 | QueryEngine | `src/engine/query.js` | Filter evaluation (`matchesFilter`), filter key ordering (`presortFilter`), deep equality for plain objects |
 | IndexEngine | `src/engine/indexes.js` | Secondary field indexes, compound indexes, unique constraint enforcement, batch validation |
 | Validator | `src/engine/validator.js` | Schema parsing, document validation, schema inference, field stripping |
@@ -176,11 +194,12 @@ scripts/
 | Vector | `src/engine/vector.js` | `cosineSimilarity(a, b)`, `stripVector(doc)` |
 | Errors | `src/engine/errors.js` | Typed error hierarchy: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` |
 | Adapters | `src/engine/adapters.js` | Factory functions `createEmbeddingAdapter()` and `createLLMAdapter()` - pure config-to-instance mappers |
+| fetchWithRetry | `src/connectors/shared/fetch.js` | Shared fetch utility with retry and exponential backoff for all AI adapters |
 | Migrations | `src/engine/migrations.js` | Migration registration, version ordering, pending-migration execution inside per-migration transactions, status reporting |
 | Constants | `src/engine/constants.js` | Frozen `Ops` and `Hooks` maps - single source of truth for operation and plugin-hook string values |
 | Utils | `src/engine/utils.js` | `generateUniqueId()` (27-char timestamp+random), `logger()`, `resolveDotPath()` (with prototype-pollution guard) |
 | StorageAdapter | `src/connectors/storage/base.js` | Abstract class: `read`, `write`, `delete`, `list`, `writeAll` |
-| FsAdapter | `src/connectors/storage/fs.js` | Node.js adapter: gz-compressed or raw JSON files, atomic temp-then-rename writes |
+| FsAdapter | `src/connectors/storage/fs.js` | Node.js adapter: gz-compressed or raw JSON files, atomic temp-then-rename writes, async zlib |
 | LocalStorageAdapter | `src/connectors/storage/local.js` | Browser adapter: `localStorage` with namespaced keys |
 | EmbeddingAdapter | `src/connectors/embedding/base.js` | Abstract class: `embed(text) -> number[]` |
 | LLMAdapter | `src/connectors/llm/base.js` | Abstract class: `generate(schema, nlQuery) -> filter` |
@@ -722,7 +741,7 @@ TypeScript declarations are hand-written in `src/index.d.ts` and copied to `dist
 
 Runner: **Vitest** (kept over Bun test because `LocalStorageAdapter` tests require a jsdom/browser environment, which Bun test does not support as of v1.x).
 
-**715 tests** across 24 test files.
+**896 vitest tests** across the unit and integration test files, plus **229 smoke tests** across Node.js, Bun, Deno, and headless Chromium (**1,125 total**).
 
 ### MemoryAdapter (`tests/helpers/MemoryAdapter.js`)
 

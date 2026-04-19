@@ -112,7 +112,7 @@
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.3 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **v4.0.0-alpha.4 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 Requires **Node.js ≥ 18**.
 
@@ -122,8 +122,8 @@ Requires **Node.js ≥ 18**.
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -151,10 +151,10 @@ import { StorageAdapter, FsAdapter, EmbeddingAdapter, OpenAIEmbeddingAdapter,
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.3"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.4"></script>
 ```
 
 ---

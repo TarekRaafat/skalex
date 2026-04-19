@@ -307,7 +307,9 @@ await db.transaction(async (tx) => { /* ... */ }, { timeout: 5000 });
 await db.transaction(async (tx) => { /* ... */ }, { deferredEffectErrors: "throw" });
 ```
 
-**Isolation:** Skalex provides read-committed isolation, not snapshot isolation. Snapshots are lazy (copy-on-first-write): only collections that receive a write inside the transaction are snapshotted. Reads on un-written collections see the latest committed state, including mutations from outside the transaction. To get a stable view of a collection, write to it first to trigger a snapshot. Non-transactional writes during an active transaction are not captured by rollback.
+**Isolation:** Skalex provides read-committed isolation, not snapshot isolation. Snapshots are lazy (copy-on-first-write): only collections that receive a write inside the transaction are snapshotted. Reads on un-written collections see the latest committed state, including mutations from outside the transaction. To get a stable view of a collection, write to it first to trigger a snapshot.
+
+**Collection locking:** Collections that receive a write inside a transaction are locked for the duration of that transaction. Any non-transactional write to a locked collection throws `TransactionError` with `ERR_SKALEX_TX_COLLECTION_LOCKED`. This prevents outside writes from being silently clobbered by a rollback.
 
 **Nested transactions** are rejected at runtime with `TransactionError` `ERR_SKALEX_TX_NESTED`.
 
@@ -551,6 +553,7 @@ Creates and returns a `SkalexMCPServer` that exposes the database as MCP tools f
 | `scopes` | `object` | `{ "*": ["read"] }` | Access control per collection; read-only by default |
 | `allowedOrigin` | `string \| null` | `null` | CORS origin for HTTP transport; disabled by default |
 | `maxBodySize` | `number` | `1048576` | Maximum POST body size in bytes for HTTP transport (default 1 MiB); increase when inserting documents with large text fields via MCP |
+| `predicates` | `object` | `undefined` | Named server-side predicate functions that MCP agents can invoke by name via `{ "$fn": "predicateName" }` in filters. Restores `$fn` expressiveness over MCP without letting arbitrary code cross the wire. |
 
 **Returns:** `SkalexMCPServer`
 
@@ -574,6 +577,18 @@ const server = db.mcp({
   },
 });
 await server.listen();
+```
+
+```javascript
+// Named predicates - let MCP agents use $fn safely
+const server = db.mcp({
+  predicates: {
+    isActive: (doc) => doc.status === "active" && !doc.suspended,
+    hasHighScore: (doc) => doc.score > 90,
+  },
+});
+await server.listen();
+// Agent can now send filters like: { "$fn": "isActive" }
 ```
 
 ---
@@ -910,11 +925,15 @@ const groups = await users.groupBy("role");
 
 ### Reactive
 
-#### `watch(filter?, callback?)`
+#### `watch(filter?, callback?, options?)`
 
 Observe mutations on a collection. Fires after every `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`, and `restore`.
 
 Event shape: `{ op: "insert"|"update"|"delete"|"restore", collection, doc, prev? }`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxBufferSize` | `number` | `Infinity` | Maximum queued events for the AsyncIterableIterator form. When the buffer is full, the oldest event is dropped and the `dropped` counter on the iterator is incremented. Prevents unbounded memory growth when the consumer is slower than the producer. |
 
 **Callback form**: returns an unsubscribe function:
 
@@ -931,13 +950,20 @@ const unsub = users.watch({ role: "admin" }, (event) => {
 unsub(); // stop watching
 ```
 
-**AsyncIterableIterator form**: no callback:
+**AsyncIterableIterator form**: no callback. The returned iterator exposes a `dropped` counter that tracks how many events were discarded due to backpressure when `maxBufferSize` is set:
 
 ```javascript
 const iter = users.watch();
 for await (const event of iter) {
   console.log(event.op, event.doc);
   if (done) await iter.return(); // clean up
+}
+
+// With backpressure - drop oldest events when buffer is full
+const iter = users.watch(null, null, { maxBufferSize: 100 });
+for await (const event of iter) {
+  console.log(event.op, event.doc);
+  if (iter.dropped > 0) console.warn(`Dropped ${iter.dropped} events`);
 }
 ```
 
@@ -1691,6 +1717,7 @@ db.use(auditPlugin);
 | `afterFind(ctx)` | `collection`, `filter`, `options`, `docs` |
 | `beforeSearch(ctx)` | `collection`, `query`, `options` |
 | `afterSearch(ctx)` | `collection`, `query`, `options`, `docs`, `scores` |
+| `afterRestore(ctx)` | `collection`, `filter`, `result` |
 
 All hooks are awaited in registration order. A hook that throws will propagate the error to the caller.
 
@@ -1863,8 +1890,8 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -1881,10 +1908,10 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.3"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.4"></script>
 
 <script>
   // Skalex is available as window.Skalex
@@ -1901,10 +1928,10 @@ The ESM build uses `node:` prefixed imports for all Node.js built-ins (`node:fs`
 
 ### Cross-runtime Testing
 
-Every release is verified by a 787-test suite across four runtimes:
+Every release is verified by a 1,125-test suite across four runtimes:
 
 ```bash
-npm run test:all       # Vitest (558) + smoke across Node, Bun, Deno, Chrome (229)
+npm run test:all       # Vitest (896) + smoke across Node, Bun, Deno, Chrome (229)
 
 npm run smoke:node     # Node.js CJS dist
 npm run smoke:bun      # Bun ESM dist + BunSQLiteAdapter

@@ -279,6 +279,14 @@ function matchesFilter(item, filter) {
  *   4. Regex / function ($regex, $fn, RegExp value, function filter)
  *
  * Returns a new filter object with keys in the optimal order.
+ *
+ * Implementation note: relies on ES2015+ object property insertion-order
+ * iteration guarantee (non-integer string keys iterate in creation order,
+ * specified in ECMA-262 section 13.7.5.15). This is supported by all target
+ * runtimes (Node 18+, modern browsers, Bun, Deno). The returned filter's
+ * key order determines matchesFilter's evaluation order, so indexed fields
+ * are checked first for early rejection.
+ *
  * @param {object} filter
  * @param {Set<string>} [indexedFields]
  * @returns {object}
@@ -464,87 +472,6 @@ function inferSchema(doc) {
 }
 
 /**
- * ttl.js  -  document expiry engine.
- *
- * Documents with a `_expiresAt` field (Date) are auto-deleted
- * when the TTL sweep runs (on connect and optionally on a timer).
- *
- * Supported TTL formats for the `ttl` option:
- *   number   → seconds (e.g. 300)
- *   "Nms"    → milliseconds (e.g. "500ms")
- *   "Ns"     → seconds     (e.g. "30s")
- *   "Nm"     → minutes     (e.g. "30m")
- *   "Nh"     → hours       (e.g. "24h")
- *   "Nd"     → days        (e.g. "7d")
- */
-
-/**
- * Parse a TTL value into milliseconds.
- * @param {number|string} ttl
- * @returns {number} ms
- */
-function parseTtl(ttl) {
-  if (typeof ttl === "number") {
-    if (ttl <= 0) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL must be positive, got ${ttl}`, { ttl });
-    return ttl * 1000;
-  }
-  if (typeof ttl !== "string") throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `Invalid TTL value: ${ttl}`, { ttl });
-
-  const match = ttl.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/);
-  if (!match) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL_FORMAT", `Invalid TTL format: "${ttl}". Use e.g. 300 (seconds), "30m", "24h", "7d"`, { ttl });
-
-  const val = parseFloat(match[1]);
-  if (val <= 0) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL must be positive, got "${ttl}"`, { ttl });
-  const unit = match[2];
-  const multipliers = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
-  const ms = val * multipliers[unit];
-  if (!isFinite(ms)) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL value "${ttl}" is too large`, { ttl });
-  return ms;
-}
-
-/**
- * Compute the expiry Date for a document given a TTL spec.
- * @param {number|string} ttl
- * @returns {Date}
- */
-function computeExpiry(ttl) {
-  return new Date(Date.now() + parseTtl(ttl));
-}
-
-/**
- * Sweep a collection"s data array and remove expired documents.
- * Mutates the array and the Map index in place.
- * @param {object[]} data
- * @param {Map} idIndex - _id → document map
- * @param {Function} removeFromIndexes - optional IndexEngine.remove callback
- * @returns {number} count of removed documents
- */
-function sweep(data, idIndex, removeFromIndexes = null) {
-  const now = Date.now();
-  let removed = 0;
-
-  // Single-pass filter-and-reassign. O(n) instead of O(n*k) for k expired docs
-  // when using in-place splice on a backing array.
-  const remaining = [];
-  for (const doc of data) {
-    if (doc._expiresAt && new Date(doc._expiresAt).getTime() <= now) {
-      idIndex.delete(doc._id);
-      if (removeFromIndexes) removeFromIndexes(doc);
-      removed++;
-    } else {
-      remaining.push(doc);
-    }
-  }
-
-  if (removed > 0) {
-    data.length = 0;
-    for (const doc of remaining) data.push(doc);
-  }
-
-  return removed;
-}
-
-/**
  * vector.js  -  cosine similarity and vector utilities.
  *
  * Vectors are stored inline on documents as `_vector: number[]`.
@@ -706,12 +633,29 @@ class MutationPipeline {
     const ctx = this._ctx;
 
     await ctx.ensureConnected();
+
+    // Block non-transactional writes to collections locked by an active tx.
+    // Must run BEFORE _txSnapshotIfNeeded() because the snapshot would add
+    // this collection to touchedCollections even for a non-tx write (since
+    // _activeTxId is set on the shared Collection singleton).
+    // The tx proxy wraps each method call to increment _txProxyCallDepth for
+    // the duration of the call (depth counter, not boolean, to handle
+    // concurrent unawaited calls on the same Collection instance). Reads are
+    // unaffected (they don't go through the pipeline).
+    const txm = ctx.txManager;
+    if (!(this._col._txProxyCallDepth > 0) && txm.isCollectionLocked(this._col.name)) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_COLLECTION_LOCKED",
+        `Collection "${this._col.name}" is locked by an active transaction. ` +
+        `Non-transactional writes are blocked until the transaction commits or rolls back.`
+      );
+    }
+
     this._col._txSnapshotIfNeeded();
 
     // Determine if this mutation is part of the active transaction.
     // Collections obtained through the tx proxy have _activeTxId stamped.
     // Only those writes participate in snapshot/rollback.
-    const txm = ctx.txManager;
     const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
 
     // Detect stale continuations from aborted transactions.
@@ -810,7 +754,530 @@ const Hooks = Object.freeze({
   AFTER_FIND:    "afterFind",
   BEFORE_SEARCH: "beforeSearch",
   AFTER_SEARCH:  "afterSearch",
+  AFTER_RESTORE: "afterRestore",
 });
+
+/**
+ * ttl.js  -  document expiry engine.
+ *
+ * Documents with a `_expiresAt` field (Date) are auto-deleted
+ * when the TTL sweep runs (on connect and optionally on a timer).
+ *
+ * Supported TTL formats for the `ttl` option:
+ *   number   → seconds (e.g. 300)
+ *   "Nms"    → milliseconds (e.g. "500ms")
+ *   "Ns"     → seconds     (e.g. "30s")
+ *   "Nm"     → minutes     (e.g. "30m")
+ *   "Nh"     → hours       (e.g. "24h")
+ *   "Nd"     → days        (e.g. "7d")
+ */
+
+/**
+ * Parse a TTL value into milliseconds.
+ * @param {number|string} ttl
+ * @returns {number} ms
+ */
+function parseTtl(ttl) {
+  if (typeof ttl === "number") {
+    if (ttl <= 0) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL must be positive, got ${ttl}`, { ttl });
+    return ttl * 1000;
+  }
+  if (typeof ttl !== "string") throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `Invalid TTL value: ${ttl}`, { ttl });
+
+  const match = ttl.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/);
+  if (!match) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL_FORMAT", `Invalid TTL format: "${ttl}". Use e.g. 300 (seconds), "30m", "24h", "7d"`, { ttl });
+
+  const val = parseFloat(match[1]);
+  if (val <= 0) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL must be positive, got "${ttl}"`, { ttl });
+  const unit = match[2];
+  const multipliers = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  const ms = val * multipliers[unit];
+  if (!isFinite(ms)) throw new ValidationError("ERR_SKALEX_VALIDATION_TTL", `TTL value "${ttl}" is too large`, { ttl });
+  return ms;
+}
+
+/**
+ * Compute the expiry Date for a document given a TTL spec.
+ * @param {number|string} ttl
+ * @returns {Date}
+ */
+function computeExpiry(ttl) {
+  return new Date(Date.now() + parseTtl(ttl));
+}
+
+/**
+ * Sweep a collection"s data array and remove expired documents.
+ * Mutates the array and the Map index in place.
+ * @param {object[]} data
+ * @param {Map} idIndex - _id → document map
+ * @param {Function} removeFromIndexes - optional IndexEngine.remove callback
+ * @returns {number} count of removed documents
+ */
+function sweep(data, idIndex, removeFromIndexes = null) {
+  const now = Date.now();
+  let removed = 0;
+
+  // Single-pass filter-and-reassign. O(n) instead of O(n*k) for k expired docs
+  // when using in-place splice on a backing array.
+  const remaining = [];
+  for (const doc of data) {
+    if (doc._expiresAt && new Date(doc._expiresAt).getTime() <= now) {
+      idIndex.delete(doc._id);
+      if (removeFromIndexes) removeFromIndexes(doc);
+      removed++;
+    } else {
+      remaining.push(doc);
+    }
+  }
+
+  if (removed > 0) {
+    data.length = 0;
+    for (const doc of remaining) data.push(doc);
+  }
+
+  return removed;
+}
+
+/**
+ * TtlScheduler - owns the periodic sweep timer lifecycle.
+ *
+ * Extracted from Skalex so the main class stays a thin facade.
+ * The scheduler is stateless except for the interval handle.
+ *
+ * @param {object} opts
+ * @param {number} opts.interval - Sweep interval in ms. 0 = no periodic sweep.
+ * @param {object} opts.persistence - PersistenceManager reference.
+ * @param {Function} opts.log - Debug logger (message) => void.
+ */
+class TtlScheduler {
+  constructor({ interval, persistence, log }) {
+    this._interval = interval ?? 0;
+    this._persistence = persistence;
+    this._log = log;
+    this._timer = null;
+  }
+
+  /**
+   * Sweep all collections once, removing expired TTL documents.
+   * @param {object} collections - The live collection store map.
+   */
+  sweep(collections) {
+    for (const name in collections) {
+      const col = collections[name];
+      const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
+      if (removed > 0) {
+        this._persistence.markDirty(collections, name);
+        this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
+      }
+    }
+  }
+
+  /**
+   * Start periodic sweeping if an interval was configured.
+   * @param {object} collections - The live collection store map.
+   */
+  start(collections) {
+    if (this._interval > 0 && !this._timer) {
+      this._timer = setInterval(() => this.sweep(collections), this._interval);
+      if (this._timer?.unref) this._timer.unref();
+    }
+  }
+
+  /** Stop the periodic sweep timer. */
+  stop() {
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+  }
+}
+
+/**
+ * Build a new document from a raw item: assign _id/timestamps, apply TTL,
+ * embed vector, and set initial _version when versioning is on.
+ *
+ * @param {object} item - Raw user-supplied document.
+ * @param {object} opts
+ * @param {number|string} [opts.ttl] - Per-doc TTL override.
+ * @param {string|Function} [opts.embed] - Per-doc embed override.
+ * @param {number|string} [opts.defaultTtl] - Collection-level TTL default.
+ * @param {string|Function} [opts.defaultEmbed] - Collection-level embed default.
+ * @param {boolean} [opts.versioning] - Whether versioning is enabled.
+ * @param {Function|null} [opts.idGenerator] - Custom ID generator or null.
+ * @param {Function} [opts.embedFn] - async (text) => number[].
+ * @returns {Promise<object>}
+ */
+async function buildDoc(item, { ttl, embed, defaultTtl, defaultEmbed, versioning, idGenerator, embedFn } = {}) {
+  const newItem = {
+    ...item,
+    _id: item._id ?? (idGenerator ?? generateUniqueId)(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  const resolvedTtl = ttl ?? defaultTtl;
+  if (resolvedTtl) newItem._expiresAt = computeExpiry(resolvedTtl);
+
+  const resolvedEmbed = embed ?? defaultEmbed;
+  if (resolvedEmbed) {
+    if (typeof embedFn !== "function") {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED",
+        "Document embedding requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor.",
+      );
+    }
+    const text = typeof resolvedEmbed === "function" ? resolvedEmbed(newItem) : newItem[resolvedEmbed];
+    newItem._vector = await embedFn(String(text));
+  }
+
+  if (versioning) newItem._version = 1;
+
+  return newItem;
+}
+
+/**
+ * Find the first document matching a filter.
+ *
+ * @param {object|Function|null} filter
+ * @param {object[]} data - The collection data array.
+ * @param {Map} idIndex - _id to doc Map.
+ * @param {object|null} fieldIndex - IndexEngine or null.
+ * @param {Function} isVisible - (doc, includeDeleted) => boolean.
+ * @param {{ includeDeleted?: boolean }} [opts]
+ * @returns {object|null}
+ */
+function findRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted = false } = {}) {
+  if (typeof filter === "function") {
+    for (const doc of data) {
+      if (!isVisible(doc, includeDeleted)) continue;
+      if (filter(doc)) return doc;
+    }
+    return null;
+  }
+  // Null, undefined, or empty filter: return the first visible doc.
+  if (filter == null) {
+    for (const doc of data) {
+      if (isVisible(doc, includeDeleted)) return doc;
+    }
+    return null;
+  }
+  if (filter._id) {
+    const item = idIndex.get(filter._id) || null;
+    if (!item) return null;
+    if (!isVisible(item, includeDeleted)) return null;
+    if (Object.keys(filter).length > 1) {
+      return matchesFilter(item, filter) ? item : null;
+    }
+    return item;
+  }
+
+  // Try O(1) indexed field lookup first
+  if (fieldIndex) {
+    for (const key in filter) {
+      if (key === "$or" || key === "$and" || key === "$not") continue;
+      const val = filter[key];
+      if (typeof val !== "object" || val === null) {
+        const candidates = fieldIndex._lookupIterable(key, val);
+        if (candidates !== null) {
+          for (const doc of candidates) {
+            if (!isVisible(doc, includeDeleted)) continue;
+            if (matchesFilter(doc, filter)) return doc;
+          }
+          return null;
+        }
+      }
+    }
+  }
+
+  for (const doc of data) {
+    if (!isVisible(doc, includeDeleted)) continue;
+    if (matchesFilter(doc, filter)) return doc;
+  }
+  return null;
+}
+
+/**
+ * Find all documents matching a filter.
+ *
+ * @param {object|Function} filter
+ * @param {object[]} data
+ * @param {Map} idIndex
+ * @param {object|null} fieldIndex
+ * @param {Function} isVisible
+ * @param {{ includeDeleted?: boolean }} [opts]
+ * @returns {object[]}
+ */
+function findAllRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted = false } = {}) {
+  if (filter && typeof filter !== "function" && filter._id) {
+    const item = idIndex.get(filter._id);
+    if (!item) return [];
+    if (!isVisible(item, includeDeleted)) return [];
+    return matchesFilter(item, filter) ? [item] : [];
+  }
+  const results = [];
+  for (const doc of getCandidates(filter, data, fieldIndex)) {
+    if (!isVisible(doc, includeDeleted)) continue;
+    if (matchesFilter(doc, filter)) results.push(doc);
+  }
+  return results;
+}
+
+/**
+ * Get the candidate set for a filter, using indexes when available.
+ *
+ * @param {object} filter
+ * @param {object[]} data
+ * @param {object|null} fieldIndex
+ * @returns {Iterable<object>}
+ */
+function getCandidates(filter, data, fieldIndex) {
+  if (!fieldIndex) return data;
+
+  // Try compound index first - matches more fields in one lookup
+  if (fieldIndex._compoundIndexes.size > 0) {
+    const eqFields = {};
+    for (const key in filter) {
+      if (key === "$or" || key === "$and" || key === "$not") continue;
+      const val = filter[key];
+      if (typeof val !== "object" || val === null) eqFields[key] = val;
+    }
+    if (Object.keys(eqFields).length >= 2) {
+      const candidates = fieldIndex.lookupCompound(eqFields);
+      if (candidates !== null) return candidates;
+    }
+  }
+
+  // Fall back to single-field index
+  for (const key in filter) {
+    if (key === "$or" || key === "$and" || key === "$not") continue;
+    const val = filter[key];
+    if (typeof val !== "object" || val === null) {
+      const candidates = fieldIndex._lookupIterable(key, val);
+      if (candidates !== null) return candidates;
+    }
+  }
+  return data;
+}
+
+/**
+ * Find the array index of the first doc matching a filter.
+ *
+ * @param {object} filter
+ * @param {object[]} data
+ * @returns {number} -1 if not found.
+ */
+function findIndex(filter, data) {
+  for (let i = 0; i < data.length; i++) {
+    if (matchesFilter(data[i], filter)) return i;
+  }
+  return -1;
+}
+
+/**
+ * Semantic similarity search - embed a query string and rank all candidate
+ * documents by cosine similarity.
+ *
+ * @param {string} query - Natural-language query text.
+ * @param {object[]} candidates - Pre-filtered document list.
+ * @param {Function} embedFn - async (text) => number[].
+ * @param {{ limit?: number, minScore?: number }} opts
+ * @returns {Promise<{ docs: object[], scores: number[] }>}
+ */
+async function vectorSearch(query, candidates, embedFn, { limit = 10, minScore = 0 } = {}) {
+  const queryVector = await embedFn(query);
+
+  const scored = [];
+  for (const doc of candidates) {
+    if (!doc._vector) continue;
+    const score = cosineSimilarity(queryVector, doc._vector);
+    if (score >= minScore) scored.push({ doc, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, limit);
+
+  return {
+    docs: top.map(r => stripVector(r.doc)),
+    scores: top.map(r => r.score),
+  };
+}
+
+/**
+ * Find the nearest neighbours to an existing document by its vector.
+ *
+ * @param {number[]} sourceVector - The source document's vector.
+ * @param {string} sourceId - The source document's _id (excluded from results).
+ * @param {object[]} data - Full data array.
+ * @param {{ limit?: number, minScore?: number }} opts
+ * @returns {{ docs: object[], scores: number[] }}
+ */
+function similarByVector(sourceVector, sourceId, data, { limit = 10, minScore = 0 } = {}) {
+  const scored = [];
+  for (const doc of data) {
+    if (doc._id === sourceId || !doc._vector) continue;
+    const score = cosineSimilarity(sourceVector, doc._vector);
+    if (score >= minScore) scored.push({ doc, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, limit);
+
+  return {
+    docs: top.map(r => stripVector(r.doc)),
+    scores: top.map(r => r.score),
+  };
+}
+
+/**
+ * Export filtered collection data to a file via the storage adapter.
+ *
+ * @param {object[]} data - The collection's data array.
+ * @param {string} collectionName
+ * @param {object} filter - Query filter.
+ * @param {object} opts
+ * @param {string} [opts.dir] - Export directory override.
+ * @param {string} [opts.name] - File name override.
+ * @param {"json"|"csv"} [opts.format="json"]
+ * @param {object} ctx - Collection context with fs, dataDirectory, logger.
+ * @returns {Promise<void>}
+ */
+async function exportData(data, collectionName, filter, { dir, name, format = "json" } = {}, ctx) {
+  try {
+    const filteredData = data.filter(item => matchesFilter(item, filter));
+
+    if (filteredData.length === 0) {
+      throw new QueryError("ERR_SKALEX_QUERY_EXPORT_EMPTY", `export(): no documents matched the filter in "${collectionName}"`, { collection: collectionName });
+    }
+
+    let content;
+    if (format === "json") {
+      content = JSON.stringify(filteredData, null, 2);
+    } else {
+      const escapeCsv = (v) => {
+        if (v == null) return "";
+        const s = (typeof v === "object") ? JSON.stringify(v) : String(v);
+        // Escape if value contains comma, quote, or newline (RFC 4180)
+        return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
+          ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const header = Object.keys(filteredData[0]).map(escapeCsv).join(",");
+      const rows = filteredData.map(item =>
+        Object.values(item).map(escapeCsv).join(",")
+      );
+      content = [header, ...rows].join("\n");
+    }
+
+    if (typeof ctx.fs.writeRaw !== "function") {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_NO_RAW_WRITE",
+        `export() requires a file-system adapter (FsAdapter). The current adapter does not support raw file writes.`
+      );
+    }
+
+    const exportDir = dir || `${ctx.dataDirectory}/exports`;
+    const fileName = `${name || collectionName}.${format}`;
+    const filePath = ctx.fs.join(exportDir, fileName);
+
+    ctx.fs.ensureDir(exportDir);
+    await ctx.fs.writeRaw(filePath, content);
+  } catch (error) {
+    ctx.logger(`Error exporting "${collectionName}": ${error.message}`, "error");
+    throw error;
+  }
+}
+
+/**
+ * datastore.js - abstraction between Collection and raw data storage.
+ *
+ * InMemoryDataStore wraps the existing `data` array and `index` Map on the
+ * collection store object by reference. Persistence and transactions continue
+ * reading `col.data` / `col.index` directly - the DataStore is an internal
+ * seam for Collection's code so a future disk-backed engine can swap in
+ * without rewriting every CRUD method.
+ */
+
+class InMemoryDataStore {
+  /**
+   * @param {object} store - The collection store object from CollectionRegistry.
+   *   Must have `data` (array) and `index` (Map<string, object>) properties.
+   */
+  constructor(store) {
+    this._store = store;
+  }
+
+  /** @returns {object[]} */
+  get data() { return this._store.data; }
+
+  /** @returns {Map<string, object>} */
+  get index() { return this._store.index; }
+
+  /** Number of documents. */
+  count() { return this._store.data.length; }
+
+  /** Look up a document by _id. @returns {object|null} */
+  getById(id) { return this._store.index.get(id) || null; }
+
+  /** Check if a document with the given _id exists. @returns {boolean} */
+  has(id) { return this._store.index.has(id); }
+
+  /** Append documents to the end. */
+  push(...docs) {
+    this._store.data.push(...docs);
+    for (const doc of docs) this._store.index.set(doc._id, doc);
+  }
+
+  /** Replace a document at a known position. */
+  replaceAt(idx, doc) {
+    this._store.data[idx] = doc;
+    this._store.index.set(doc._id, doc);
+  }
+
+  /** Set a doc in the index without changing position (for restore/update). */
+  setInIndex(id, doc) {
+    this._store.index.set(id, doc);
+  }
+
+  /** Remove a single document by position. @returns {object} */
+  spliceAt(idx) {
+    const [doc] = this._store.data.splice(idx, 1);
+    this._store.index.delete(doc._id);
+    return doc;
+  }
+
+  /** Remove a range from the front. @returns {object[]} */
+  spliceRange(start, count) {
+    const removed = this._store.data.splice(start, count);
+    for (const doc of removed) this._store.index.delete(doc._id);
+    return removed;
+  }
+
+  /** Delete a doc from the index only (used by soft-delete bulk path). */
+  deleteFromIndex(id) {
+    this._store.index.delete(id);
+  }
+
+  /** Get the position of a doc. @returns {number} */
+  indexOf(doc) {
+    return this._store.data.indexOf(doc);
+  }
+
+  /** Slice a portion of the data array. */
+  slice(start, end) {
+    return this._store.data.slice(start, end);
+  }
+
+  /** Replace the entire data array (used by deleteMany hard-delete). */
+  replaceAll(docs) {
+    this._store.data = docs;
+    this._store.index.clear();
+    for (const doc of docs) this._store.index.set(doc._id, doc);
+  }
+
+  /** Iterate all documents. */
+  [Symbol.iterator]() {
+    return this._store.data[Symbol.iterator]();
+  }
+}
 
 /**
  * Resolve a query filter into plain key-value pairs suitable for insertion.
@@ -889,14 +1356,51 @@ function stripDangerousKeys(val) {
 }
 
 /**
+ * Pre-compile $regex string values in a filter into RegExp objects so
+ * matchesFilter skips the per-doc compileRegexFilter overhead. Operates
+ * on a shallow copy of the filter to avoid mutating the caller's object.
+ * Already-compiled RegExp instances are left untouched.
+ * @param {object|null} filter
+ * @returns {object|null}
+ */
+function _precompileRegex(filter) {
+  if (!filter || typeof filter !== "object") return filter;
+  let copy = null;
+  for (const key in filter) {
+    const val = filter[key];
+    if (key === "$or" || key === "$and") {
+      if (Array.isArray(val)) {
+        const compiled = val.map(sub => _precompileRegex(sub));
+        // Only allocate a copy if a child filter actually compiled something.
+        if (compiled.some((c, i) => c !== val[i])) {
+          if (!copy) copy = { ...filter };
+          copy[key] = compiled;
+        }
+      }
+    } else if (key === "$not") {
+      const compiled = _precompileRegex(val);
+      if (compiled !== val) {
+        if (!copy) copy = { ...filter };
+        copy[key] = compiled;
+      }
+    } else if (val && typeof val === "object" && !Array.isArray(val) && "$regex" in val && !(val.$regex instanceof RegExp)) {
+      if (!copy) copy = { ...filter };
+      copy[key] = { ...val, $regex: compileRegexFilter(val.$regex) };
+    }
+  }
+  return copy || filter;
+}
+
+/**
  * Collection represents a collection of documents in the database.
  */
 class Collection {
   /**
-   * @param {object} collectionData - Internal store object managed by Skalex.
-   * @param {Skalex} database - The parent Skalex instance.
+   * @param {object} collectionData - Internal store object managed by the registry.
+   * @param {object} ctxOrDb - CollectionContext, or legacy Skalex instance
+   *   (backward compat: if it has `_collectionContext`, it's a Skalex instance).
    */
-  constructor(collectionData, database) {
+  constructor(collectionData, ctxOrDb) {
     this.name = collectionData.collectionName;
 
     /**
@@ -904,21 +1408,31 @@ class Collection {
      * Shared across all collections of a Skalex instance - the ctx uses lazy
      * getters that defer to the database, so a single allocation suffices.
      */
-    this._ctx = database._collectionContext;
+    this._ctx = ctxOrDb._collectionContext ?? ctxOrDb;
 
-    this._store = collectionData;
+    this._setStore(collectionData);
     this._pipeline = new MutationPipeline(this);
 
     /** @type {number|null} If created inside a transaction, the tx ID. */
-    this._createdInTxId = database._txManager.context?.id ?? null;
+    this._createdInTxId = this._ctx.txManager.context?.id ?? null;
 
     /** @type {number|null} Set by the tx proxy when obtained via tx.useCollection(). */
     this._activeTxId = null;
   }
 
-  get _data() { return this._store.data; }
-  set _data(val) { this._store.data = val; }
-  get _index() { return this._store.index; }
+  /** Update the backing store and re-wrap the DataStore. Called by loadData sync. */
+  _setStore(store) {
+    this.__store = store;
+    this._ds = new InMemoryDataStore(store);
+  }
+  get _store() { return this.__store; }
+  set _store(val) { this._setStore(val); }
+
+  get [Symbol.toStringTag]() { return "Collection"; }
+
+  get _data() { return this.__store.data; }
+  set _data(val) { this.__store.data = val; }
+  get _index() { return this.__store.index; }
 
   /** @returns {import("./indexes")|null} Secondary field index engine. */
   get _fieldIndex() { return this._store.fieldIndex || null; }
@@ -1013,7 +1527,7 @@ class Collection {
           const validated = this._applyValidation(item);
           await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
           const newItem = await this._buildDoc(validated, { ttl, embed });
-          if (this._index.has(newItem._id) || batchIds.has(newItem._id)) {
+          if (this._ds.has(newItem._id) || batchIds.has(newItem._id)) {
             throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newItem._id}" in collection "${this.name}"`, { id: newItem._id, collection: this.name });
           }
           batchIds.add(newItem._id);
@@ -1023,8 +1537,7 @@ class Collection {
         assertTxAlive(); // guard before first in-memory state change
         if (this._fieldIndex) this._fieldIndex.assertUniqueBatch(newItems);
         for (const newItem of newItems) this._addToIndex(newItem);
-        this._data.push(...newItems);
-        for (const newItem of newItems) this._index.set(newItem._id, newItem);
+        this._ds.push(...newItems);
         const evicted = this._enforceCapAfterInsert();
         // Emit delete events for FIFO-evicted documents so watch listeners
         // observe their disappearance alongside the corresponding inserts.
@@ -1094,8 +1607,9 @@ class Collection {
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, update, result: docs.length === 1 ? docs[0] : docs }),
       mutate: async (assertTxAlive) => {
+        const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
         const prevDocs = this._changelogEnabled ? oldDocs.map(doc => structuredClone(doc)) : oldDocs.map(() => null);
-        const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update));
+        const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update, { needsPrev }));
 
         this._assertUniqueCandidates(oldDocs, nextDocs);
 
@@ -1103,8 +1617,8 @@ class Collection {
         // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
         const targets = new Set(oldDocs);
         const positions = new Map();
-        for (let i = 0; i < this._data.length; i++) {
-          if (targets.has(this._data[i])) positions.set(this._data[i], i);
+        for (let i = 0; i < this._ds.data.length; i++) {
+          if (targets.has(this._ds.data[i])) positions.set(this._ds.data[i], i);
         }
         for (let i = 0; i < oldDocs.length; i++) {
           this._commitUpdatedDoc(oldDocs[i], nextDocs[i], positions);
@@ -1175,8 +1689,12 @@ class Collection {
    * @param {object} update
    * @returns {object}
    */
-  _prepareUpdatedDoc(currentDoc, update) {
-    const prev = structuredClone(currentDoc);
+  _prepareUpdatedDoc(currentDoc, update, { needsPrev = true } = {}) {
+    // Clone prev only when changelog is enabled or onSchemaError is "strip".
+    // Skipping this clone halves the structuredClone cost on the update hot path
+    // for the common case where changelog is off and schema validation is
+    // "throw" or "warn".
+    const prev = needsPrev ? structuredClone(currentDoc) : null;
     const next = structuredClone(currentDoc);
 
     this.applyUpdate(next, update);
@@ -1226,12 +1744,11 @@ class Collection {
    *   to avoid O(n) indexOf per call. When omitted, falls back to indexOf.
    */
   _commitUpdatedDoc(oldDoc, newDoc, positions) {
-    const idx = positions ? positions.get(oldDoc) : this._data.indexOf(oldDoc);
+    const idx = positions ? positions.get(oldDoc) : this._ds.indexOf(oldDoc);
     if (idx === undefined || idx === -1) {
       throw new PersistenceError("ERR_SKALEX_PERSISTENCE_DOC_MISSING", `Document "${oldDoc._id}" no longer exists in collection "${this.name}"`, { id: oldDoc._id, collection: this.name });
     }
-    this._data[idx] = newDoc;
-    this._index.set(newDoc._id, newDoc);
+    this._ds.replaceAt(idx, newDoc);
     this._updateInIndex(oldDoc, newDoc);
   }
 
@@ -1322,15 +1839,16 @@ class Collection {
     const { docs } = await this._pipeline.execute({
       op: Ops.RESTORE,
       beforeHook: null,
-      afterHook: null,
+      afterHook: Hooks.AFTER_RESTORE,
       hookPayload: null,
       save,
       session,
+      afterHookPayload: (restored) => ({ collection: this.name, filter, docs: restored }),
       mutate: async (assertTxAlive) => {
         assertTxAlive();
         delete item._deletedAt;
         item.updatedAt = new Date();
-        this._index.set(item._id, item);
+        this._ds.setInIndex(item._id, item);
         return { docs: [item] };
       },
     });
@@ -1342,38 +1860,46 @@ class Collection {
   /**
    * Watch for mutation events on this collection.
    *
-   * Callback form  -  returns an unsubscribe function:
+   * Callback form - returns an unsubscribe function:
    *   const unsub = col.watch({ status: "active" }, event => console.log(event));
    *   unsub(); // stop watching
    *
-   * AsyncIterator form  -  no callback:
+   * AsyncIterator form - no callback:
    *   for await (const event of col.watch({ status: "active" })) { ... }
+   *
+   * The iterator form accepts an options object as the second argument:
+   *   col.watch(filter, { maxBufferSize: 500 })
+   *
+   * When the buffer is full, the oldest events are dropped. The `dropped`
+   * property on the returned iterator reports how many events were lost.
    *
    * Event shape: { op: "insert"|"update"|"delete"|"restore", collection, doc, prev? }
    *
    * @param {object|Function} [filter]
-   * @param {Function} [callback]
+   * @param {Function|object} [callbackOrOpts] - callback function or { maxBufferSize }
    * @returns {(() => void)|AsyncIterableIterator}
    */
-  watch(filter, callback) {
-    // watch(callback) shorthand  -  no filter
-    if (typeof filter === "function") { callback = filter; filter = null; }
+  watch(filter, callbackOrOpts) {
+    // watch(callback) shorthand - no filter
+    if (typeof filter === "function") { callbackOrOpts = filter; filter = null; }
 
-    if (callback) {
-      // Callback-based API  -  returns unsub fn
+    if (typeof callbackOrOpts === "function") {
+      // Callback-based API - returns unsub fn
       return this._ctx.eventBus.on(this.name, event => {
-        if (!filter || matchesFilter(event.doc, filter)) callback(event);
+        if (!filter || matchesFilter(event.doc, filter)) callbackOrOpts(event);
       });
     }
 
     // AsyncIterator API
-    return this._watchIterator(filter);
+    const { maxBufferSize = 1000 } = callbackOrOpts || {};
+    return this._watchIterator(filter, Math.max(1, maxBufferSize));
   }
 
-  _watchIterator(filter) {
+  _watchIterator(filter, maxBufferSize) {
     const queue = [];
     let resolve = null;
     let done = false;
+    let dropped = 0;
 
     const unsub = this._ctx.eventBus.on(this.name, event => {
       if (filter && !matchesFilter(event.doc, filter)) return;
@@ -1381,12 +1907,17 @@ class Collection {
         const r = resolve; resolve = null;
         r({ value: event, done: false });
       } else {
+        if (queue.length >= maxBufferSize) {
+          queue.shift();
+          dropped++;
+        }
         queue.push(event);
       }
     });
 
     return {
       [Symbol.asyncIterator]() { return this; },
+      get dropped() { return dropped; },
       next() {
         if (queue.length > 0) return Promise.resolve({ value: queue.shift(), done: false });
         if (done) return Promise.resolve({ value: undefined, done: true });
@@ -1469,6 +2000,13 @@ class Collection {
 
   /**
    * Find all matching documents.
+   *
+   * **Limit-only fast path:** when `limit` is set, `sort` is absent, and
+   * `page` is 1 (default), scanning stops after `limit` matches. In this
+   * mode `totalDocs` and `totalPages` are omitted from the result because
+   * the total is unknown without a full scan. Callers that need totals
+   * should pass an explicit `sort` or `page` to disable the fast path.
+   *
    * @param {object} filter
    * @param {{ populate?: string[], select?: string[], sort?: object, page?: number, limit?: number, includeDeleted?: boolean }} [options]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
@@ -1482,19 +2020,25 @@ class Collection {
     await this._ctx.plugins.run(Hooks.BEFORE_FIND, { collection: this.name, filter, options });
 
     const candidates = this._getCandidates(filter);
-    const sortedFilter = presortFilter(
-      filter,
-      this._fieldIndex ? this._fieldIndex.indexedFields : new Set()
+    // Pre-compile $regex strings once so matchesFilter doesn't run
+    // compileRegexFilter per document on every iteration.
+    const compiledFilter = _precompileRegex(
+      presortFilter(filter, this._fieldIndex ? this._fieldIndex.indexedFields : new Set())
     );
 
     let results = [];
 
+    // Limit-only fast path: when there is no sort and no page offset,
+    // stop scanning after `limit` matches instead of collecting everything.
+    const earlyStop = limit && !sort && page === 1;
+
     for (const item of candidates) {
       if (!this._isVisible(item, includeDeleted)) continue;
-      if (!matchesFilter(item, sortedFilter)) continue;
+      if (!matchesFilter(item, compiledFilter)) continue;
       const newItem = this._projectDoc(item, select);
       if (populate) await this._populateDoc(newItem, item, populate);
       results.push(newItem);
+      if (earlyStop && results.length >= limit) break;
     }
 
     if (sort) {
@@ -1511,11 +2055,11 @@ class Collection {
 
     let extra;
     if (limit) {
-      const totalDocs = results.length;
-      const totalPages = Math.ceil(totalDocs / limit);
-      const startIndex = (page - 1) * limit;
-      results = results.slice(startIndex, startIndex + limit);
-      extra = { page, totalDocs, totalPages };
+      const totalDocs = earlyStop ? undefined : results.length;
+      const totalPages = earlyStop ? undefined : Math.ceil(totalDocs / limit);
+      const startIndex = earlyStop ? 0 : (page - 1) * limit;
+      results = earlyStop ? results : results.slice(startIndex, startIndex + limit);
+      extra = earlyStop ? { page } : { page, totalDocs, totalPages };
     }
 
     this._ctx.queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
@@ -1546,28 +2090,15 @@ class Collection {
     await this._ctx.ensureConnected();
     const _t0 = Date.now();
     await this._ctx.plugins.run(Hooks.BEFORE_SEARCH, { collection: this.name, query, options: { filter, limit, minScore } });
-    const queryVector = await this._ctx.embed(query);
 
-    const candidates = filter ? this._findAllRaw(filter) : this._data;
+    const candidates = filter ? this._findAllRaw(filter) : this._ds.data;
+    const result = await vectorSearch(query, candidates, (t) => this._ctx.embed(t), { limit, minScore });
 
-    const scored = [];
-    for (const doc of candidates) {
-      if (!doc._vector) continue;
-      const score = cosineSimilarity(queryVector, doc._vector);
-      if (score >= minScore) scored.push({ doc, score });
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, limit);
-
-    this._ctx.queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: top.length });
+    this._ctx.queryLog?.record({ collection: this.name, op: "search", query, duration: Date.now() - _t0, resultCount: result.docs.length });
     this._ctx.sessionStats.recordRead(session);
+    await this._ctx.plugins.run(Hooks.AFTER_SEARCH, { collection: this.name, query, options: { filter, limit, minScore }, docs: result.docs, scores: result.scores });
 
-    const docs = top.map(r => stripVector(r.doc));
-    const scores = top.map(r => r.score);
-    await this._ctx.plugins.run(Hooks.AFTER_SEARCH, { collection: this.name, query, options: { filter, limit, minScore }, docs, scores });
-
-    return { docs, scores };
+    return result;
   }
 
   /**
@@ -1579,23 +2110,9 @@ class Collection {
    */
   async similar(id, { limit = 10, minScore = 0 } = {}) {
     await this._ctx.ensureConnected();
-    const source = this._index.get(id);
+    const source = this._ds.getById(id);
     if (!source || !source._vector) return { docs: [], scores: [] };
-
-    const scored = [];
-    for (const doc of this._data) {
-      if (doc._id === id || !doc._vector) continue;
-      const score = cosineSimilarity(source._vector, doc._vector);
-      if (score >= minScore) scored.push({ doc, score });
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, limit);
-
-    return {
-      docs: top.map(r => stripVector(r.doc)),
-      scores: top.map(r => r.score),
-    };
+    return similarByVector(source._vector, id, this._ds.data, { limit, minScore });
   }
 
   // ─── Delete ──────────────────────────────────────────────────────────────
@@ -1670,7 +2187,7 @@ class Collection {
           for (const item of items) {
             item._deletedAt = now;
             item.updatedAt = now;
-            this._index.set(item._id, item);
+            this._ds.setInIndex(item._id, item);
           }
           return { docs: items };
         }
@@ -1678,8 +2195,7 @@ class Collection {
         if (mode === "hard") {
           const idx = this._findIndex(filter);
           if (idx === -1) return { docs: [] };
-          const deletedItem = this._data.splice(idx, 1)[0];
-          this._index.delete(deletedItem._id);
+          const deletedItem = this._ds.spliceAt(idx);
           this._removeFromIndex(deletedItem);
           return { docs: [deletedItem] };
         }
@@ -1687,16 +2203,17 @@ class Collection {
         // hardMany
         const deletedItems = [];
         const remainingItems = [];
-        for (const item of this._data) {
+        for (const item of this._ds) {
           if (matchesFilter(item, filter)) {
             deletedItems.push(item);
-            this._index.delete(item._id);
             this._removeFromIndex(item);
           } else {
             remainingItems.push(item);
           }
         }
-        this._data = remainingItems;
+        // replaceAll clears and rebuilds the _id index from remaining docs,
+        // so per-item deleteFromIndex calls are unnecessary.
+        this._ds.replaceAll(remainingItems);
         return { docs: deletedItems };
       },
     });
@@ -1710,50 +2227,7 @@ class Collection {
    * @param {{ dir?: string, name?: string, format?: "json"|"csv" }} [options]
    */
   async export(filter = {}, options = {}) {
-    const { dir, name, format = "json" } = options;
-
-    try {
-      const filteredData = this._data.filter(item => matchesFilter(item, filter));
-
-      if (filteredData.length === 0) {
-        throw new QueryError("ERR_SKALEX_QUERY_EXPORT_EMPTY", `export(): no documents matched the filter in "${this.name}"`, { collection: this.name });
-      }
-
-      let content;
-      if (format === "json") {
-        content = JSON.stringify(filteredData, null, 2);
-      } else {
-        const escapeCsv = (v) => {
-          if (v == null) return "";
-          const s = (typeof v === "object") ? JSON.stringify(v) : String(v);
-          // Escape if value contains comma, quote, or newline (RFC 4180)
-          return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
-            ? `"${s.replace(/"/g, '""')}"` : s;
-        };
-        const header = Object.keys(filteredData[0]).map(escapeCsv).join(",");
-        const rows = filteredData.map(item =>
-          Object.values(item).map(escapeCsv).join(",")
-        );
-        content = [header, ...rows].join("\n");
-      }
-
-      if (typeof this._ctx.fs.writeRaw !== "function") {
-        throw new AdapterError(
-          "ERR_SKALEX_ADAPTER_NO_RAW_WRITE",
-          `export() requires a file-system adapter (FsAdapter). The current adapter does not support raw file writes.`
-        );
-      }
-
-      const exportDir = dir || `${this._ctx.dataDirectory}/exports`;
-      const fileName = `${name || this.name}.${format}`;
-      const filePath = this._ctx.fs.join(exportDir, fileName);
-
-      this._ctx.fs.ensureDir(exportDir);
-      await this._ctx.fs.writeRaw(filePath, content);
-    } catch (error) {
-      this._ctx.logger(`Error exporting "${this.name}": ${error.message}`, "error");
-      throw error;
-    }
+    return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
@@ -1830,9 +2304,9 @@ class Collection {
    */
   _enforceCapAfterInsert() {
     const max = this._maxDocs;
-    if (!max || this._data.length <= max) return [];
-    const evictCount = this._data.length - max;
-    const toEvict = this._data.slice(0, evictCount);
+    if (!max || this._ds.count() <= max) return [];
+    const evictCount = this._ds.count() - max;
+    const toEvict = this._ds.slice(0, evictCount);
 
     // Per-doc removal state:
     //   0 = untouched
@@ -1842,16 +2316,16 @@ class Collection {
     try {
       for (let i = 0; i < toEvict.length; i++) {
         const doc = toEvict[i];
-        this._index.delete(doc._id);
+        this._ds.deleteFromIndex(doc._id);
         states[i] = 1;
         this._removeFromIndex(doc);
         states[i] = 2;
       }
-      this._data.splice(0, evictCount);
+      this._ds.spliceRange(0, evictCount);
       return toEvict;
     } catch (err) {
       // Restore in reverse order. For each doc, undo exactly the steps that
-      // were committed. This leaves `_data` + both indexes consistent.
+      // were committed. This leaves data + both indexes consistent.
       for (let i = toEvict.length - 1; i >= 0; i--) {
         const doc = toEvict[i];
         if (states[i] === 0) continue;
@@ -1859,7 +2333,7 @@ class Collection {
           try { this._addToIndex(doc); } catch { /* best-effort */ }
         }
         // states 1 and 2 both require id-index restore
-        this._index.set(doc._id, doc);
+        this._ds.setInIndex(doc._id, doc);
       }
       throw err;
     }
@@ -1875,108 +2349,20 @@ class Collection {
     return !this._softDelete || !doc._deletedAt || includeDeleted;
   }
 
-  _findRaw(filter, { includeDeleted = false } = {}) {
-    if (typeof filter === "function") {
-      for (const doc of this._data) {
-        if (!this._isVisible(doc, includeDeleted)) continue;
-        if (filter(doc)) return doc;
-      }
-      return null;
-    }
-    // Null, undefined, or empty filter: return the first visible doc.
-    // Matches matchesFilter's "everything matches" semantics for nullish
-    // and empty-object filters, and keeps `findOne()` / `findOne(null)`
-    // working (they used to crash on `filter._id`).
-    if (filter == null) {
-      for (const doc of this._data) {
-        if (this._isVisible(doc, includeDeleted)) return doc;
-      }
-      return null;
-    }
-    if (filter._id) {
-      const item = this._index.get(filter._id) || null;
-      if (!item) return null;
-      if (!this._isVisible(item, includeDeleted)) return null;
-      if (Object.keys(filter).length > 1) {
-        return matchesFilter(item, filter) ? item : null;
-      }
-      return item;
-    }
-
-    // Try O(1) indexed field lookup first
-    if (this._fieldIndex) {
-      for (const key in filter) {
-        if (key === "$or" || key === "$and" || key === "$not") continue;
-        const val = filter[key];
-        if (typeof val !== "object" || val === null) {
-          const candidates = this._fieldIndex._lookupIterable(key, val);
-          if (candidates !== null) {
-            for (const doc of candidates) {
-              if (!this._isVisible(doc, includeDeleted)) continue;
-              if (matchesFilter(doc, filter)) return doc;
-            }
-            return null;
-          }
-        }
-      }
-    }
-
-    for (const doc of this._data) {
-      if (!this._isVisible(doc, includeDeleted)) continue;
-      if (matchesFilter(doc, filter)) return doc;
-    }
-    return null;
+  _findRaw(filter, opts) {
+    return findRaw(filter, this._ds.data, this._ds.index, this._fieldIndex, (doc, incl) => this._isVisible(doc, incl), opts);
   }
 
-  _findAllRaw(filter, { includeDeleted = false } = {}) {
-    if (filter && typeof filter !== "function" && filter._id) {
-      const item = this._index.get(filter._id);
-      if (!item) return [];
-      if (!this._isVisible(item, includeDeleted)) return [];
-      return matchesFilter(item, filter) ? [item] : [];
-    }
-    const results = [];
-    for (const doc of this._getCandidates(filter)) {
-      if (!this._isVisible(doc, includeDeleted)) continue;
-      if (matchesFilter(doc, filter)) results.push(doc);
-    }
-    return results;
+  _findAllRaw(filter, opts) {
+    return findAllRaw(filter, this._ds.data, this._ds.index, this._fieldIndex, (doc, incl) => this._isVisible(doc, incl), opts);
   }
 
   _getCandidates(filter) {
-    if (!this._fieldIndex) return this._data;
-
-    // Try compound index first - matches more fields in one lookup
-    if (this._fieldIndex._compoundIndexes.size > 0) {
-      const eqFields = {};
-      for (const key in filter) {
-        if (key === "$or" || key === "$and" || key === "$not") continue;
-        const val = filter[key];
-        if (typeof val !== "object" || val === null) eqFields[key] = val;
-      }
-      if (Object.keys(eqFields).length >= 2) {
-        const candidates = this._fieldIndex.lookupCompound(eqFields);
-        if (candidates !== null) return candidates;
-      }
-    }
-
-    // Fall back to single-field index
-    for (const key in filter) {
-      if (key === "$or" || key === "$and" || key === "$not") continue;
-      const val = filter[key];
-      if (typeof val !== "object" || val === null) {
-        const candidates = this._fieldIndex._lookupIterable(key, val);
-        if (candidates !== null) return candidates;
-      }
-    }
-    return this._data;
+    return getCandidates(filter, this._ds.data, this._fieldIndex);
   }
 
   _findIndex(filter) {
-    for (let i = 0; i < this._data.length; i++) {
-      if (matchesFilter(this._data[i], filter)) return i;
-    }
-    return -1;
+    return findIndex(filter, this._ds.data);
   }
 
   // ─── Private index helpers ────────────────────────────────────────────────
@@ -2003,25 +2389,15 @@ class Collection {
    * @returns {Promise<object>}
    */
   async _buildDoc(item, { ttl, embed } = {}) {
-    const newItem = {
-      ...item,
-      _id: item._id ?? (this._ctx.idGenerator ?? generateUniqueId)(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const resolvedTtl = ttl ?? this._defaultTtl;
-    if (resolvedTtl) newItem._expiresAt = computeExpiry(resolvedTtl);
-
-    const resolvedEmbed = embed ?? this._defaultEmbed;
-    if (resolvedEmbed) {
-      const text = typeof resolvedEmbed === "function" ? resolvedEmbed(newItem) : newItem[resolvedEmbed];
-      newItem._vector = await this._ctx.embed(String(text));
-    }
-
-    if (this._versioning) newItem._version = 1;
-
-    return newItem;
+    return buildDoc(item, {
+      ttl,
+      embed,
+      defaultTtl: this._defaultTtl,
+      defaultEmbed: this._defaultEmbed,
+      versioning: this._versioning,
+      idGenerator: this._ctx.idGenerator,
+      embedFn: (text) => this._ctx.embed(text),
+    });
   }
 
   // ─── Private projection / population helpers ──────────────────────────────
@@ -2083,7 +2459,7 @@ class StorageAdapter {
    * @returns {Promise<string|null>}
    */
   async read(name) {
-    throw new Error("StorageAdapter.read() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.read() not implemented");
   }
 
   /**
@@ -2093,7 +2469,7 @@ class StorageAdapter {
    * @returns {Promise<void>}
    */
   async write(name, data) {
-    throw new Error("StorageAdapter.write() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.write() not implemented");
   }
 
   /**
@@ -2102,7 +2478,7 @@ class StorageAdapter {
    * @returns {Promise<void>}
    */
   async delete(name) {
-    throw new Error("StorageAdapter.delete() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.delete() not implemented");
   }
 
   /**
@@ -2110,7 +2486,7 @@ class StorageAdapter {
    * @returns {Promise<string[]>}
    */
   async list() {
-    throw new Error("StorageAdapter.list() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.list() not implemented");
   }
 
   /**
@@ -2122,7 +2498,29 @@ class StorageAdapter {
   async writeAll(entries) {
     for (const { name, data } of entries) await this.write(name, data);
   }
+
+  // ─── Capability checks ────────────────────────────────────────────────
+  //
+  // Replaces duck-typed `typeof adapter.readRaw === "function"` checks
+  // throughout the engine. Subclasses override to return true when they
+  // implement the corresponding optional methods.
+
+  /** Whether this adapter supports batch writes with native atomicity. */
+  get supportsBatch() { return false; }
+
+  /** Whether this adapter supports raw file reads (readRaw). */
+  get supportsRawRead() { return typeof this.readRaw === "function"; }
+
+  /** Whether this adapter supports raw file writes (writeRaw). */
+  get supportsRawWrite() { return typeof this.writeRaw === "function"; }
+
+  /** Whether this adapter supports path operations (join, ensureDir). */
+  get supportsPath() { return typeof this.join === "function" && typeof this.ensureDir === "function"; }
 }
+
+/** Async zlib wrappers - avoids node:util import that breaks browser builds. */
+const _deflate = (data) => new Promise((resolve, reject) => zlib.deflate(data, (err, buf) => err ? reject(err) : resolve(buf)));
+const _inflate = (data) => new Promise((resolve, reject) => zlib.inflate(data, (err, buf) => err ? reject(err) : resolve(buf)));
 
 /**
  * FsAdapter  -  file-system storage for Node.js, Bun, and Deno.
@@ -2159,7 +2557,7 @@ class FsAdapter extends StorageAdapter {
     try {
       let raw = await nodeFs.promises.readFile(fp);
       if (this.format === "gz") {
-        raw = zlib.inflateSync(raw);
+        raw = await _inflate(raw);
       }
       return raw.toString("utf8");
     } catch (err) {
@@ -2173,7 +2571,7 @@ class FsAdapter extends StorageAdapter {
     const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
 
     if (this.format === "gz") {
-      const compressed = zlib.deflateSync(data);
+      const compressed = await _deflate(data);
       await nodeFs.promises.writeFile(tmp, compressed);
     } else {
       await nodeFs.promises.writeFile(tmp, data, "utf8");
@@ -2195,7 +2593,7 @@ class FsAdapter extends StorageAdapter {
         const fp = this._filePath(name);
         const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
         if (this.format === "gz") {
-          const compressed = zlib.deflateSync(data);
+          const compressed = await _deflate(data);
           await nodeFs.promises.writeFile(tmp, compressed);
         } else {
           await nodeFs.promises.writeFile(tmp, data, "utf8");
@@ -2456,6 +2854,8 @@ class IndexEngine {
    *   arrays like ["field1", "field2"] for compound indexes.
    * @param {string[]} unique   - Fields with unique constraint
    */
+  get [Symbol.toStringTag]() { return "IndexEngine"; }
+
   constructor(fields = [], unique = []) {
     this._fields = new Set();
     this._compoundFields = [];
@@ -2779,6 +3179,280 @@ class IndexEngine {
 }
 
 /**
+ * ask.js  -  query cache and LLM filter utilities for db.ask().
+ */
+
+// ─── Hash ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Deterministic djb2-style hash of a string.
+ * @param {string} str
+ * @returns {string} 8-char hex
+ */
+function _djb2(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+// ─── QueryCache ───────────────────────────────────────────────────────────────
+
+/**
+ * QueryCache  -  maps hash(collection + schema + query) → filter object.
+ *
+ * Persisted in the _meta collection so it survives connect/disconnect cycles.
+ * The cache avoids calling the LLM again for the same question on the same schema.
+ *
+ * @param {object} [opts]
+ * @param {number} [opts.maxSize=500] - Maximum number of entries. Oldest entry is evicted when full.
+ * @param {number} [opts.ttl=0]      - Entry TTL in ms. 0 = no expiry.
+ */
+class QueryCache {
+  constructor({ maxSize = 500, ttl = 0 } = {}) {
+    this._cache   = new Map();
+    this._maxSize = maxSize;
+    this._ttl     = ttl;
+  }
+
+  _key(collectionName, schema, query) {
+    return _djb2(JSON.stringify({ collectionName, schema, query }));
+  }
+
+  get(collectionName, schema, query) {
+    const key   = this._key(collectionName, schema, query);
+    const entry = this._cache.get(key);
+    if (!entry) return undefined;
+    if (this._ttl > 0 && Date.now() - entry.ts > this._ttl) {
+      this._cache.delete(key);
+      return undefined;
+    }
+    return entry.filter;
+  }
+
+  set(collectionName, schema, query, filter) {
+    const key = this._key(collectionName, schema, query);
+    // Evict oldest entry when at capacity (and key is new)
+    if (this._cache.size >= this._maxSize && !this._cache.has(key)) {
+      this._cache.delete(this._cache.keys().next().value);
+    }
+    this._cache.set(key, { filter, ts: Date.now() });
+  }
+
+  toJSON() {
+    return Object.fromEntries(
+      [...this._cache.entries()].map(([k, v]) => [k, v])
+    );
+  }
+
+  fromJSON(data) {
+    if (!data || typeof data !== "object") return;
+    for (const [k, v] of Object.entries(data)) {
+      this._cache.set(k, v);
+    }
+  }
+
+  get size() {
+    return this._cache.size;
+  }
+}
+
+// ─── Filter helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Convert an LLM-generated filter into a form matchesFilter() can execute.
+ * - $regex string values → RegExp objects
+ * - ISO date strings in range operators → Date objects
+ *
+ * @param {object} filter
+ * @param {object} [opts]
+ * @param {number} [opts.regexMaxLength=500] - Maximum allowed $regex pattern length.
+ * @returns {object}
+ */
+function processLLMFilter(filter, { regexMaxLength = 500 } = {}) {
+  if (typeof filter !== "object" || filter === null) return filter;
+
+  const result = {};
+  for (const key of Object.keys(filter)) {
+    const val = filter[key];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const processed = {};
+      for (const op of Object.keys(val)) {
+        if (op === "$regex" && typeof val.$regex === "string") {
+          if (val.$regex.length > regexMaxLength)
+            throw new QueryError("ERR_SKALEX_QUERY_REGEX_TOO_LONG", `$regex pattern too long (max ${regexMaxLength} characters)`);
+          // Reject patterns with nested quantifiers that cause catastrophic backtracking.
+          // e.g. (a+)+, (a|a)*, (x+){2,}
+          if (/\([^)]*[+*][^)]*\)[+*{]/.test(val.$regex))
+            throw new QueryError("ERR_SKALEX_QUERY_REGEX_REDOS", `$regex pattern rejected: nested quantifiers risk ReDoS`);
+          try {
+            processed.$regex = new RegExp(val.$regex);
+          } catch {
+            throw new QueryError("ERR_SKALEX_QUERY_REGEX_INVALID", `invalid $regex pattern: "${val.$regex}"`);
+          }
+        } else if (["$gt", "$gte", "$lt", "$lte"].includes(op) && _isDateString(val[op])) {
+          processed[op] = new Date(val[op]);
+        } else {
+          processed[op] = val[op];
+        }
+      }
+      result[key] = processed;
+    } else {
+      result[key] = val;
+    }
+  }
+  return result;
+}
+
+function _isDateString(val) {
+  if (typeof val !== "string") return false;
+  return /\d{4}-\d{2}-\d{2}/.test(val) && !isNaN(Date.parse(val));
+}
+
+/**
+ * Validate a filter generated by an LLM against a known schema.
+ * Returns warning strings for unknown fields  -  does not throw.
+ *
+ * @param {object} filter
+ * @param {object|null} schema  - Plain { field: type } schema object.
+ * @returns {string[]}
+ */
+function validateLLMFilter(filter, schema) {
+  const warnings = [];
+  if (!schema || typeof filter !== "object" || filter === null) return warnings;
+
+  for (const key of Object.keys(filter)) {
+    if (key.startsWith("$")) continue;
+    const baseField = key.split(".")[0];
+    if (!(baseField in schema)) {
+      warnings.push(`Unknown field referenced in generated filter: "${key}"`);
+    }
+  }
+
+  return warnings;
+}
+
+/**
+ * AI query and embedding subsystem.
+ *
+ * Owns the LLM adapter, embedding adapter, and query cache. Extracted from
+ * `Skalex` so the main class stays a thin lifecycle facade.
+ *
+ * @param {object} opts
+ * @param {object|null} opts.aiAdapter - Pre-built LLM adapter or null.
+ * @param {object|null} opts.embeddingAdapter - Pre-built embedding adapter or null.
+ * @param {object} opts.queryCacheConfig - { maxSize, ttl } for QueryCache.
+ * @param {number} opts.regexMaxLength - Max $regex length for LLM filters.
+ * @param {object} opts.persistence - PersistenceManager reference.
+ * @param {Function} opts.getCollections - () => collections store map.
+ * @param {Function} opts.getCollection - (name) => Collection instance.
+ * @param {Function} opts.getSchema - (name) => schema object or null.
+ * @param {Function} opts.log - Debug logger (message) => void.
+ */
+class SkalexAI {
+  constructor({ aiAdapter, embeddingAdapter, queryCacheConfig, regexMaxLength, persistence, getCollections, getCollection, getSchema, log }) {
+    this._aiAdapter = aiAdapter;
+    this._embeddingAdapter = embeddingAdapter;
+    this._queryCache = new QueryCache(queryCacheConfig || {});
+    this._regexMaxLength = regexMaxLength ?? 500;
+    this._persistence = persistence;
+    this._getCollections = getCollections;
+    this._getCollection = getCollection;
+    this._getSchema = getSchema;
+    this._log = log;
+  }
+
+  /**
+   * Embed a text string using the configured embedding adapter.
+   * @param {string} text
+   * @returns {Promise<number[]>}
+   */
+  async embed(text) {
+    if (!this._embeddingAdapter) {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED",
+        "db.embed() requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor."
+      );
+    }
+    return this._embeddingAdapter.embed(text);
+  }
+
+  /**
+   * Natural-language query: translate `nlQuery` into a filter via the language
+   * model and run it against the collection. Results are cached by query hash.
+   *
+   * @param {string} collectionName
+   * @param {string} nlQuery
+   * @param {{ limit?: number }} [opts]
+   * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
+   */
+  async ask(collectionName, nlQuery, { limit = 20 } = {}) {
+    if (!this._aiAdapter) {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_LLM_REQUIRED",
+        'db.ask() requires a language model adapter. Configure { ai: { provider, model: "..." } }.'
+      );
+    }
+
+    const col = this._getCollection(collectionName);
+    const schema = this._getSchema(collectionName);
+
+    // Cache lookup
+    let filter = this._queryCache.get(collectionName, schema, nlQuery);
+    if (!filter) {
+      filter = await this._aiAdapter.generate(schema, nlQuery);
+      const warnings = validateLLMFilter(filter, schema);
+      if (warnings.length) warnings.forEach(w => this._log(`[ask] ${w}`));
+      this._queryCache.set(collectionName, schema, nlQuery, filter);
+      this._persistence.updateMeta(this._getCollections(), { queryCache: this._queryCache.toJSON() });
+    }
+
+    return col.find(processLLMFilter(filter, { regexMaxLength: this._regexMaxLength }), { limit });
+  }
+
+  /** @returns {QueryCache} */
+  get queryCache() { return this._queryCache; }
+}
+
+/**
+ * SkalexImporter - handles JSON file import into collections.
+ *
+ * Extracted from Skalex to remove filesystem-specific logic from the
+ * main class.
+ *
+ * @param {object} opts
+ * @param {object} opts.fs - Storage adapter with readRaw().
+ * @param {Function} opts.getCollection - (name) => Collection instance.
+ */
+class SkalexImporter {
+  constructor({ fs, getCollection }) {
+    this._fs = fs;
+    this._getCollection = getCollection;
+  }
+
+  /**
+   * Import documents from a JSON file into a collection.
+   * The collection name is derived from the file name (without extension).
+   * @param {string} filePath - Absolute or relative path to the file.
+   * @returns {Promise<Document[]>}
+   */
+  async import(filePath) {
+    const content = await this._fs.readRaw(filePath);
+    let docs;
+    try {
+      docs = JSON.parse(content);
+    } catch {
+      throw new PersistenceError("ERR_SKALEX_PERSISTENCE_INVALID_JSON", `import: invalid JSON in file "${filePath}"`, { filePath });
+    }
+    // Handle both forward-slash and backslash path separators (Windows).
+    const name = filePath.split(/[/\\]/).pop().replace(/\.[^.]+$/, "");
+    const col = this._getCollection(name);
+    return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
+  }
+}
+
+/**
  * persistence.js  -  PersistenceManager for Skalex.
  *
  * Owns all load/save orchestration, dirty tracking, write-queue coalescing,
@@ -2799,6 +3473,8 @@ class PersistenceManager {
    * @param {Function} opts.logger       - (msg, level) => void
    * @param {boolean}  [opts.debug=false]
    */
+  get [Symbol.toStringTag]() { return "PersistenceManager"; }
+
   constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null }) {
     this._adapter = adapter;
     this._serializer = serializer;
@@ -3055,7 +3731,10 @@ class PersistenceManager {
    */
   markDirty(collections, name) {
     const col = collections[name];
-    if (col) col._dirty = true;
+    if (col) {
+      col._dirty = true;
+      col._statsDirty = true;
+    }
   }
 
   // ─── Serialization ─────────────────────────────────────────────────────
@@ -3207,7 +3886,7 @@ class PersistenceManager {
     if (typeof this._adapter.cleanOrphans !== "function") return;
     try {
       const removed = await this._adapter.cleanOrphans();
-      if (removed > 0) this._log(`Cleaned ${removed} orphan temp file(s)`);
+      if (removed > 0) this._logger(`Cleaned ${removed} orphan temp file(s) (indicates prior incomplete write)`, "warn");
     } catch { /* ignore cleanup failures */ }
   }
 
@@ -3278,6 +3957,12 @@ class PersistenceManager {
 /** Default window of aborted transaction IDs retained for stale-continuation detection. */
 const DEFAULT_ABORTED_ID_WINDOW = 1000;
 
+/** Collection methods that go through the MutationPipeline and need the depth counter. */
+const _MUTATION_METHODS = Object.freeze(new Set([
+  "insertOne", "insertMany", "updateOne", "updateMany",
+  "upsert", "upsertMany", "deleteOne", "deleteMany", "restore",
+]));
+
 /**
  * Valid values for the `deferredEffectErrors` option. Exported so the
  * Skalex constructor and the per-transaction option path share a single
@@ -3322,6 +4007,8 @@ class TransactionManager {
     /** @type {number} Pruning window for _abortedIds. */
     this._abortedIdWindow = abortedIdWindow;
   }
+
+  get [Symbol.toStringTag]() { return "TransactionManager"; }
 
   /** Whether a transaction is currently active. */
   get active() {
@@ -3406,7 +4093,41 @@ class TransactionManager {
             return (name) => {
               const col = target.useCollection(name);
               col._activeTxId = ctx.id;
-              return col;
+              // Return a Proxy of the Collection that marks each method
+              // call as originating from the tx proxy. This lets the
+              // pipeline distinguish tx writes from non-tx writes on the
+              // same shared Collection instance.
+              // Wrap the Collection in a Proxy that increments a depth
+              // counter on mutation methods only. The pipeline checks this
+              // counter to distinguish tx-proxy writes from non-tx writes
+              // on the same shared Collection singleton.
+              //
+              // Only mutation methods are wrapped because reads (find,
+              // findOne, count, etc.) do not go through the pipeline and
+              // should not elevate the counter. If reads were wrapped, a
+              // plugin-triggered non-tx write during a tx-proxy find()
+              // would bypass the collection lock.
+              return new Proxy(col, {
+                get(colTarget, colProp) {
+                  const v = Reflect.get(colTarget, colProp);
+                  if (typeof v !== "function") return v;
+                  if (!_MUTATION_METHODS.has(colProp)) return v.bind(colTarget);
+                  return function (...args) {
+                    colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
+                    try {
+                      const result = v.apply(colTarget, args);
+                      if (result && typeof result.then === "function") {
+                        return result.finally(() => { colTarget._txProxyCallDepth--; });
+                      }
+                      colTarget._txProxyCallDepth--;
+                      return result;
+                    } catch (e) {
+                      colTarget._txProxyCallDepth--;
+                      throw e;
+                    }
+                  };
+                },
+              });
             };
           }
           const value = Reflect.get(target, prop);
@@ -3466,7 +4187,13 @@ class TransactionManager {
           if (!ctx.preExisting.has(name)) {
             delete db.collections[name];
             delete db._collectionInstances[name];
+            if (db._registry?._statsCache) db._registry._statsCache.delete(name);
           }
+        }
+        // Clear stats cache for rolled-back collections so stale sizes
+        // don't survive the rollback.
+        for (const name of ctx.touchedCollections) {
+          if (db._registry?._statsCache) db._registry._statsCache.delete(name);
         }
 
         throw error;
@@ -3535,6 +4262,19 @@ class TransactionManager {
       ctx.snapshots.set(name, snap);
     }
     ctx.touchedCollections.add(name);
+  }
+
+  /**
+   * Check whether a collection is currently locked by an active transaction.
+   * A collection is locked from the moment it receives its first transactional
+   * write (snapshotIfNeeded) until the transaction commits or rolls back.
+   *
+   * @param {string} name - Collection name.
+   * @returns {boolean}
+   */
+  isCollectionLocked(name) {
+    const ctx = this._ctx;
+    return ctx !== null && !ctx.aborted && ctx.touchedCollections.has(name);
   }
 
   /**
@@ -3626,6 +4366,8 @@ class CollectionRegistry {
     this.stores = {};
     /** @type {Object<string, import("./collection.js").default>} Cached Collection instances. */
     this._instances = {};
+    /** @type {Map<string, { result: object, _snapshotLen: number }>} Cached stats per collection. */
+    this._statsCache = new Map();
   }
 
   /**
@@ -3806,12 +4548,26 @@ class CollectionRegistry {
     const calc = (n) => {
       const col = this.stores[n];
       if (!col) return null;
+
+      // Return cached stats if the collection has not been mutated since
+      // the last computation. The _dirty flag is set by PersistenceManager
+      // on every write, and cleared after a successful save. We use a
+      // separate _statsDirty flag so stats invalidation is decoupled from
+      // persistence state.
+      const cached = this._statsCache.get(n);
+      if (cached && cached._snapshotLen === col.data.length && !col._statsDirty) {
+        return cached.result;
+      }
+
       const count = col.data.length;
       let estimatedSize = 0;
       for (const doc of col.data) {
         try { estimatedSize += JSON.stringify(doc).length; } catch (_) { }
       }
-      return { collection: n, count, estimatedSize, avgDocSize: count > 0 ? Math.round(estimatedSize / count) : 0 };
+      const result = { collection: n, count, estimatedSize, avgDocSize: count > 0 ? Math.round(estimatedSize / count) : 0 };
+      this._statsCache.set(n, { result, _snapshotLen: count });
+      col._statsDirty = false;
+      return result;
     };
     if (name) return calc(name);
     return Object.keys(this.stores).map(calc);
@@ -3823,6 +4579,7 @@ class CollectionRegistry {
   clear() {
     this.stores = {};
     this._instances = {};
+    this._statsCache.clear();
   }
 }
 
@@ -3840,8 +4597,51 @@ class EmbeddingAdapter {
    * @returns {Promise<number[]>}
    */
   async embed(text) {
-    throw new Error("EmbeddingAdapter.embed() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "EmbeddingAdapter.embed() not implemented");
   }
+}
+
+/**
+ * fetch.js - shared fetch-with-retry utility for all AI adapters.
+ *
+ * Centralises retry/timeout/exponential-backoff logic so each adapter
+ * only defines its URL, headers, and response handling. Zero runtime
+ * dependencies - uses globalThis.fetch and AbortController.
+ */
+
+/**
+ * Fetch a URL with retry, timeout, and exponential backoff.
+ *
+ * @param {string} url
+ * @param {RequestInit} options - Standard fetch options (method, headers, body, etc.).
+ * @param {object} [retryOpts]
+ * @param {number} [retryOpts.retries=0] - Number of retry attempts. 0 = no retries.
+ * @param {number} [retryOpts.retryDelay=1000] - Base delay in ms (doubles each attempt).
+ * @param {number|null} [retryOpts.timeout=null] - Per-request timeout in ms. null = no timeout.
+ * @param {typeof globalThis.fetch} [retryOpts.fetchFn=globalThis.fetch] - Fetch implementation (for testing).
+ * @returns {Promise<Response>}
+ */
+async function fetchWithRetry(url, options, { retries = 0, retryDelay = 1000, timeout = null, fetchFn = globalThis.fetch } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = timeout != null ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
+    try {
+      const response = await fetchFn(url, {
+        ...options,
+        ...(controller && { signal: controller.signal }),
+      });
+      return response;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, retryDelay * 2 ** attempt));
+      }
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -3890,7 +4690,7 @@ class OpenAIEmbeddingAdapter extends EmbeddingAdapter {
     fetch: fetchFn = globalThis.fetch,
   } = {}) {
     super();
-    if (!apiKey) throw new Error("OpenAIEmbeddingAdapter requires an apiKey");
+    if (!apiKey) throw new AdapterError("ERR_SKALEX_ADAPTER_MISSING_API_KEY", "OpenAIEmbeddingAdapter requires an apiKey");
     this.apiKey       = apiKey;
     this.model        = model;
     this.baseUrl      = baseUrl;
@@ -3904,42 +4704,26 @@ class OpenAIEmbeddingAdapter extends EmbeddingAdapter {
   }
 
   async embed(text) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(this.baseUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${this.apiKey}`,
-            ...(this.organization && { "OpenAI-Organization": this.organization }),
-            ...this.headers,
-          },
-          body: JSON.stringify({
-            input: text,
-            model: this.model,
-            ...(this.dimensions !== undefined && { dimensions: this.dimensions }),
-          }),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`OpenAI embedding API error ${response.status}: ${err}`);
-        }
-        const data = await response.json();
-        return data.data[0].embedding;
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(this.baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.apiKey}`,
+        ...(this.organization && { "OpenAI-Organization": this.organization }),
+        ...this.headers,
+      },
+      body: JSON.stringify({
+        input: text,
+        model: this.model,
+        ...(this.dimensions !== undefined && { dimensions: this.dimensions }),
+      }),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `OpenAI embedding API error ${response.status}: ${err}`, { status: response.status, adapter: "openai-embedding" });
     }
-    throw lastErr;
+    const data = await response.json();
+    return data.data[0].embedding;
   }
 }
 
@@ -3992,36 +4776,20 @@ class OllamaEmbeddingAdapter extends EmbeddingAdapter {
   }
 
   async embed(text) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(`${this.host}/api/embeddings`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...this.headers,
-          },
-          body: JSON.stringify({ model: this.model, prompt: text }),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`Ollama embedding API error ${response.status}: ${err}`);
-        }
-        const data = await response.json();
-        return data.embedding;
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(`${this.host}/api/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.headers,
+      },
+      body: JSON.stringify({ model: this.model, prompt: text }),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `Ollama embedding API error ${response.status}: ${err}`, { status: response.status, adapter: "ollama-embedding" });
     }
-    throw lastErr;
+    const data = await response.json();
+    return data.embedding;
   }
 }
 
@@ -4040,7 +4808,7 @@ class LLMAdapter {
    * @returns {Promise<object>} A filter object compatible with matchesFilter().
    */
   async generate(schema, nlQuery) {
-    throw new Error("LLMAdapter.generate() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "LLMAdapter.generate() not implemented");
   }
 
   /**
@@ -4049,7 +4817,7 @@ class LLMAdapter {
    * @returns {Promise<string>}
    */
   async summarize(texts) {
-    throw new Error("LLMAdapter.summarize() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "LLMAdapter.summarize() not implemented");
   }
 }
 
@@ -4125,7 +4893,7 @@ class OpenAILLMAdapter extends LLMAdapter {
     summarizePrompt = SYSTEM_SUMMARIZE,
   } = {}) {
     super();
-    if (!apiKey) throw new Error("OpenAILLMAdapter requires an apiKey");
+    if (!apiKey) throw new AdapterError("ERR_SKALEX_ADAPTER_MISSING_API_KEY", "OpenAILLMAdapter requires an apiKey");
     this.apiKey          = apiKey;
     this.model           = model;
     this.baseUrl         = baseUrl;
@@ -4177,37 +4945,21 @@ class OpenAILLMAdapter extends LLMAdapter {
   }
 
   async _post(body) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(this.baseUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${this.apiKey}`,
-            ...(this.organization && { "OpenAI-Organization": this.organization }),
-            ...this.headers,
-          },
-          body: JSON.stringify(body),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`OpenAI API error ${response.status}: ${err}`);
-        }
-        return response.json();
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(this.baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.apiKey}`,
+        ...(this.organization && { "OpenAI-Organization": this.organization }),
+        ...this.headers,
+      },
+      body: JSON.stringify(body),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `OpenAI API error ${response.status}: ${err}`, { status: response.status, adapter: "openai" });
     }
-    throw lastErr;
+    return response.json();
   }
 }
 
@@ -4269,7 +5021,7 @@ class AnthropicLLMAdapter extends LLMAdapter {
     summarizePrompt = SYSTEM_SUMMARIZE,
   } = {}) {
     super();
-    if (!apiKey) throw new Error("AnthropicLLMAdapter requires an apiKey");
+    if (!apiKey) throw new AdapterError("ERR_SKALEX_ADAPTER_MISSING_API_KEY", "AnthropicLLMAdapter requires an apiKey");
     this.apiKey          = apiKey;
     this.model           = model;
     this.baseUrl         = baseUrl;
@@ -4315,37 +5067,21 @@ class AnthropicLLMAdapter extends LLMAdapter {
   }
 
   async _post(body) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(this.baseUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": this.apiKey,
-            "anthropic-version": this.apiVersion,
-            ...this.headers,
-          },
-          body: JSON.stringify(body),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`Anthropic API error ${response.status}: ${err}`);
-        }
-        return response.json();
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(this.baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": this.apiKey,
+        "anthropic-version": this.apiVersion,
+        ...this.headers,
+      },
+      body: JSON.stringify(body),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `Anthropic API error ${response.status}: ${err}`, { status: response.status, adapter: "anthropic" });
     }
-    throw lastErr;
+    return response.json();
   }
 }
 
@@ -4442,35 +5178,19 @@ class OllamaLLMAdapter extends LLMAdapter {
   }
 
   async _post(body) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(`${this.host}/api/generate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...this.headers,
-          },
-          body: JSON.stringify(body),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`Ollama API error ${response.status}: ${err}`);
-        }
-        return response.json();
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(`${this.host}/api/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.headers,
+      },
+      body: JSON.stringify(body),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `Ollama API error ${response.status}: ${err}`, { status: response.status, adapter: "ollama" });
     }
-    throw lastErr;
+    return response.json();
   }
 }
 
@@ -4851,7 +5571,7 @@ class Memory {
    * @param {string} id
    * @returns {Promise<object|null>}
    */
-  async forget(id) {
+  forget(id) {
     return this._col.deleteOne({ _id: id });
   }
 
@@ -5079,161 +5799,6 @@ class ChangeLog {
     }
     await this._db.saveData(collection);
   }
-}
-
-/**
- * ask.js  -  query cache and LLM filter utilities for db.ask().
- */
-
-// ─── Hash ─────────────────────────────────────────────────────────────────────
-
-/**
- * Deterministic djb2-style hash of a string.
- * @param {string} str
- * @returns {string} 8-char hex
- */
-function _djb2(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
-}
-
-// ─── QueryCache ───────────────────────────────────────────────────────────────
-
-/**
- * QueryCache  -  maps hash(collection + schema + query) → filter object.
- *
- * Persisted in the _meta collection so it survives connect/disconnect cycles.
- * The cache avoids calling the LLM again for the same question on the same schema.
- *
- * @param {object} [opts]
- * @param {number} [opts.maxSize=500] - Maximum number of entries. Oldest entry is evicted when full.
- * @param {number} [opts.ttl=0]      - Entry TTL in ms. 0 = no expiry.
- */
-class QueryCache {
-  constructor({ maxSize = 500, ttl = 0 } = {}) {
-    this._cache   = new Map();
-    this._maxSize = maxSize;
-    this._ttl     = ttl;
-  }
-
-  _key(collectionName, schema, query) {
-    return _djb2(JSON.stringify({ collectionName, schema, query }));
-  }
-
-  get(collectionName, schema, query) {
-    const key   = this._key(collectionName, schema, query);
-    const entry = this._cache.get(key);
-    if (!entry) return undefined;
-    if (this._ttl > 0 && Date.now() - entry.ts > this._ttl) {
-      this._cache.delete(key);
-      return undefined;
-    }
-    return entry.filter;
-  }
-
-  set(collectionName, schema, query, filter) {
-    const key = this._key(collectionName, schema, query);
-    // Evict oldest entry when at capacity (and key is new)
-    if (this._cache.size >= this._maxSize && !this._cache.has(key)) {
-      this._cache.delete(this._cache.keys().next().value);
-    }
-    this._cache.set(key, { filter, ts: Date.now() });
-  }
-
-  toJSON() {
-    return Object.fromEntries(
-      [...this._cache.entries()].map(([k, v]) => [k, v])
-    );
-  }
-
-  fromJSON(data) {
-    if (!data || typeof data !== "object") return;
-    for (const [k, v] of Object.entries(data)) {
-      this._cache.set(k, v);
-    }
-  }
-
-  get size() {
-    return this._cache.size;
-  }
-}
-
-// ─── Filter helpers ───────────────────────────────────────────────────────────
-
-/**
- * Convert an LLM-generated filter into a form matchesFilter() can execute.
- * - $regex string values → RegExp objects
- * - ISO date strings in range operators → Date objects
- *
- * @param {object} filter
- * @param {object} [opts]
- * @param {number} [opts.regexMaxLength=500] - Maximum allowed $regex pattern length.
- * @returns {object}
- */
-function processLLMFilter(filter, { regexMaxLength = 500 } = {}) {
-  if (typeof filter !== "object" || filter === null) return filter;
-
-  const result = {};
-  for (const key of Object.keys(filter)) {
-    const val = filter[key];
-    if (val && typeof val === "object" && !Array.isArray(val)) {
-      const processed = {};
-      for (const op of Object.keys(val)) {
-        if (op === "$regex" && typeof val.$regex === "string") {
-          if (val.$regex.length > regexMaxLength)
-            throw new Error(`$regex pattern too long (max ${regexMaxLength} characters)`);
-          // Reject patterns with nested quantifiers that cause catastrophic backtracking.
-          // e.g. (a+)+, (a|a)*, (x+){2,}
-          if (/\([^)]*[+*][^)]*\)[+*{]/.test(val.$regex))
-            throw new Error(`$regex pattern rejected: nested quantifiers risk ReDoS`);
-          try {
-            processed.$regex = new RegExp(val.$regex);
-          } catch {
-            throw new Error(`invalid $regex pattern: "${val.$regex}"`);
-          }
-        } else if (["$gt", "$gte", "$lt", "$lte"].includes(op) && _isDateString(val[op])) {
-          processed[op] = new Date(val[op]);
-        } else {
-          processed[op] = val[op];
-        }
-      }
-      result[key] = processed;
-    } else {
-      result[key] = val;
-    }
-  }
-  return result;
-}
-
-function _isDateString(val) {
-  if (typeof val !== "string") return false;
-  return /\d{4}-\d{2}-\d{2}/.test(val) && !isNaN(Date.parse(val));
-}
-
-/**
- * Validate a filter generated by an LLM against a known schema.
- * Returns warning strings for unknown fields  -  does not throw.
- *
- * @param {object} filter
- * @param {object|null} schema  - Plain { field: type } schema object.
- * @returns {string[]}
- */
-function validateLLMFilter(filter, schema) {
-  const warnings = [];
-  if (!schema || typeof filter !== "object" || filter === null) return warnings;
-
-  for (const key of Object.keys(filter)) {
-    if (key.startsWith("$")) continue;
-    const baseField = key.split(".")[0];
-    if (!(baseField in schema)) {
-      warnings.push(`Unknown field referenced in generated filter: "${key}"`);
-    }
-  }
-
-  return warnings;
 }
 
 /**
@@ -5500,7 +6065,7 @@ class PluginEngine {
    */
   register(plugin) {
     if (typeof plugin !== "object" || plugin === null) {
-      throw new TypeError("Plugin must be a non-null object.");
+      throw new ValidationError("ERR_SKALEX_VALIDATION_PLUGIN", "Plugin must be a non-null object.", { got: plugin === null ? "null" : typeof plugin });
     }
     this._plugins.push(plugin);
   }
@@ -5592,22 +6157,32 @@ function _validateCollection(name) {
 }
 
 /**
- * Recursively strip `$fn` keys from an MCP-sourced filter. The `$fn` operator
- * accepts arbitrary JavaScript functions and would let an AI agent execute
- * code in the host process. Traverses into `$or`, `$and`, `$not` branches.
+ * Sanitize an MCP-sourced filter. Handles `$fn` according to the registered
+ * predicates allowlist:
  *
- * Enforces a maximum traversal depth ({@link MAX_FILTER_DEPTH}) so an
- * adversarial agent cannot send a deeply nested payload to blow the call
- * stack before the filter reaches the query engine.
+ * - If `predicates` is provided and `$fn` is a string matching a registered
+ *   name, the string is replaced with the real function. The agent gets
+ *   `$fn` power without code crossing the wire.
+ * - If `$fn` is a string that does NOT match a registered name, it is
+ *   stripped and a warning is logged.
+ * - If `$fn` is anything other than a string (a function, an object, code),
+ *   it is stripped regardless of predicates.
+ * - If no `predicates` map is provided, all `$fn` keys are stripped
+ *   (alpha.3 default behavior).
+ *
+ * Traverses into `$or`, `$and`, `$not` branches. Enforces a maximum
+ * traversal depth ({@link MAX_FILTER_DEPTH}) so an adversarial agent
+ * cannot send a deeply nested payload to blow the call stack.
  *
  * @param {*} filter
  * @param {(msg: string, level?: string) => void} [logger]
  * @param {number} [depth=0] - Current recursion depth (internal).
- * @returns {*} A new filter with all `$fn` keys removed.
+ * @param {Record<string, Function>} [predicates] - Named predicate allowlist.
+ * @returns {*} A new filter with `$fn` keys resolved, stripped, or kept.
  * @throws {ValidationError} ERR_SKALEX_VALIDATION_FILTER_DEPTH when the
  *   filter tree nests deeper than {@link MAX_FILTER_DEPTH}.
  */
-function sanitizeFilter(filter, logger, depth = 0) {
+function sanitizeFilter(filter, logger, depth = 0, predicates = null) {
   if (depth > MAX_FILTER_DEPTH) {
     throw new ValidationError(
       "ERR_SKALEX_VALIDATION_FILTER_DEPTH",
@@ -5617,14 +6192,21 @@ function sanitizeFilter(filter, logger, depth = 0) {
     );
   }
   if (filter === null || typeof filter !== "object") return filter;
-  if (Array.isArray(filter)) return filter.map(f => sanitizeFilter(f, logger, depth + 1));
+  if (Array.isArray(filter)) return filter.map(f => sanitizeFilter(f, logger, depth + 1, predicates));
   const out = {};
   for (const key of Object.keys(filter)) {
     if (key === "$fn") {
+      const val = filter[key];
+      // Only string names can be resolved against the allowlist.
+      // Functions, objects, and code strings are always stripped.
+      if (typeof val === "string" && predicates && val in predicates) {
+        out[key] = predicates[val];
+        continue;
+      }
       if (logger) logger(`[MCP] $fn stripped from agent-supplied filter`, "warn");
       continue;
     }
-    out[key] = sanitizeFilter(filter[key], logger, depth + 1);
+    out[key] = sanitizeFilter(filter[key], logger, depth + 1, predicates);
   }
   return out;
 }
@@ -5745,10 +6327,12 @@ const TOOL_DEFS = [
  * @param {string} name - Tool name.
  * @param {object} args - Tool arguments.
  * @param {object} db   - Skalex instance.
+ * @param {Record<string, Function>|null} [predicates] - Named predicate allowlist.
  * @returns {Promise<object>} Plain value to be JSON.stringify'd into content text.
  */
-async function callTool(name, args, db) {
+async function callTool(name, args, db, predicates = null) {
   const log = db._logger;
+  const _sanitize = (f) => sanitizeFilter(f, log, 0, predicates);
   switch (name) {
     case "skalex_collections":
       return Object.keys(db.collections).filter(n => !n.startsWith("_"));
@@ -5763,7 +6347,7 @@ async function callTool(name, args, db) {
       const opts = {};
       if (args.limit) opts.limit = args.limit;
       if (args.sort)  opts.sort  = args.sort;
-      return col.find(sanitizeFilter(args.filter || {}, log), opts);
+      return col.find(_sanitize(args.filter || {}), opts);
     }
 
     case "skalex_insert": {
@@ -5773,14 +6357,14 @@ async function callTool(name, args, db) {
 
     case "skalex_update": {
       const col = db.useCollection(_validateCollection(args.collection));
-      const filter = sanitizeFilter(args.filter || {}, log);
+      const filter = _sanitize(args.filter || {});
       if (args.many) return col.updateMany(filter, args.update || {});
       return col.updateOne(filter, args.update || {});
     }
 
     case "skalex_delete": {
       const col = db.useCollection(_validateCollection(args.collection));
-      const filter = sanitizeFilter(args.filter || {}, log);
+      const filter = _sanitize(args.filter || {});
       if (args.many) return col.deleteMany(filter);
       return col.deleteOne(filter);
     }
@@ -5790,7 +6374,7 @@ async function callTool(name, args, db) {
       return col.search(args.query, {
         limit:    args.limit    ?? 10,
         minScore: args.minScore ?? 0,
-        filter:   sanitizeFilter(args.filter, log),
+        filter:   _sanitize(args.filter),
       });
     }
 
@@ -6135,7 +6719,7 @@ class StdioTransport {
  * await server.listen();
  */
 
-const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.3" };
+const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.4" };
 const PROTOCOL_VERSION = "2024-11-05";
 
 class SkalexMCPServer {
@@ -6148,6 +6732,10 @@ class SkalexMCPServer {
    * @param {object}  [opts.scopes]               - Access control map. Default: { "*": ["read"] } (read-only).
    * @param {string|null} [opts.allowedOrigin]    - CORS origin for HTTP transport. Default: null (disabled).
    * @param {number}  [opts.maxBodySize]          - Max POST body size in bytes for HTTP transport. Default: 1 MiB.
+   * @param {Record<string, Function>} [opts.predicates] - Named predicate allowlist
+   *   for `$fn` in agent-supplied filters. Agents reference predicates by name;
+   *   the MCP handler resolves the name to the real function. No code crosses
+   *   the wire. When omitted, all `$fn` keys are stripped (alpha.3 default).
    */
   constructor(db, opts = {}) {
     this._db            = db;
@@ -6157,6 +6745,7 @@ class SkalexMCPServer {
     this._allowedOrigin = opts.allowedOrigin ?? null;
     this._maxBodySize   = opts.maxBodySize   ?? 1_048_576;
     this._scopes        = opts.scopes        || { "*": ["read"] };
+    this._predicates    = opts.predicates    || null;
     this._t             = null; // active transport instance
   }
 
@@ -6268,7 +6857,7 @@ class SkalexMCPServer {
     }
 
     try {
-      const result = await callTool(name, args, this._db);
+      const result = await callTool(name, args, this._db, this._predicates);
       this._send(ok(id, toolResult(JSON.stringify(result, null, 2))));
     } catch (err) {
       this._send(ok(id, toolError(err.message || String(err))));
@@ -6423,6 +7012,19 @@ class Skalex {
     }
 
     this._adapterConfig = adapter ?? null; // track whether a custom adapter was explicitly provided
+    // Detect browser/worker environments where FsAdapter will fail because
+    // node:fs/path/zlib are unavailable. Checks for `document` (browsers)
+    // or `importScripts` (web/service workers), while excluding Deno and
+    // Node.js which both define `process` and have real file system access.
+    const _isBrowserLike = typeof globalThis.process === "undefined"
+      && (typeof globalThis.document !== "undefined" || typeof globalThis.importScripts === "function");
+    if (!adapter && _isBrowserLike) {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_REQUIRED",
+        "Browser/worker usage requires an explicit adapter (e.g. LocalStorageAdapter or a custom adapter). " +
+        "Pass { adapter: new LocalStorageAdapter() } to the Skalex constructor."
+      );
+    }
     let fs = adapter || new FsAdapter({ dir: path, format });
     if (encrypt) fs = new EncryptedAdapter(fs, encrypt.key);
     this.fs = fs;
@@ -6443,17 +7045,12 @@ class Skalex {
     this._encryptConfig = encrypt || null;
     this._pluginsConfig = Array.isArray(plugins) ? plugins : null;
     this._memoryConfig = memory || null;
-    this._regexMaxLength = regexMaxLength ?? 500;
     this._idGenerator = idGenerator ?? null;
     this._serializer = serializer ?? _serialize;
     this._deserializer = deserializer ?? _deserialize;
     this._autoSave = autoSave ?? false;
     this._txManager = new TransactionManager();
-    this._ttlSweepInterval = ttlSweepInterval ?? 0;
-    this._ttlTimer = null;
     this._logger = logger$1 ?? logger;
-    this._embeddingAdapter = embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null);
-    this._aiAdapter = llmAdapter ?? (ai ? createLLMAdapter(ai) : null);
     this._persistence = new PersistenceManager({
       adapter: this.fs,
       serializer: this._serializer,
@@ -6464,7 +7061,6 @@ class Skalex {
       registry: this._registry,
     });
     this._changeLog = new ChangeLog(this);
-    this._queryCache = new QueryCache(queryCache || {});
     this._eventBus = new EventBus();
     this._queryLog = slowQueryLog ? new QueryLog(slowQueryLog) : null;
     this._sessionStats = new SessionStats();
@@ -6473,6 +7069,28 @@ class Skalex {
     if (Array.isArray(plugins)) {
       for (const p of plugins) this._plugins.register(p);
     }
+
+    // ── Extracted subsystems ──────────────────────────────────────────────
+    this._ai = new SkalexAI({
+      aiAdapter: llmAdapter ?? (ai ? createLLMAdapter(ai) : null),
+      embeddingAdapter: embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null),
+      queryCacheConfig: queryCache || {},
+      regexMaxLength: regexMaxLength ?? 500,
+      persistence: this._persistence,
+      getCollections: () => this.collections,
+      getCollection: (name) => this.useCollection(name),
+      getSchema: (name) => this.schema(name),
+      log: (msg) => this._log(msg),
+    });
+    this._ttlScheduler = new TtlScheduler({
+      interval: ttlSweepInterval ?? 0,
+      persistence: this._persistence,
+      log: (msg) => this._log(msg),
+    });
+    this._importer = new SkalexImporter({
+      fs: this.fs,
+      getCollection: (name) => this.useCollection(name),
+    });
   }
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -6506,7 +7124,7 @@ class Skalex {
 
       // Restore persisted query cache
       const meta = this._persistence.getMeta(this.collections);
-      if (meta.queryCache) this._queryCache.fromJSON(meta.queryCache);
+      if (meta.queryCache) this._ai.queryCache.fromJSON(meta.queryCache);
 
       // Run pending migrations. Each migration runs in its own transaction
       // and records its version in `_meta` atomically with its data writes
@@ -6518,14 +7136,9 @@ class Skalex {
         await this._migrations.run({ runInTx, recordApplied }, applied);
       }
 
-      // Sweep expired TTL documents
-      this._sweepTtl();
-
-      // Start periodic TTL sweep if configured
-      if (this._ttlSweepInterval > 0) {
-        this._ttlTimer = setInterval(() => this._sweepTtl(), this._ttlSweepInterval);
-        if (this._ttlTimer?.unref) this._ttlTimer.unref();
-      }
+      // Sweep expired TTL documents and start periodic sweep if configured
+      this._ttlScheduler.sweep(this.collections);
+      this._ttlScheduler.start(this.collections);
 
       this.isConnected = true;
       this._log("> - Connected to the database (√)");
@@ -6543,10 +7156,7 @@ class Skalex {
    */
   async disconnect() {
     try {
-      if (this._ttlTimer) {
-        clearInterval(this._ttlTimer);
-        this._ttlTimer = null;
-      }
+      this._ttlScheduler.stop();
       await this.saveData();
       this._registry.clear();
       this.collections = this._registry.stores;
@@ -6927,16 +7537,7 @@ class Skalex {
    * @returns {Promise<Document[]>}
    */
   async import(filePath) {
-    const content = await this.fs.readRaw(filePath);
-    let docs;
-    try {
-      docs = JSON.parse(content);
-    } catch {
-      throw new PersistenceError("ERR_SKALEX_PERSISTENCE_INVALID_JSON", `import: invalid JSON in file "${filePath}"`, { filePath });
-    }
-    const name = filePath.split("/").pop().replace(/\.[^.]+$/, "");
-    const col = this.useCollection(name);
-    return col.insertMany(Array.isArray(docs) ? docs : [docs], { save: true });
+    return this._importer.import(filePath);
   }
 
   // ─── Embedding ───────────────────────────────────────────────────────────
@@ -6947,13 +7548,7 @@ class Skalex {
    * @returns {Promise<number[]>}
    */
   async embed(text) {
-    if (!this._embeddingAdapter) {
-      throw new AdapterError(
-        "ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED",
-        "db.embed() requires an AI adapter. Pass { ai: { provider, apiKey } } to the Skalex constructor."
-      );
-    }
-    return this._embeddingAdapter.embed(text);
+    return this._ai.embed(text);
   }
 
   // ─── AI Query ─────────────────────────────────────────────────────────────
@@ -6967,28 +7562,8 @@ class Skalex {
    * @param {{ limit?: number }} [opts]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
-  async ask(collectionName, nlQuery, { limit = 20 } = {}) {
-    if (!this._aiAdapter) {
-      throw new AdapterError(
-        "ERR_SKALEX_ADAPTER_LLM_REQUIRED",
-        'db.ask() requires a language model adapter. Configure { ai: { provider, model: "..." } }.'
-      );
-    }
-
-    const col = this.useCollection(collectionName);
-    const schema = this.schema(collectionName);
-
-    // Cache lookup
-    let filter = this._queryCache.get(collectionName, schema, nlQuery);
-    if (!filter) {
-      filter = await this._aiAdapter.generate(schema, nlQuery);
-      const warnings = validateLLMFilter(filter, schema);
-      if (warnings.length) warnings.forEach(w => this._log(`[ask] ${w}`));
-      this._queryCache.set(collectionName, schema, nlQuery, filter);
-      this._persistence.updateMeta(this.collections, { queryCache: this._queryCache.toJSON() });
-    }
-
-    return col.find(processLLMFilter(filter, { regexMaxLength: this._regexMaxLength }), { limit });
+  async ask(collectionName, nlQuery, opts) {
+    return this._ai.ask(collectionName, nlQuery, opts);
   }
 
   // ─── Schema ──────────────────────────────────────────────────────────────
@@ -7093,18 +7668,6 @@ class Skalex {
 
   // ─── Private ─────────────────────────────────────────────────────────────
 
-  /** Sweep expired TTL documents from all collections. */
-  _sweepTtl() {
-    for (const name in this.collections) {
-      const col = this.collections[name];
-      const removed = sweep(col.data, col.index, col.fieldIndex ? doc => col.fieldIndex.remove(doc) : null);
-      if (removed > 0) {
-        this._persistence.markDirty(this.collections, name);
-        this._log(`TTL sweep: removed ${removed} expired docs from "${name}"`);
-      }
-    }
-  }
-
   /**
    * Build a lazy context that resolves properties at call time.
    * This is safe to call during the constructor before all fields are
@@ -7137,9 +7700,33 @@ class Skalex {
     };
   }
 
+  get [Symbol.toStringTag]() { return "Skalex"; }
+
+  /** ES2024 explicit resource management: `await using db = new Skalex(...)`. */
+  async [Symbol.asyncDispose]() {
+    if (this.isConnected) await this.disconnect();
+  }
+
   _log(msg) {
     if (this.debug) this._logger(msg, "info");
   }
+
+  // ── Backward-compatible accessors for extracted subsystem internals ────
+  // Tests and internal code may reach for these directly. The canonical
+  // owners are _ai, _ttlScheduler, and _importer.
+
+  get _embeddingAdapter() { return this._ai._embeddingAdapter; }
+  set _embeddingAdapter(v) { this._ai._embeddingAdapter = v; }
+
+  get _aiAdapter() { return this._ai._aiAdapter; }
+  set _aiAdapter(v) { this._ai._aiAdapter = v; }
+
+  get _queryCache() { return this._ai.queryCache; }
+
+  get _regexMaxLength() { return this._ai._regexMaxLength; }
+
+  get _ttlTimer() { return this._ttlScheduler._timer; }
+  get _ttlSweepInterval() { return this._ttlScheduler._interval; }
 
   /**
    * Return a deep snapshot of a collection's mutable state.

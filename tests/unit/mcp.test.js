@@ -45,7 +45,7 @@ describe("MCP protocol  -  initialize", () => {
     expect(res.result.serverInfo.name).toBe("skalex");
     // Pin the version to the current package version so a forgotten bump
     // during a release surfaces as a test failure.
-    expect(res.result.serverInfo.version).toBe("4.0.0-alpha.3");
+    expect(res.result.serverInfo.version).toBe("4.0.0-alpha.4");
   });
 
   test("responds to ping", async () => {

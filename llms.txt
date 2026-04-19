@@ -29,14 +29,14 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.3 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **v4.0.0-alpha.4 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 **CDN - ESM** (recommended for browser apps; use the browser-specific barrel):
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/dist/skalex.browser.js";
-  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/dist/skalex.browser.js";
+  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/src/connectors/storage/browser.js";
 </script>
 ```
 
@@ -56,7 +56,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 **CDN - IIFE** (quick demos, `window.Skalex` global, no connector bundling):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4"></script>
 ```
 
 ## Core API - by workflow
@@ -98,7 +98,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `collection.insertOne(doc, opts?)` → `doc`; opts: `save`, `ifNotExists`, `ttl`, `embed`, `session`
 - `collection.insertMany(docs, opts?)` → `doc[]`; opts: `save`, `ttl`, `embed`, `session`
 - `collection.findOne(filter, opts?)` → `doc | null`; opts: `populate`, `select`, `includeDeleted`
-- `collection.find(filter?, opts?)` → `{ docs, page?, totalDocs?, totalPages? }`; opts: `populate`, `select`, `sort`, `page`, `limit`, `session`, `includeDeleted`
+- `collection.find(filter?, opts?)` → `{ docs, page?, totalDocs?, totalPages? }`; opts: `populate`, `select`, `sort`, `page`, `limit`, `session`, `includeDeleted`. Limit-only fast path (no `page`): early termination without full sort; `totalDocs`/`totalPages` omitted. Add `page: 1` to get totals.
 - `collection.updateOne(filter, update, opts?)` → `doc | null`; opts: `save`, `session`
 - `collection.updateMany(filter, update, opts?)` → `doc[]`; opts: `save`, `session`
 - `collection.deleteOne(filter, opts?)` → `doc | null`; soft-deletes when `softDelete: true`
@@ -147,17 +147,18 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
   - Configurable per-collection scopes (`read` / `write` / `admin`)
   - CORS opt-in via `allowedOrigin`
   - HTTP POST body limit via `maxBodySize` (default 1 MiB)
+  - `predicates`: named server-side functions that MCP agents invoke by name via `{ "$fn": "name" }` - restores `$fn` expressiveness over MCP without letting code cross the wire
 
 ### Transactions & Integrity
 
-- `db.transaction(fn, opts?)` - in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback; non-transactional writes to a tx-touched collection are not yet isolated from rollback (planned for alpha.4). `opts`: `{ timeout?: number, deferredEffectErrors?: "throw" | "warn" | "ignore" }`. Nested transactions throw `ERR_SKALEX_TX_NESTED`.
+- `db.transaction(fn, opts?)` - in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; auto-rollback on throw; external side effects and direct `db.collections` mutations are not covered by rollback. Collections touched by a write inside the transaction are locked - non-tx writes throw `ERR_SKALEX_TX_COLLECTION_LOCKED`. `opts`: `{ timeout?: number, deferredEffectErrors?: "throw" | "warn" | "ignore" }`. Nested transactions throw `ERR_SKALEX_TX_NESTED`. Supports `Symbol.asyncDispose` for `await using db = new Skalex(...)`.
 - `db.namespace(id)` - scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
 - `db.seed(fixtures, opts?)` - bulk-insert fixtures; `reset: true` clears first
 - `db.addMigration({ version, up })` - versioned migration; `up(db)` receives the Skalex proxy and runs inside a transaction (partial state rolls back on failure, version record is persisted atomically with migration data); runs automatically on `connect()`
 
 ### Observability
 
-- `collection.watch(filter?, callback?)` - reactive collection observer; callback or `AsyncIterableIterator`
+- `collection.watch(filter?, callback?, opts?)` - reactive collection observer; callback or `AsyncIterableIterator`. `opts`: `{ maxBufferSize }` caps the event queue for the async iterator form (oldest events dropped; `iter.dropped` counter tracks discards)
 - `db.watch(callback)` - cross-collection global observer; fires for every mutation across all collections
 - `db.changelog()` - append-only mutation log
 - `db.restore(collection, timestamp)` - point-in-time restore from changelog (currently lossy: replays via `insertOne`/`updateOne` which regenerates timestamps and `_version`; exact snapshot rehydration planned for beta.1)
@@ -179,7 +180,7 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 - Embedding only: `import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors/embedding'`
 - LLM only: `import { OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors/llm'`
 - Individual paths: `skalex/connectors/fs`, `skalex/connectors/local`, `skalex/connectors/encrypted`, `skalex/connectors/bun-sqlite`, `skalex/connectors/d1`, `skalex/connectors/libsql`
-- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.3/src/connectors/storage/browser.js"`
+- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4/src/connectors/storage/browser.js"`
 
 ## Storage Adapters
 

@@ -13,10 +13,6 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Real-time collaboration: CRDT-based field-level merging for conflict-free multi-user writes; presence tracking API
 
 **Query & schema**
-- [ ] `[alpha.4]` `find()` limit-only fast path: early termination without full sort
-- [ ] `[alpha.4]` Skip `structuredClone` for `prev` when changelog is disabled
-- [ ] `[alpha.4]` Cache `stats()` computation with dirty flag (avoid full `JSON.stringify`)
-- [ ] `[alpha.4]` Document `presortFilter` reliance on ES spec key-order guarantee
 - [ ] Additional query operators: `$exists`, `$type`, `$size`, `$all`, `$elemMatch` for deeper document filtering
 - [ ] Aggregation pipeline: `$group`, `$project`, `$unwind`, `$lookup` stages (MongoDB-style)
 - [ ] Full-text search: tokenized inverted index for text fields; `$text` operator with ranking
@@ -27,7 +23,6 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Query cache invalidation on schema change: automatically clear cached natural-language filter translations when a collection's schema is modified - prevents stale filters from referencing removed or renamed fields
 
 **AI**
-- [ ] `[alpha.4]` Extract shared `fetchWithRetry()` utility from all AI adapters (6 duplicated copies)
 - [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion - 15-30% better recall than cosine similarity alone
 - [ ] Multimodal embeddings: unified text + image vector space via compatible multimodal models (e.g. CLIP) - search images with natural language
 - [ ] Vector quantization: scalar and product quantization for 4-8× embedding memory reduction on large datasets
@@ -60,9 +55,6 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] SSE heartbeat: periodic keepalive pings on the SSE channel - detect and clean up stale connections
 
 **Storage adapters**
-- [ ] `[alpha.4]` Convert `FsAdapter` from sync to async zlib (`deflateSync` blocks event loop)
-- [ ] `[alpha.4]` Formalize tiered adapter capability interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`)
-- [ ] `[alpha.4]` D1 session-based cross-chunk atomicity: when Cloudflare's D1 Sessions API reaches GA, wrap `D1Adapter.writeAll()` chunks in a single session so failures in later chunks roll back earlier ones atomically (today the fallback is the incomplete-flush sentinel in `PersistenceManager`)
 - [ ] `SQLiteWASMAdapter`: browser-native SQLite via the official SQLite WASM build - persistent, faster than `localStorage`, no server needed
 - [ ] IndexedDB adapter (browser persistent storage beyond `localStorage`)
 - [ ] `PostgresAdapter`: PostgreSQL via `postgres` / `pg` Node.js driver
@@ -74,9 +66,6 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `DataStore` abstraction layer: introduce an interface between Collection and the raw `_data` array so the storage engine can be swapped from in-memory to disk-backed without changing the public API - prerequisite for scaling beyond in-memory limits
 
 **Resilience & memory**
-- [ ] `[alpha.4]` Tighten transaction isolation: block non-tx writes to tx-touched collections (rollback can clobber outside writes)
-- [ ] `[alpha.4]` Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
-- [ ] `[alpha.4]` Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
 - [ ] Plugin hook timeouts: configurable timeout for `beforeHook`/`afterHook` execution in the mutation pipeline - a slow or hanging plugin should not block all database operations indefinitely
 - [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
 - [ ] Write-Ahead Log (WAL): journal mutations before applying so a hard kill or OOM crash never loses committed data
@@ -91,13 +80,6 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Persistence state encapsulation: move per-collection write-tracking state out of the collection store and into the persistence manager - cleaner separation of concerns
 
 **DX & tooling**
-- [ ] `[alpha.4]` `Symbol.toStringTag` on core classes for informative `console.log` output
-- [ ] `[alpha.4]` `Symbol.asyncDispose` for `await using db = new Skalex(...)` (ES2024)
-- [ ] `[alpha.4]` Extract `ICollectionContext` interface for isolated Collection testing
-- [ ] `[alpha.4]` Align `SkalexConfig` type with runtime: add `lenientLoad`, widen logger level to include `'warn'`
-- [ ] `[alpha.4]` Decompose `Skalex` class: extract `SkalexAI`, `TtlScheduler`, consolidate meta facade
-- [ ] `[alpha.4]` Decompose `Collection` class: extract `VectorSearch`, `CollectionExporter`, `QueryPlanner`, `DocumentBuilder`
-- [ ] `[alpha.4]` Complete Skalex-Collection decoupling (Collection constructor accepts `_ctx` only)
 - [ ] `[beta.1]` Fix lossy changelog restore (rehydrate raw snapshots instead of replaying through `insertOne`/`updateOne`)
 - [ ] `[beta.1]` Normalize connector subpath exports (add `require`/`types` entries for all connector subpaths)
 - [ ] `create-skalex`: scaffolding CLI - `npm create skalex@latest` for instant project setup with runtime-specific templates
@@ -128,6 +110,26 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `skalex/eleva`: Eleva.js signals and reactive store integration
 
 #### Done
+
+**[alpha.4] - 2026-04-20 - Architecture decomposition, performance, code quality**
+- [x] `find()` limit-only fast path: early termination without full sort
+- [x] Skip `structuredClone` for `prev` when changelog is disabled
+- [x] Cache `stats()` computation with dirty flag (avoid full `JSON.stringify`)
+- [x] Document `presortFilter` reliance on ES spec key-order guarantee
+- [x] Extract shared `fetchWithRetry()` utility from all AI adapters (6 duplicated copies)
+- [x] Convert `FsAdapter` from sync to async zlib (`deflateSync` blocks event loop)
+- [x] Formalize tiered adapter capability interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`)
+- [x] D1 session-based cross-chunk atomicity: when Cloudflare's D1 Sessions API reaches GA, wrap `D1Adapter.writeAll()` chunks in a single session so failures in later chunks roll back earlier ones atomically
+- [x] Tighten transaction isolation: block non-tx writes to tx-touched collections (rollback can clobber outside writes)
+- [x] Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
+- [x] Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
+- [x] `Symbol.toStringTag` on core classes for informative `console.log` output
+- [x] `Symbol.asyncDispose` for `await using db = new Skalex(...)` (ES2024)
+- [x] Extract `ICollectionContext` interface for isolated Collection testing
+- [x] Align `SkalexConfig` type with runtime: add `lenientLoad`, widen logger level to include `'warn'`
+- [x] Decompose `Skalex` class: extract `SkalexAI`, `TtlScheduler`, consolidate meta facade
+- [x] Decompose `Collection` class: extract `VectorSearch`, `CollectionExporter`, `QueryPlanner`, `DocumentBuilder`
+- [x] Complete Skalex-Collection decoupling (Collection constructor accepts `_ctx` only)
 
 **[alpha.3] - 2026-04-11 - Runtime safety, adapter consistency, code quality, platform hardening**
 - [x] Prune `_abortedIds` in `TransactionManager` with bounded pruning window (1000) - fixes unbounded memory growth on repeated timeouts
@@ -172,7 +174,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **TypeScript & testing**
 - [x] Full TypeScript definitions with generics and union types
-- [x] Cross-runtime smoke test suite: **1013 tests** verified across Node.js (79), Bun (54), Deno (47), and headless Chromium ESM + UMD (49), on top of **784 vitest unit and integration tests** across 30 files
+- [x] Cross-runtime smoke test suite: **1125 tests** verified across Node.js, Bun, Deno, and headless Chromium ESM + UMD (**229 smoke**), on top of **896 vitest unit and integration tests**
 - [x] Adapter conformance test suite: same tests against MemoryAdapter, FsAdapter (json/gz), EncryptedAdapter
 
 **Storage adapters**

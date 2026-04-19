@@ -2,8 +2,166 @@
 
 This file collects every upgrade guide Skalex v4 has shipped. Start with the section matching the version you are upgrading from.
 
+- [4.0.0-alpha.3 → 4.0.0-alpha.4](#400-alpha3--400-alpha4)
 - [4.0.0-alpha.2.x → 4.0.0-alpha.3](#400-alpha2x--400-alpha3)
 - [v3 → v4.0.0-alpha.1](#v3--v4)
+
+---
+
+## 4.0.0-alpha.3 → 4.0.0-alpha.4
+
+alpha.4 is an architecture decomposition and hardening release. It extracts modules from the monolithic Collection and Skalex classes, tightens transaction isolation, and normalizes error types across the engine. Five breaking changes require code updates.
+
+### 1. Non-transactional writes to transaction-locked collections throw
+
+Collections touched by an active transaction are now locked. Any write from outside the transaction throws `TransactionError` with `ERR_SKALEX_TX_COLLECTION_LOCKED` until the transaction commits or rolls back. Previously, outside writes silently landed and could be clobbered by rollback.
+
+#### Before
+
+```js
+await db.transaction(async (tx) => {
+  const users = tx.useCollection("users");
+  await users.insertOne({ name: "Alice" });
+
+  // Outside write - silently succeeded, but rollback would clobber it
+  const outside = db.useCollection("users");
+  await outside.insertOne({ name: "Bob" }); // worked
+});
+```
+
+#### After
+
+```js
+await db.transaction(async (tx) => {
+  const users = tx.useCollection("users");
+  await users.insertOne({ name: "Alice" });
+
+  // Outside write - now throws
+  const outside = db.useCollection("users");
+  await outside.insertOne({ name: "Bob" });
+  // TransactionError: ERR_SKALEX_TX_COLLECTION_LOCKED
+});
+```
+
+#### Migration steps
+
+1. Move any writes that target a collection used inside a transaction into the transaction callback.
+2. If you intentionally wrote to a collection from outside a concurrent transaction, restructure so the writes happen before or after the transaction.
+
+### 2. `PluginEngine.register()` throws `ValidationError` instead of `TypeError`
+
+Passing an invalid plugin (non-object, null, or missing hooks) to `db.use()` now throws `ValidationError` with a stable `ERR_SKALEX_VALIDATION_PLUGIN` code instead of a bare `TypeError`.
+
+#### Before
+
+```js
+try {
+  db.use(null);
+} catch (e) {
+  e instanceof TypeError; // true
+}
+```
+
+#### After
+
+```js
+try {
+  db.use(null);
+} catch (e) {
+  e instanceof ValidationError; // true
+  e.code === "ERR_SKALEX_VALIDATION_PLUGIN"; // true
+}
+```
+
+#### Migration steps
+
+Replace any `catch` blocks that check for `TypeError` from `db.use()` with `ValidationError` checks.
+
+### 3. Browser/worker environments without an adapter throw `ERR_SKALEX_ADAPTER_REQUIRED`
+
+Constructing a Skalex instance in a browser or worker environment without passing an explicit `adapter` now throws `AdapterError` with `ERR_SKALEX_ADAPTER_REQUIRED` at construction time. Previously, the default `FsAdapter` was silently loaded and failed with a cryptic stub error at `connect()`.
+
+#### Before
+
+```js
+// In browser - failed at connect() with unclear error
+const db = new Skalex();
+await db.connect(); // Error: fs.mkdirSync is not a function
+```
+
+#### After
+
+```js
+// In browser - fails immediately with clear message
+const db = new Skalex();
+// AdapterError: ERR_SKALEX_ADAPTER_REQUIRED
+
+// Fix: pass a browser-compatible adapter
+const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
+```
+
+#### Migration steps
+
+If you construct Skalex in a browser or worker without an `adapter` option, pass a `LocalStorageAdapter` (or a custom adapter) explicitly.
+
+### 4. All adapter throws are now typed `AdapterError` with stable codes
+
+Storage and AI adapter errors that previously threw bare `Error` or `TypeError` now throw `AdapterError` with stable `ERR_SKALEX_ADAPTER_*` codes. This affects error handling in `catch` blocks that checked for `Error` type.
+
+#### Before
+
+```js
+try {
+  await db.connect();
+} catch (e) {
+  e instanceof Error; // true, but no stable code
+}
+```
+
+#### After
+
+```js
+try {
+  await db.connect();
+} catch (e) {
+  e instanceof AdapterError; // true
+  e.code; // "ERR_SKALEX_ADAPTER_READ_FAILED", "ERR_SKALEX_ADAPTER_WRITE_FAILED", etc.
+}
+```
+
+#### Migration steps
+
+Update `catch` blocks that handle adapter-related errors to check for `AdapterError` and use the `code` property for programmatic handling.
+
+### 5. `find()` limit-only fast path omits `totalDocs` / `totalPages`
+
+When `find()` is called with `limit` but without `page`, it now uses an early-termination fast path that skips the full sort and count. The result omits `totalDocs` and `totalPages` (they are `undefined`). Previously, `find({ limit: 10 })` computed the full total even though no pagination was requested.
+
+#### Before
+
+```js
+const result = await users.find({}, { limit: 10 });
+result.totalDocs;  // number (e.g. 1000)
+result.totalPages; // number (e.g. 100)
+```
+
+#### After
+
+```js
+const result = await users.find({}, { limit: 10 });
+result.totalDocs;  // undefined
+result.totalPages; // undefined
+
+// To get totals, request a page explicitly:
+const paged = await users.find({}, { limit: 10, page: 1 });
+paged.totalDocs;  // 1000
+paged.totalPages; // 100
+```
+
+#### Migration steps
+
+1. If your code reads `totalDocs` or `totalPages` from a `find()` call that only passes `limit` (no `page`), add `page: 1` to preserve the old behavior.
+2. If you only need the first N results and don't use the totals, no change needed - you get a free performance improvement.
 
 ---
 
