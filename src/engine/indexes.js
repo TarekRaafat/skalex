@@ -47,6 +47,8 @@ class IndexEngine {
    *   arrays like ["field1", "field2"] for compound indexes.
    * @param {string[]} unique   - Fields with unique constraint
    */
+  get [Symbol.toStringTag]() { return "IndexEngine"; }
+
   constructor(fields = [], unique = []) {
     this._fields = new Set();
     this._compoundFields = [];

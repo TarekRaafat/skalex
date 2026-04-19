@@ -54,6 +54,8 @@ class TransactionManager {
     this._abortedIdWindow = abortedIdWindow;
   }
 
+  get [Symbol.toStringTag]() { return "TransactionManager"; }
+
   /** Whether a transaction is currently active. */
   get active() {
     return this._ctx !== null && !this._ctx.aborted;

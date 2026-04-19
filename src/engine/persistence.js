@@ -20,6 +20,8 @@ class PersistenceManager {
    * @param {Function} opts.logger       - (msg, level) => void
    * @param {boolean}  [opts.debug=false]
    */
+  get [Symbol.toStringTag]() { return "PersistenceManager"; }
+
   constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null }) {
     this._adapter = adapter;
     this._serializer = serializer;

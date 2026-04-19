@@ -122,10 +122,11 @@ function _precompileRegex(filter) {
  */
 class Collection {
   /**
-   * @param {object} collectionData - Internal store object managed by Skalex.
-   * @param {Skalex} database - The parent Skalex instance.
+   * @param {object} collectionData - Internal store object managed by the registry.
+   * @param {object} ctxOrDb - CollectionContext, or legacy Skalex instance
+   *   (backward compat: if it has `_collectionContext`, it's a Skalex instance).
    */
-  constructor(collectionData, database) {
+  constructor(collectionData, ctxOrDb) {
     this.name = collectionData.collectionName;
 
     /**
@@ -133,13 +134,13 @@ class Collection {
      * Shared across all collections of a Skalex instance - the ctx uses lazy
      * getters that defer to the database, so a single allocation suffices.
      */
-    this._ctx = database._collectionContext;
+    this._ctx = ctxOrDb._collectionContext ?? ctxOrDb;
 
     this._setStore(collectionData);
     this._pipeline = new MutationPipeline(this);
 
     /** @type {number|null} If created inside a transaction, the tx ID. */
-    this._createdInTxId = database._txManager.context?.id ?? null;
+    this._createdInTxId = this._ctx.txManager.context?.id ?? null;
 
     /** @type {number|null} Set by the tx proxy when obtained via tx.useCollection(). */
     this._activeTxId = null;
@@ -152,6 +153,8 @@ class Collection {
   }
   get _store() { return this.__store; }
   set _store(val) { this._setStore(val); }
+
+  get [Symbol.toStringTag]() { return "Collection"; }
 
   get _data() { return this.__store.data; }
   set _data(val) { this.__store.data = val; }
@@ -562,10 +565,11 @@ class Collection {
     const { docs } = await this._pipeline.execute({
       op: Ops.RESTORE,
       beforeHook: null,
-      afterHook: null,
+      afterHook: Hooks.AFTER_RESTORE,
       hookPayload: null,
       save,
       session,
+      afterHookPayload: (restored) => ({ collection: this.name, filter, docs: restored }),
       mutate: async (assertTxAlive) => {
         assertTxAlive();
         delete item._deletedAt;

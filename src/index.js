@@ -122,6 +122,13 @@ class Skalex {
     }
 
     this._adapterConfig = adapter ?? null; // track whether a custom adapter was explicitly provided
+    if (!adapter && typeof globalThis.window !== "undefined") {
+      throw new AdapterError(
+        "ERR_SKALEX_ADAPTER_REQUIRED",
+        "Browser usage requires an explicit adapter (e.g. LocalStorageAdapter or a custom adapter). " +
+        "Pass { adapter: new LocalStorageAdapter() } to the Skalex constructor."
+      );
+    }
     let fs = adapter || new FsAdapter({ dir: path, format });
     if (encrypt) fs = new EncryptedAdapter(fs, encrypt.key);
     this.fs = fs;
@@ -795,6 +802,13 @@ class Skalex {
       get fs() { return db.fs; },
       get dataDirectory() { return db.dataDirectory; },
     };
+  }
+
+  get [Symbol.toStringTag]() { return "Skalex"; }
+
+  /** ES2024 explicit resource management: `await using db = new Skalex(...)`. */
+  async [Symbol.asyncDispose]() {
+    if (this.isConnected) await this.disconnect();
   }
 
   _log(msg) {
