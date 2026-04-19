@@ -726,6 +726,13 @@ class Collection {
 
   /**
    * Find all matching documents.
+   *
+   * **Limit-only fast path:** when `limit` is set, `sort` is absent, and
+   * `page` is 1 (default), scanning stops after `limit` matches. In this
+   * mode `totalDocs` and `totalPages` are omitted from the result because
+   * the total is unknown without a full scan. Callers that need totals
+   * should pass an explicit `sort` or `page` to disable the fast path.
+   *
    * @param {object} filter
    * @param {{ populate?: string[], select?: string[], sort?: object, page?: number, limit?: number, includeDeleted?: boolean }} [options]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}

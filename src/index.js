@@ -122,7 +122,10 @@ class Skalex {
     }
 
     this._adapterConfig = adapter ?? null; // track whether a custom adapter was explicitly provided
-    if (!adapter && typeof globalThis.window !== "undefined") {
+    // Detect browser environments where FsAdapter will fail because
+    // node:fs/path/zlib are stubbed. Uses `document` presence instead of
+    // `window` because Deno defines `window` and has real file system access.
+    if (!adapter && typeof globalThis.document !== "undefined") {
       throw new AdapterError(
         "ERR_SKALEX_ADAPTER_REQUIRED",
         "Browser usage requires an explicit adapter (e.g. LocalStorageAdapter or a custom adapter). " +

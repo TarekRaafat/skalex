@@ -143,17 +143,24 @@ class TransactionManager {
               // call as originating from the tx proxy. This lets the
               // pipeline distinguish tx writes from non-tx writes on the
               // same shared Collection instance.
+              // Wrap the Collection in a Proxy that increments a depth
+              // counter on each method call. This lets the pipeline
+              // distinguish tx-proxy writes from non-tx writes even when
+              // concurrent unawaited calls overlap on the same instance.
+              // A boolean flag would be unreliable: if call A (tx) starts
+              // and then call B (non-tx) starts before A completes, B would
+              // see the flag still set and slip through the lock check.
               return new Proxy(col, {
                 get(colTarget, colProp) {
                   const v = Reflect.get(colTarget, colProp);
                   if (typeof v !== "function") return v;
                   return function (...args) {
-                    colTarget._isTxProxyCall = true;
+                    colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
                     const result = v.apply(colTarget, args);
                     if (result && typeof result.then === "function") {
-                      return result.finally(() => { colTarget._isTxProxyCall = false; });
+                      return result.finally(() => { colTarget._txProxyCallDepth--; });
                     }
-                    colTarget._isTxProxyCall = false;
+                    colTarget._txProxyCallDepth--;
                     return result;
                   };
                 },

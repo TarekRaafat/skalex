@@ -57,11 +57,12 @@ class MutationPipeline {
     // Must run BEFORE _txSnapshotIfNeeded() because the snapshot would add
     // this collection to touchedCollections even for a non-tx write (since
     // _activeTxId is set on the shared Collection singleton).
-    // The tx proxy wraps each method call to set _isTxProxyCall = true for
-    // the duration of the call. Reads are unaffected (they don't go through
-    // the pipeline).
+    // The tx proxy wraps each method call to increment _txProxyCallDepth for
+    // the duration of the call (depth counter, not boolean, to handle
+    // concurrent unawaited calls on the same Collection instance). Reads are
+    // unaffected (they don't go through the pipeline).
     const txm = ctx.txManager;
-    if (!this._col._isTxProxyCall && txm.isCollectionLocked(this._col.name)) {
+    if (!(this._col._txProxyCallDepth > 0) && txm.isCollectionLocked(this._col.name)) {
       throw new TransactionError(
         "ERR_SKALEX_TX_COLLECTION_LOCKED",
         `Collection "${this._col.name}" is locked by an active transaction. ` +
