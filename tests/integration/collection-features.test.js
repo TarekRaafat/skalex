@@ -1194,3 +1194,226 @@ describe("Collection - watch iterator backpressure", () => {
     await iter.return();
   });
 });
+
+// ─── afterRestore plugin hook ───────────────────────────────────────────────
+
+describe("Collection - afterRestore plugin hook", () => {
+  test("plugin with afterRestore receives { collection, filter, docs } after restore()", async () => {
+    const { db } = makeDb();
+    db.createCollection("posts", { softDelete: true });
+    const calls = [];
+    db.use({ async afterRestore(ctx) { calls.push(ctx); } });
+    await db.connect();
+    const posts = db.useCollection("posts");
+    const doc = await posts.insertOne({ title: "Hello" });
+    await posts.deleteOne({ _id: doc._id });
+    await posts.restore({ _id: doc._id });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].collection).toBe("posts");
+    expect(calls[0].filter).toEqual({ _id: doc._id });
+    expect(calls[0].docs).toHaveLength(1);
+    expect(calls[0].docs[0].title).toBe("Hello");
+    await db.disconnect();
+  });
+
+  test("afterRestore does not fire when restore() returns null (no match)", async () => {
+    const { db } = makeDb();
+    db.createCollection("posts", { softDelete: true });
+    const calls = [];
+    db.use({ async afterRestore(ctx) { calls.push(ctx); } });
+    await db.connect();
+    const posts = db.useCollection("posts");
+    await posts.restore({ _id: "nonexistent" });
+    expect(calls).toHaveLength(0);
+    await db.disconnect();
+  });
+
+  test("afterRestore error respects deferredEffectErrors 'warn' strategy inside transaction", async () => {
+    const { db } = makeDb({ deferredEffectErrors: "warn" });
+    db.createCollection("posts", { softDelete: true });
+    db.use({ async afterRestore() { throw new Error("hook boom"); } });
+    await db.connect();
+    const posts = db.useCollection("posts");
+    const doc = await posts.insertOne({ title: "Hello" });
+    await posts.deleteOne({ _id: doc._id });
+    // Inside a transaction, afterRestore is deferred and the error is handled
+    // by the deferredEffectErrors strategy ("warn" means no throw).
+    await db.transaction(async (tx) => {
+      const txPosts = tx.useCollection("posts");
+      await txPosts.restore({ _id: doc._id });
+    });
+    // Document was restored successfully despite hook error
+    const found = await posts.findOne({ title: "Hello" });
+    expect(found).not.toBeNull();
+    await db.disconnect();
+  });
+});
+
+// ─── find() early stop fast path ────────────────────────────────────────────
+
+describe("Collection - find() early stop fast path", () => {
+  test("find({}, { limit: 3 }) on 10 docs returns exactly 3 docs", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    for (let i = 0; i < 10; i++) await col.insertOne({ i });
+    const result = await col.find({}, { limit: 3 });
+    expect(result.docs).toHaveLength(3);
+    await db.disconnect();
+  });
+
+  test("find({}, { limit: 3 }) result does NOT include totalDocs or totalPages", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    for (let i = 0; i < 10; i++) await col.insertOne({ i });
+    const result = await col.find({}, { limit: 3 });
+    expect(result.totalDocs).toBeUndefined();
+    expect(result.totalPages).toBeUndefined();
+    expect(result.page).toBe(1);
+    await db.disconnect();
+  });
+
+  test("find({}, { limit: 3, sort: { _id: 1 } }) DOES include totalDocs and totalPages", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    for (let i = 0; i < 10; i++) await col.insertOne({ i });
+    const result = await col.find({}, { limit: 3, sort: { _id: 1 } });
+    expect(result.docs).toHaveLength(3);
+    expect(result.totalDocs).toBe(10);
+    expect(result.totalPages).toBe(4);
+    await db.disconnect();
+  });
+
+  test("find({}, { limit: 3, page: 2 }) DOES include totalDocs and totalPages", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    for (let i = 0; i < 10; i++) await col.insertOne({ i });
+    const result = await col.find({}, { limit: 3, page: 2 });
+    expect(result.docs).toHaveLength(3);
+    expect(result.totalDocs).toBe(10);
+    expect(result.totalPages).toBe(4);
+    await db.disconnect();
+  });
+
+  test("find with limit larger than total docs returns all docs", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    for (let i = 0; i < 5; i++) await col.insertOne({ i });
+    const result = await col.find({}, { limit: 100 });
+    expect(result.docs).toHaveLength(5);
+    await db.disconnect();
+  });
+});
+
+// ─── _precompileRegex (tested indirectly via find) ──────────────────────────
+
+describe("Collection - _precompileRegex via find()", () => {
+  test("find with $regex string filter matches correctly", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    await col.insertOne({ name: "Bob" });
+    await col.insertOne({ name: "Anna" });
+    const result = await col.find({ name: { $regex: "^A" } });
+    expect(result.docs).toHaveLength(2);
+    expect(result.docs.every(d => d.name.startsWith("A"))).toBe(true);
+  });
+
+  test("find with $regex inside $or matches correctly", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    await col.insertOne({ name: "Bob" });
+    await col.insertOne({ name: "Charlie" });
+    const result = await col.find({ $or: [{ name: { $regex: "^A" } }, { name: { $regex: "^C" } }] });
+    expect(result.docs).toHaveLength(2);
+    const names = result.docs.map(d => d.name).sort();
+    expect(names).toEqual(["Alice", "Charlie"]);
+  });
+
+  test("find with $regex inside $not matches correctly", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    await col.insertOne({ name: "Bob" });
+    await col.insertOne({ name: "Anna" });
+    const result = await col.find({ $not: { name: { $regex: "^A" } } });
+    expect(result.docs).toHaveLength(1);
+    expect(result.docs[0].name).toBe("Bob");
+  });
+
+  test("find with pre-compiled RegExp works (bypass path)", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    await col.insertOne({ name: "Bob" });
+    const result = await col.find({ name: { $regex: /^A/ } });
+    expect(result.docs).toHaveLength(1);
+    expect(result.docs[0].name).toBe("Alice");
+  });
+
+  test("find with $or but no $regex returns correct results", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice", age: 25 });
+    await col.insertOne({ name: "Bob", age: 30 });
+    await col.insertOne({ name: "Charlie", age: 35 });
+    const result = await col.find({ $or: [{ name: "Alice" }, { age: 35 }] });
+    expect(result.docs).toHaveLength(2);
+    const names = result.docs.map(d => d.name).sort();
+    expect(names).toEqual(["Alice", "Charlie"]);
+  });
+});
+
+// ─── needsPrev optimization ─────────────────────────────────────────────────
+
+describe("Collection - needsPrev optimization", () => {
+  test("updateOne works correctly when changelog is disabled (needsPrev=false path)", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ name: "Alice", score: 10 });
+    const updated = await col.updateOne({ _id: doc._id }, { score: 20 });
+    expect(updated.score).toBe(20);
+    expect(updated.name).toBe("Alice");
+    await db.disconnect();
+  });
+
+  test("updateOne works correctly when onSchemaError is 'strip' (needsPrev=true path)", async () => {
+    const { db } = makeDb();
+    db.createCollection("items", {
+      schema: { name: "string", score: "number" },
+      onSchemaError: "strip",
+    });
+    await db.connect();
+    const col = db.useCollection("items");
+    const doc = await col.insertOne({ name: "Alice", score: 10 });
+    const updated = await col.updateOne({ _id: doc._id }, { score: 20 });
+    expect(updated.score).toBe(20);
+    expect(updated.name).toBe("Alice");
+    await db.disconnect();
+  });
+
+  test("updateMany with changelog off and schema validation off succeeds", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertMany([{ name: "A", score: 1 }, { name: "B", score: 2 }, { name: "C", score: 3 }]);
+    const result = await col.updateMany({ score: { $gte: 2 } }, { score: 99 });
+    expect(result).toHaveLength(2);
+    expect(result.every(d => d.score === 99)).toBe(true);
+    // The doc with score 1 should be unchanged
+    const unchanged = await col.findOne({ name: "A" });
+    expect(unchanged.score).toBe(1);
+    await db.disconnect();
+  });
+});

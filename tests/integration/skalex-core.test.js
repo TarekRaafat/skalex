@@ -1077,3 +1077,80 @@ describe("useCollection  -  collection name validation", () => {
     }
   });
 });
+
+// ─── Symbol.toStringTag ─────────────────────────────────────────────────────
+
+describe("Symbol.toStringTag", () => {
+  test("Object.prototype.toString.call(db) returns '[object Skalex]'", () => {
+    const { db } = makeDb();
+    expect(Object.prototype.toString.call(db)).toBe("[object Skalex]");
+  });
+
+  test("Object.prototype.toString.call(collection) returns '[object Collection]'", () => {
+    const { db } = makeDb();
+    const col = db.useCollection("items");
+    expect(Object.prototype.toString.call(col)).toBe("[object Collection]");
+  });
+});
+
+// ─── Symbol.asyncDispose ────────────────────────────────────────────────────
+
+describe("Symbol.asyncDispose", () => {
+  test("calling Symbol.asyncDispose disconnects the database", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    expect(db.isConnected).toBe(true);
+    await db[Symbol.asyncDispose]();
+    expect(db.isConnected).toBe(false);
+  });
+
+  test("calling Symbol.asyncDispose when not connected is a no-op (does not throw)", async () => {
+    const { db } = makeDb();
+    expect(db.isConnected).toBe(false);
+    await expect(db[Symbol.asyncDispose]()).resolves.toBeUndefined();
+    expect(db.isConnected).toBe(false);
+  });
+});
+
+// ─── Stats cache ────────────────────────────────────────────────────────────
+
+describe("Stats cache", () => {
+  test("stats() returns correct count after insertOne", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    await col.insertOne({ name: "Bob" });
+    const result = db.stats("items");
+    expect(result.count).toBe(2);
+    expect(result.collection).toBe("items");
+    await db.disconnect();
+  });
+
+  test("stats() called twice without mutations returns same result (cache hit)", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    const first = db.stats("items");
+    const second = db.stats("items");
+    expect(first).toEqual(second);
+    // Same object reference means cache hit
+    expect(first).toBe(second);
+    await db.disconnect();
+  });
+
+  test("stats() after a mutation returns updated result (cache invalidated)", async () => {
+    const { db } = makeDb({ autoSave: true });
+    await db.connect();
+    const col = db.useCollection("items");
+    await col.insertOne({ name: "Alice" });
+    const before = db.stats("items");
+    expect(before.count).toBe(1);
+    await col.insertOne({ name: "Bob" });
+    const after = db.stats("items");
+    expect(after.count).toBe(2);
+    expect(after).not.toBe(before);
+    await db.disconnect();
+  });
+});
