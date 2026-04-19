@@ -276,7 +276,10 @@ class PersistenceManager {
    */
   markDirty(collections, name) {
     const col = collections[name];
-    if (col) col._dirty = true;
+    if (col) {
+      col._dirty = true;
+      col._statsDirty = true;
+    }
   }
 
   // ─── Serialization ─────────────────────────────────────────────────────

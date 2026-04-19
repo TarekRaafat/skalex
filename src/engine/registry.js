@@ -36,6 +36,8 @@ class CollectionRegistry {
     this.stores = {};
     /** @type {Object<string, import("./collection.js").default>} Cached Collection instances. */
     this._instances = {};
+    /** @type {Map<string, { result: object, _snapshotLen: number }>} Cached stats per collection. */
+    this._statsCache = new Map();
   }
 
   /**
@@ -216,12 +218,26 @@ class CollectionRegistry {
     const calc = (n) => {
       const col = this.stores[n];
       if (!col) return null;
+
+      // Return cached stats if the collection has not been mutated since
+      // the last computation. The _dirty flag is set by PersistenceManager
+      // on every write, and cleared after a successful save. We use a
+      // separate _statsDirty flag so stats invalidation is decoupled from
+      // persistence state.
+      const cached = this._statsCache.get(n);
+      if (cached && cached._snapshotLen === col.data.length && !col._statsDirty) {
+        return cached.result;
+      }
+
       const count = col.data.length;
       let estimatedSize = 0;
       for (const doc of col.data) {
         try { estimatedSize += JSON.stringify(doc).length; } catch (_) { }
       }
-      return { collection: n, count, estimatedSize, avgDocSize: count > 0 ? Math.round(estimatedSize / count) : 0 };
+      const result = { collection: n, count, estimatedSize, avgDocSize: count > 0 ? Math.round(estimatedSize / count) : 0 };
+      this._statsCache.set(n, { result, _snapshotLen: count });
+      col._statsDirty = false;
+      return result;
     };
     if (name) return calc(name);
     return Object.keys(this.stores).map(calc);
@@ -233,6 +249,7 @@ class CollectionRegistry {
   clear() {
     this.stores = {};
     this._instances = {};
+    this._statsCache.clear();
   }
 }
 
