@@ -1,7 +1,11 @@
 import nodePath from "node:path";
 import nodeFs from "node:fs";
 import zlib from "node:zlib";
+import { promisify } from "node:util";
 import StorageAdapter from "./base.js";
+
+const _deflate = promisify(zlib.deflate);
+const _inflate = promisify(zlib.inflate);
 
 /**
  * FsAdapter  -  file-system storage for Node.js, Bun, and Deno.
@@ -38,7 +42,7 @@ class FsAdapter extends StorageAdapter {
     try {
       let raw = await nodeFs.promises.readFile(fp);
       if (this.format === "gz") {
-        raw = zlib.inflateSync(raw);
+        raw = await _inflate(raw);
       }
       return raw.toString("utf8");
     } catch (err) {
@@ -52,7 +56,7 @@ class FsAdapter extends StorageAdapter {
     const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
 
     if (this.format === "gz") {
-      const compressed = zlib.deflateSync(data);
+      const compressed = await _deflate(data);
       await nodeFs.promises.writeFile(tmp, compressed);
     } else {
       await nodeFs.promises.writeFile(tmp, data, "utf8");
@@ -74,7 +78,7 @@ class FsAdapter extends StorageAdapter {
         const fp = this._filePath(name);
         const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
         if (this.format === "gz") {
-          const compressed = zlib.deflateSync(data);
+          const compressed = await _deflate(data);
           await nodeFs.promises.writeFile(tmp, compressed);
         } else {
           await nodeFs.promises.writeFile(tmp, data, "utf8");
