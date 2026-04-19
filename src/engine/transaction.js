@@ -9,6 +9,12 @@ import { TransactionError, ValidationError } from "./errors.js";
 /** Default window of aborted transaction IDs retained for stale-continuation detection. */
 const DEFAULT_ABORTED_ID_WINDOW = 1000;
 
+/** Collection methods that go through the MutationPipeline and need the depth counter. */
+const _MUTATION_METHODS = Object.freeze(new Set([
+  "insertOne", "insertMany", "updateOne", "updateMany",
+  "upsert", "upsertMany", "deleteOne", "deleteMany", "restore",
+]));
+
 /**
  * Valid values for the `deferredEffectErrors` option. Exported so the
  * Skalex constructor and the per-transaction option path share a single
@@ -144,16 +150,20 @@ class TransactionManager {
               // pipeline distinguish tx writes from non-tx writes on the
               // same shared Collection instance.
               // Wrap the Collection in a Proxy that increments a depth
-              // counter on each method call. This lets the pipeline
-              // distinguish tx-proxy writes from non-tx writes even when
-              // concurrent unawaited calls overlap on the same instance.
-              // A boolean flag would be unreliable: if call A (tx) starts
-              // and then call B (non-tx) starts before A completes, B would
-              // see the flag still set and slip through the lock check.
+              // counter on mutation methods only. The pipeline checks this
+              // counter to distinguish tx-proxy writes from non-tx writes
+              // on the same shared Collection singleton.
+              //
+              // Only mutation methods are wrapped because reads (find,
+              // findOne, count, etc.) do not go through the pipeline and
+              // should not elevate the counter. If reads were wrapped, a
+              // plugin-triggered non-tx write during a tx-proxy find()
+              // would bypass the collection lock.
               return new Proxy(col, {
                 get(colTarget, colProp) {
                   const v = Reflect.get(colTarget, colProp);
                   if (typeof v !== "function") return v;
+                  if (!_MUTATION_METHODS.has(colProp)) return v.bind(colTarget);
                   return function (...args) {
                     colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
                     try {
