@@ -624,7 +624,7 @@ class Collection {
 
     // AsyncIterator API
     const { maxBufferSize = 1000 } = callbackOrOpts || {};
-    return this._watchIterator(filter, maxBufferSize);
+    return this._watchIterator(filter, Math.max(1, maxBufferSize));
   }
 
   _watchIterator(filter, maxBufferSize) {
