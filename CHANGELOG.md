@@ -7,6 +7,85 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.4] - 2026-04-20
+
+Architecture decomposition, performance optimization, and code quality. The Skalex and Collection god objects are broken apart into focused modules, hot paths are optimized, transaction isolation is tightened, and every adapter throw is migrated to the typed error hierarchy.
+
+> **Breaking changes**: see [MIGRATION](MIGRATION.md) for upgrade instructions.
+
+### Breaking Changes
+
+- **Non-transactional writes to tx-locked collections throw `ERR_SKALEX_TX_COLLECTION_LOCKED`** - when a transaction has written to a collection, non-transactional writes to the same collection are blocked until the transaction commits or rolls back. Reads are unaffected. Previously, non-tx writes silently went through and were reverted on rollback without the caller knowing.
+- **`PluginEngine.register()` throws `ValidationError` instead of `TypeError`** - passing a non-object to `db.use()` now throws `ValidationError` with `ERR_SKALEX_VALIDATION_PLUGIN` instead of a bare `TypeError`. Code catching `TypeError` specifically must update to catch `ValidationError` or match on the message.
+- **Browser/worker usage without an adapter throws `ERR_SKALEX_ADAPTER_REQUIRED`** - `new Skalex()` in a browser or web worker environment (no `node:fs`) now throws a clear `AdapterError` at construction time instead of failing later with a cryptic import error. Pass `{ adapter: new LocalStorageAdapter() }` or a custom adapter.
+- **All adapter throws are now typed `AdapterError` with stable codes** - bare `Error` and `TypeError` throws across storage adapters (LocalStorage, BunSQLite, LibSQL), LLM adapters (OpenAI, Anthropic, Ollama), and embedding adapters (OpenAI, Ollama) are replaced with `AdapterError` carrying `ERR_SKALEX_ADAPTER_*` codes. Missing API keys throw `ERR_SKALEX_ADAPTER_MISSING_API_KEY`, HTTP failures throw `ERR_SKALEX_ADAPTER_HTTP` with `{ status, adapter }` details, abstract stubs throw `ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED`. The `ask.js` regex throws are now `QueryError` with `ERR_SKALEX_QUERY_REGEX_*` codes.
+- **`find()` limit-only fast path omits `totalDocs` and `totalPages`** - when `limit` is set, `sort` is absent, and `page` is 1 (default), `find()` stops scanning after `limit` matches for O(n) instead of O(n log n). In this mode, `totalDocs` and `totalPages` are omitted from the result because the total is unknown without a full scan. Callers that need totals should pass an explicit `sort` or `page > 1` to disable the fast path.
+
+### Added
+
+- **Architecture decomposition: Skalex** - `SkalexAI` (ask/embed/query cache), `TtlScheduler` (periodic TTL sweep lifecycle), and `SkalexImporter` (JSON file import) extracted from `src/index.js` into focused modules (`src/engine/ai.js`, `src/engine/ttl.js`, `src/engine/importer.js`). The Skalex class is now a thin facade over composed subsystems.
+- **Architecture decomposition: Collection** - `CollectionExporter`, `VectorSearch`, `DocumentBuilder`, and `QueryPlanner` extracted from `src/engine/collection.js` into standalone function modules (`src/engine/exporter.js`, `src/engine/vector-search.js`, `src/engine/document-builder.js`, `src/engine/query-planner.js`). Extracted as functions (not classes) to avoid per-call allocation cost on the hot path.
+- **`InMemoryDataStore` abstraction** - new `src/engine/datastore.js` sits between Collection and the raw `_data` array / `_index` Map. All ~30 direct array access points in Collection replaced with DataStore method calls. Persistence and transactions continue reading `col.data`/`col.index` directly (DataStore wraps the same objects by reference). Prepares the architecture for a future disk-backed storage engine.
+- **Watch backpressure** - `col.watch(filter, { maxBufferSize })` option (default 1000). When the iterator buffer is full, the oldest events are dropped. The `dropped` property on the returned iterator reports how many events were lost. `WatchOptions` and `WatchIterator` types added to `.d.ts`.
+- **Transaction collection locking** - `TransactionManager.isCollectionLocked(name)` checks if a collection is in an active transaction's `touchedCollections`. The mutation pipeline blocks non-tx writes to locked collections with `ERR_SKALEX_TX_COLLECTION_LOCKED`. A per-call depth counter (`_txProxyCallDepth`) on the tx proxy distinguishes tx-proxy writes from non-tx writes on the same shared Collection singleton. Only mutation methods (insertOne, insertMany, updateOne, updateMany, upsert, upsertMany, deleteOne, deleteMany, restore) are wrapped; reads pass through without affecting the counter.
+- **`afterRestore` plugin hook** - `Hooks.AFTER_RESTORE` fires after `restore()` completes, with payload `{ collection, filter, docs }`. Respects `deferredEffectErrors` strategy like all other after-hooks. Closes GitHub #21.
+- **`$fn` named-predicate allowlist for MCP** - `db.mcp({ predicates: { isHighValue: (doc) => ... } })` lets developers register server-side predicates by name. Agents reference them in filters as `{ "$fn": "isHighValue" }`. The MCP handler resolves the string to the real function before the filter reaches the Collection API. No code crosses the wire. Unknown names are stripped with a warning. Non-string `$fn` values are always stripped. No predicates = all `$fn` stripped (alpha.3 default). `MCPOptions.predicates` type added to `.d.ts`.
+- **`Symbol.toStringTag`** on `Skalex`, `Collection`, `TransactionManager`, `PersistenceManager`, `IndexEngine` for informative `console.log` output (`[object Skalex]`, etc.).
+- **`Symbol.asyncDispose`** on `Skalex` - enables `await using db = new Skalex(...)` (ES2024 explicit resource management). Calls `disconnect()` on scope exit.
+- **`CollectionContext.forTesting()` factory** - new `src/engine/collection-context.js` creates a minimal context with sensible defaults for isolated Collection testing without a full Skalex instance.
+- **Adapter capability getters** - `StorageAdapter` base class gains `supportsBatch`, `supportsRawRead`, `supportsRawWrite`, `supportsPath` capability checks. `BunSQLiteAdapter`, `LibSQLAdapter`, `D1Adapter` override `supportsBatch: true`.
+- **Shared `fetchWithRetry()` utility** - new `src/connectors/shared/fetch.js` centralises retry/timeout/exponential-backoff logic. All 5 AI adapters (OpenAI/Ollama/Anthropic LLM + OpenAI/Ollama embedding) refactored to use it instead of inline retry loops.
+- **`no-console` eslint rule** - error in `src/`, off in `src/engine/utils.js` (the default logger) and tests. Catches accidental `console` calls that bypass the user's logger.
+- **`require-await` eslint rule** - warn level. Flags `async` methods that don't `await`. `Memory.forget()` async keyword removed (confirmed unnecessary). Abstract adapter base classes exempted.
+
+### Fixed
+
+- **`find()` limit-only fast path** - `find({}, { limit: 10 })` on large collections now terminates after 10 matches (O(n) with early exit) instead of collecting all results and slicing (O(n log n) with sort, O(n) without but full materialization). Sort and page > 1 disable the fast path to preserve correct pagination.
+- **Pre-compiled `$regex` in `find()`** - `$regex` string values are compiled once per `find()` call via `_precompileRegex()` instead of per-document via `compileRegexFilter()`. The compiled `RegExp` objects bypass the per-doc string validation, length cap, and ReDoS heuristic.
+- **Skip `structuredClone` for `prev` in updates** - `_prepareUpdatedDoc` no longer clones `prev` when changelog is disabled and `onSchemaError` is not `"strip"`. Halves the `structuredClone` cost on the update hot path for the common case.
+- **`stats()` computation cached with dirty flag** - second `stats()` call on an unmutated collection returns the cached result (O(1)) instead of re-serializing every document (O(n)). Cache invalidated via `_statsDirty` flag set by `markDirty()` on every mutation. Cache cleared on transaction rollback.
+- **`FsAdapter` async zlib** - `zlib.deflateSync`/`inflateSync` replaced with async `zlib.deflate`/`zlib.inflate`. Unblocks the event loop during large collection compression/decompression. No API change (both `read()` and `write()` were already async).
+- **Collection fully decoupled from Skalex** - Collection constructor accepts `CollectionContext` directly instead of a Skalex instance. The `_collectionContext` fallback preserves backward compatibility. Collection never imports or references the Skalex class.
+- **`deleteMany` redundant index operations** - the hardMany path called `deleteFromIndex` per deleted item, then `replaceAll` which cleared and rebuilt the entire index. Per-item deletions removed since `replaceAll` handles it.
+- **Watch `maxBufferSize` clamped to minimum 1** - `maxBufferSize: 0` was silently treated as `maxBufferSize: 1` because `queue.length >= 0` is always true. Now floored with `Math.max(1, maxBufferSize)`.
+- **Browser detection excludes Deno and covers web workers** - changed from `globalThis.window` (true in Deno) to `typeof process === "undefined" && (document || importScripts)` so Deno users without an adapter get `FsAdapter` (correct) and web worker users get the clear `ERR_SKALEX_ADAPTER_REQUIRED` error.
+- **`TtlScheduler.start()` guards against double-start** - second call is a no-op when a timer is already running, preventing timer leaks if `connect()` is called twice.
+- **`_txProxyCallDepth` sync-throw safety** - wrapped in try/catch so a sync exception (validation error) always decrements the counter. Without this, one validation failure permanently corrupted the lock-check state.
+- **`_txProxyCallDepth` mutation-only wrapping** - the tx proxy now only wraps the 9 public mutation methods with the depth counter, not reads like `find()`. A plugin-triggered non-tx write during a tx-proxy `find()` is now correctly blocked by the collection lock.
+- **Orphan temp-file cleanup log level** - changed from debug-gated `_log` to `_logger(msg, "warn")` so crash recovery evidence is visible in production without `debug: true`.
+- **`buildDoc` null guard on `embedFn`** - throws `AdapterError` with `ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED` instead of raw `TypeError` when `embed` is set but no embedding adapter is configured.
+- **Logger type widened** - `SkalexConfig.logger` level type changed from `'info' | 'error'` to `'info' | 'warn' | 'error'` to match runtime behavior (engine emits `'warn'` for schema validation, orphan cleanup, etc.).
+- **`D1Adapter.writeAll` cross-chunk atomicity documented** - JSDoc notes that cross-chunk atomicity is not guaranteed and references the D1 Sessions API (alpha.4 #18) for future atomic multi-chunk commits.
+
+### Documented
+
+- **`presortFilter` key-order reliance** - JSDoc now explicitly states the reliance on ES2015+ object property insertion-order iteration guarantee (ECMA-262 section 13.7.5.15).
+- **`find()` early-stop semantics** - JSDoc documents that `totalDocs` and `totalPages` are omitted when the limit-only fast path fires.
+- **`afterRestore`** - `PluginRestoreContext` type and `afterRestore` method added to the `Plugin` interface in `.d.ts`.
+
+### Tests
+
+New test files:
+
+- `tests/unit/datastore.test.js` - InMemoryDataStore: push, replaceAt, spliceAt, spliceRange edge cases (count 0, count > length), deleteFromIndex, setInIndex, replaceAll (including empty), indexOf, has, iterator, count.
+- `tests/unit/document-builder.test.js` - buildDoc: id/timestamps, user _id, TTL (per-doc, default, override), embedFn with field/function, AdapterError on null embedFn, versioning, custom idGenerator.
+- `tests/unit/query-planner.test.js` - findRaw with null/undefined/_id/compound/function filters, isVisible soft-delete, empty data, findAllRaw, getCandidates index fallback, findIndex.
+- `tests/unit/fetch-retry.test.js` - fetchWithRetry: first-try success, retry-then-succeed, delay doubling, retry exhaustion, timeout abort, timer cleanup, retries=0, custom fetchFn, options passthrough.
+- `tests/unit/importer.test.js` - SkalexImporter: forward-slash/backslash paths, multi-dot filename, invalid JSON, insertMany, single-object wrapping.
+
+Tests added to existing files:
+
+- `tests/integration/collection-features.test.js` - watch backpressure (5), maxBufferSize clamping (2), afterRestore hook (3), find() early stop (5), _precompileRegex via find() (5), needsPrev optimization (3).
+- `tests/integration/transaction-behavior.test.js` - collection-level locking: locked write rejected, unlocked after commit, unlocked after rollback, different collection not blocked, reads not blocked (5).
+- `tests/integration/skalex-core.test.js` - Symbol.toStringTag (2), Symbol.asyncDispose (2), stats cache (3).
+- `tests/unit/transaction.test.js` - depth counter sync-throw decrement, mutation-only wrapping, MUTATION_METHODS completeness, isCollectionLocked states, stats cache cleared on rollback (5).
+- `tests/unit/ttl.test.js` - TtlScheduler: start/stop/double-start/stop-when-not-started/sweep-marks-dirty (5).
+- `tests/unit/constants.test.js` - Hooks.AFTER_RESTORE (1).
+
+Total: **896 vitest tests** across 35 files. All four smoke runtimes green: **Node 79**, **Bun 54**, **Deno 47**, **browser 49**. `npm run build` (ESM, CJS, browser, UMD, minified), `eslint`, `madge --circular`, and `tsd` all clean.
+
+---
+
 ## [4.0.0-alpha.3] - 2026-04-11
 
 Runtime safety, adapter consistency, code quality, and platform hardening. No new user-facing features; the release tightens long-lived runtime behaviour, consolidates internal construction paths, adds guardrails around public API boundaries, and wires lint, static analysis, and type-declaration validation into CI.
