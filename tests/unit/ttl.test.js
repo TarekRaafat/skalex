@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import { computeExpiry, sweep } from "../../src/engine/ttl.js";
+import { computeExpiry, sweep, TtlScheduler } from "../../src/engine/ttl.js";
 
 describe("parseTtl validation", () => {
   test("rejects negative numeric TTL", () => {
@@ -109,5 +109,72 @@ describe("sweep", () => {
     expect(removed).toBe(50);
     expect(data).toHaveLength(50);
     for (const doc of data) expect(idIndex.has(doc._id)).toBe(true);
+  });
+});
+
+// ─── TtlScheduler ──────────────────────────────────────────────────────────
+
+describe("TtlScheduler", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  function makeScheduler(interval = 1000) {
+    const persistence = { markDirty: vi.fn() };
+    const log = vi.fn();
+    return new TtlScheduler({ interval, persistence, log });
+  }
+
+  test("start() creates a timer", () => {
+    const scheduler = makeScheduler(1000);
+    const collections = {};
+    scheduler.start(collections);
+    expect(scheduler._timer).not.toBeNull();
+    scheduler.stop();
+  });
+
+  test("stop() clears the timer", () => {
+    const scheduler = makeScheduler(1000);
+    scheduler.start({});
+    expect(scheduler._timer).not.toBeNull();
+    scheduler.stop();
+    expect(scheduler._timer).toBeNull();
+  });
+
+  test("double start() does not leak timers (second start is no-op)", () => {
+    const scheduler = makeScheduler(1000);
+    scheduler.start({});
+    const firstTimer = scheduler._timer;
+    scheduler.start({});
+    // Timer reference should be the same - second call is a no-op
+    expect(scheduler._timer).toBe(firstTimer);
+    scheduler.stop();
+  });
+
+  test("stop() when not started is a no-op", () => {
+    const scheduler = makeScheduler(1000);
+    expect(scheduler._timer).toBeNull();
+    // Should not throw
+    scheduler.stop();
+    expect(scheduler._timer).toBeNull();
+  });
+
+  test("sweep() marks dirty collections with expired docs", () => {
+    const persistence = { markDirty: vi.fn() };
+    const log = vi.fn();
+    const scheduler = new TtlScheduler({ interval: 1000, persistence, log });
+
+    const past = new Date(Date.now() - 1000);
+    const doc = { _id: "1", _expiresAt: past };
+    const collections = {
+      items: {
+        data: [doc],
+        index: new Map([["1", doc]]),
+        fieldIndex: null,
+      },
+    };
+
+    scheduler.sweep(collections);
+    expect(persistence.markDirty).toHaveBeenCalledWith(collections, "items");
+    expect(collections.items.data).toHaveLength(0);
   });
 });

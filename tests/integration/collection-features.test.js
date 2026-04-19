@@ -1161,4 +1161,36 @@ describe("Collection - watch iterator backpressure", () => {
 
     expect(iter.dropped).toBe(3);
   });
+
+  test("maxBufferSize: 0 is clamped to 1 (buffer holds at least 1 event)", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const iter = col.watch(null, { maxBufferSize: 0 });
+
+    for (let i = 0; i < 3; i++) await col.insertOne({ i });
+
+    // Buffer holds 1, so 2 dropped
+    expect(iter.dropped).toBe(2);
+
+    const { value } = await iter.next();
+    expect(value.doc.i).toBe(2); // last event retained
+    await iter.return();
+  });
+
+  test("maxBufferSize: -1 is clamped to 1", async () => {
+    const { db } = makeDb();
+    await db.connect();
+    const col = db.useCollection("items");
+    const iter = col.watch(null, { maxBufferSize: -1 });
+
+    for (let i = 0; i < 4; i++) await col.insertOne({ i });
+
+    // Buffer holds 1, so 3 dropped
+    expect(iter.dropped).toBe(3);
+
+    const { value } = await iter.next();
+    expect(value.doc.i).toBe(3); // last event retained
+    await iter.return();
+  });
 });

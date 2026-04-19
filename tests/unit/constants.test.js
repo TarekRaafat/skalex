@@ -21,6 +21,10 @@ describe("engine constants", () => {
     expect(Hooks.AFTER_DELETE).toBe("afterDelete");
   });
 
+  test("Hooks.AFTER_RESTORE exists and equals 'afterRestore'", () => {
+    expect(Hooks.AFTER_RESTORE).toBe("afterRestore");
+  });
+
   test("both maps are frozen", () => {
     expect(Object.isFrozen(Ops)).toBe(true);
     expect(Object.isFrozen(Hooks)).toBe(true);
