@@ -101,7 +101,7 @@ class Memory {
    * @param {string} id
    * @returns {Promise<object|null>}
    */
-  async forget(id) {
+  forget(id) {
     return this._col.deleteOne({ _id: id });
   }
 

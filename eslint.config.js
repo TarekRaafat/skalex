@@ -57,12 +57,36 @@ export default [
       "no-empty": ["error", { allowEmptyCatch: true }],
       // Prefer const for never-reassigned lets.
       "prefer-const": "warn",
+      // All logging goes through the configurable `logger` option. Direct
+      // console calls bypass the user's logger and are almost always bugs.
+      "no-console": "error",
+      // async only on methods that await (CLAUDE.md rule). Warn for now;
+      // many facade methods return a promise without awaiting (intentional
+      // for API consistency). A full sweep is deferred to a later release.
+      "require-await": "warn",
     },
   },
 
-  // Test files - vitest globals + relaxed unused-var rules.
+  // src/engine/utils.js IS the default logger - allow console there.
   {
-    files: ["tests/**/*.js"],
+    files: ["src/engine/utils.js"],
+    rules: { "no-console": "off" },
+  },
+
+  // Abstract adapter base classes declare async methods that don't await
+  // to match the interface contract. Concrete subclasses do await.
+  {
+    files: [
+      "src/connectors/storage/base.js",
+      "src/connectors/llm/base.js",
+      "src/connectors/embedding/base.js",
+    ],
+    rules: { "require-await": "off" },
+  },
+
+  // Test files - vitest globals + relaxed unused-var rules + allow console.
+  {
+    files: ["tests/**/*.{js,cjs,mjs}"],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -77,6 +101,8 @@ export default [
         varsIgnorePattern: "^_|^[A-Z]",
         argsIgnorePattern: "^_",
       }],
+      "no-console": "off",
+      "require-await": "off",
     },
   },
 
