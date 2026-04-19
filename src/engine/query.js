@@ -220,4 +220,4 @@ function presortFilter(filter, indexedFields = new Set()) {
   return sorted;
 }
 
-export { matchesFilter, presortFilter };
+export { matchesFilter, presortFilter, compileRegexFilter };

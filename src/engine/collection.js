@@ -1,4 +1,4 @@
-import { matchesFilter, presortFilter } from "./query.js";
+import { matchesFilter, presortFilter, compileRegexFilter } from "./query.js";
 import { validateDoc, stripInvalidFields } from "./validator.js";
 import { stripVector } from "./vector.js";
 import { count as aggCount, sum as aggSum, avg as aggAvg, groupBy as aggGroupBy } from "../features/aggregation.js";
@@ -85,6 +85,36 @@ function stripDangerousKeys(val) {
     out[k] = stripDangerousKeys(val[k]);
   }
   return out;
+}
+
+/**
+ * Pre-compile $regex string values in a filter into RegExp objects so
+ * matchesFilter skips the per-doc compileRegexFilter overhead. Operates
+ * on a shallow copy of the filter to avoid mutating the caller's object.
+ * Already-compiled RegExp instances are left untouched.
+ * @param {object|null} filter
+ * @returns {object|null}
+ */
+function _precompileRegex(filter) {
+  if (!filter || typeof filter !== "object") return filter;
+  let copy = null;
+  for (const key in filter) {
+    const val = filter[key];
+    if (key === "$or" || key === "$and") {
+      if (Array.isArray(val)) {
+        const compiled = val.map(sub => _precompileRegex(sub));
+        if (!copy) copy = { ...filter };
+        copy[key] = compiled;
+      }
+    } else if (key === "$not") {
+      if (!copy) copy = { ...filter };
+      copy[key] = _precompileRegex(val);
+    } else if (val && typeof val === "object" && !Array.isArray(val) && "$regex" in val && !(val.$regex instanceof RegExp)) {
+      if (!copy) copy = { ...filter };
+      copy[key] = { ...val, $regex: compileRegexFilter(val.$regex) };
+    }
+  }
+  return copy || filter;
 }
 
 /**
@@ -300,8 +330,9 @@ class Collection {
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, update, result: docs.length === 1 ? docs[0] : docs }),
       mutate: async (assertTxAlive) => {
+        const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
         const prevDocs = this._changelogEnabled ? oldDocs.map(doc => structuredClone(doc)) : oldDocs.map(() => null);
-        const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update));
+        const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update, { needsPrev }));
 
         this._assertUniqueCandidates(oldDocs, nextDocs);
 
@@ -381,8 +412,12 @@ class Collection {
    * @param {object} update
    * @returns {object}
    */
-  _prepareUpdatedDoc(currentDoc, update) {
-    const prev = structuredClone(currentDoc);
+  _prepareUpdatedDoc(currentDoc, update, { needsPrev = true } = {}) {
+    // Clone prev only when changelog is enabled or onSchemaError is "strip".
+    // Skipping this clone halves the structuredClone cost on the update hot path
+    // for the common case where changelog is off and schema validation is
+    // "throw" or "warn".
+    const prev = needsPrev ? structuredClone(currentDoc) : null;
     const next = structuredClone(currentDoc);
 
     this.applyUpdate(next, update);
@@ -700,19 +735,25 @@ class Collection {
     await this._ctx.plugins.run(Hooks.BEFORE_FIND, { collection: this.name, filter, options });
 
     const candidates = this._getCandidates(filter);
-    const sortedFilter = presortFilter(
-      filter,
-      this._fieldIndex ? this._fieldIndex.indexedFields : new Set()
+    // Pre-compile $regex strings once so matchesFilter doesn't run
+    // compileRegexFilter per document on every iteration.
+    const compiledFilter = _precompileRegex(
+      presortFilter(filter, this._fieldIndex ? this._fieldIndex.indexedFields : new Set())
     );
 
     let results = [];
 
+    // Limit-only fast path: when there is no sort and no page offset,
+    // stop scanning after `limit` matches instead of collecting everything.
+    const earlyStop = limit && !sort && page === 1;
+
     for (const item of candidates) {
       if (!this._isVisible(item, includeDeleted)) continue;
-      if (!matchesFilter(item, sortedFilter)) continue;
+      if (!matchesFilter(item, compiledFilter)) continue;
       const newItem = this._projectDoc(item, select);
       if (populate) await this._populateDoc(newItem, item, populate);
       results.push(newItem);
+      if (earlyStop && results.length >= limit) break;
     }
 
     if (sort) {
@@ -729,11 +770,11 @@ class Collection {
 
     let extra;
     if (limit) {
-      const totalDocs = results.length;
-      const totalPages = Math.ceil(totalDocs / limit);
-      const startIndex = (page - 1) * limit;
-      results = results.slice(startIndex, startIndex + limit);
-      extra = { page, totalDocs, totalPages };
+      const totalDocs = earlyStop ? undefined : results.length;
+      const totalPages = earlyStop ? undefined : Math.ceil(totalDocs / limit);
+      const startIndex = earlyStop ? 0 : (page - 1) * limit;
+      results = earlyStop ? results : results.slice(startIndex, startIndex + limit);
+      extra = earlyStop ? { page } : { page, totalDocs, totalPages };
     }
 
     this._ctx.queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
