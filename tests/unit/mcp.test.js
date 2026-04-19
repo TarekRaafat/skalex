@@ -353,6 +353,52 @@ describe("sanitizeFilter", () => {
     const shallow = { $or: [{ $and: [{ name: { $eq: "Alice" } }] }] };
     expect(() => sanitizeFilter(shallow)).not.toThrow();
   });
+
+  test("resolves $fn by name when predicates allowlist is provided", () => {
+    const isEven = (doc) => doc.n % 2 === 0;
+    const predicates = { isEven };
+    const input = { $fn: "isEven", active: true };
+    const out = sanitizeFilter(input, null, 0, predicates);
+    expect(out.$fn).toBe(isEven);
+    expect(out.active).toBe(true);
+  });
+
+  test("strips $fn string that does not match a registered predicate", () => {
+    const logs = [];
+    const predicates = { isEven: () => true };
+    const input = { $fn: "isOdd" };
+    const out = sanitizeFilter(input, (m) => logs.push(m), 0, predicates);
+    expect(out.$fn).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  test("strips non-string $fn even when predicates are registered", () => {
+    const logs = [];
+    const predicates = { isEven: () => true };
+    const input = { $fn: () => true };
+    const out = sanitizeFilter(input, (m) => logs.push(m), 0, predicates);
+    expect(out.$fn).toBeUndefined();
+  });
+
+  test("strips all $fn when no predicates are provided (alpha.3 default)", () => {
+    const logs = [];
+    const input = { $fn: "anything" };
+    const out = sanitizeFilter(input, (m) => logs.push(m));
+    expect(out.$fn).toBeUndefined();
+    expect(logs).toHaveLength(1);
+  });
+
+  test("resolves nested $fn inside $or/$and/$not with predicates", () => {
+    const isHigh = (doc) => doc.v > 100;
+    const predicates = { isHigh };
+    const input = {
+      $or: [{ $fn: "isHigh" }, { name: "Alice" }],
+      $not: { $fn: "isHigh" },
+    };
+    const out = sanitizeFilter(input, null, 0, predicates);
+    expect(out.$or[0].$fn).toBe(isHigh);
+    expect(out.$not.$fn).toBe(isHigh);
+  });
 });
 
 // ─── StdioTransport ────────────────────────────────────────────────────────

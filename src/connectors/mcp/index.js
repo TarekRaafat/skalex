@@ -43,6 +43,10 @@ class SkalexMCPServer {
    * @param {object}  [opts.scopes]               - Access control map. Default: { "*": ["read"] } (read-only).
    * @param {string|null} [opts.allowedOrigin]    - CORS origin for HTTP transport. Default: null (disabled).
    * @param {number}  [opts.maxBodySize]          - Max POST body size in bytes for HTTP transport. Default: 1 MiB.
+   * @param {Record<string, Function>} [opts.predicates] - Named predicate allowlist
+   *   for `$fn` in agent-supplied filters. Agents reference predicates by name;
+   *   the MCP handler resolves the name to the real function. No code crosses
+   *   the wire. When omitted, all `$fn` keys are stripped (alpha.3 default).
    */
   constructor(db, opts = {}) {
     this._db            = db;
@@ -52,6 +56,7 @@ class SkalexMCPServer {
     this._allowedOrigin = opts.allowedOrigin ?? null;
     this._maxBodySize   = opts.maxBodySize   ?? 1_048_576;
     this._scopes        = opts.scopes        || { "*": ["read"] };
+    this._predicates    = opts.predicates    || null;
     this._t             = null; // active transport instance
   }
 
@@ -163,7 +168,7 @@ class SkalexMCPServer {
     }
 
     try {
-      const result = await callTool(name, args, this._db);
+      const result = await callTool(name, args, this._db, this._predicates);
       this._send(ok(id, toolResult(JSON.stringify(result, null, 2))));
     } catch (err) {
       this._send(ok(id, toolError(err.message || String(err))));

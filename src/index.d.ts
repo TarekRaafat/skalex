@@ -98,6 +98,13 @@ export interface MCPOptions {
   allowedOrigin?: string;
   /** Maximum POST body size in bytes for HTTP transport. Default: 1 MiB (1_048_576). */
   maxBodySize?: number;
+  /**
+   * Named predicate allowlist for `$fn` in agent-supplied filters.
+   * Agents reference predicates by name (e.g. `{ "$fn": "isHighValue" }`);
+   * the MCP handler resolves the name to the registered function.
+   * No code crosses the wire. When omitted, all `$fn` keys are stripped.
+   */
+  predicates?: Record<string, (doc: Record<string, unknown>) => boolean>;
 }
 
 export interface SkalexConfig {

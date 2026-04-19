@@ -63,22 +63,32 @@ function _validateCollection(name) {
 }
 
 /**
- * Recursively strip `$fn` keys from an MCP-sourced filter. The `$fn` operator
- * accepts arbitrary JavaScript functions and would let an AI agent execute
- * code in the host process. Traverses into `$or`, `$and`, `$not` branches.
+ * Sanitize an MCP-sourced filter. Handles `$fn` according to the registered
+ * predicates allowlist:
  *
- * Enforces a maximum traversal depth ({@link MAX_FILTER_DEPTH}) so an
- * adversarial agent cannot send a deeply nested payload to blow the call
- * stack before the filter reaches the query engine.
+ * - If `predicates` is provided and `$fn` is a string matching a registered
+ *   name, the string is replaced with the real function. The agent gets
+ *   `$fn` power without code crossing the wire.
+ * - If `$fn` is a string that does NOT match a registered name, it is
+ *   stripped and a warning is logged.
+ * - If `$fn` is anything other than a string (a function, an object, code),
+ *   it is stripped regardless of predicates.
+ * - If no `predicates` map is provided, all `$fn` keys are stripped
+ *   (alpha.3 default behavior).
+ *
+ * Traverses into `$or`, `$and`, `$not` branches. Enforces a maximum
+ * traversal depth ({@link MAX_FILTER_DEPTH}) so an adversarial agent
+ * cannot send a deeply nested payload to blow the call stack.
  *
  * @param {*} filter
  * @param {(msg: string, level?: string) => void} [logger]
  * @param {number} [depth=0] - Current recursion depth (internal).
- * @returns {*} A new filter with all `$fn` keys removed.
+ * @param {Record<string, Function>} [predicates] - Named predicate allowlist.
+ * @returns {*} A new filter with `$fn` keys resolved, stripped, or kept.
  * @throws {ValidationError} ERR_SKALEX_VALIDATION_FILTER_DEPTH when the
  *   filter tree nests deeper than {@link MAX_FILTER_DEPTH}.
  */
-function sanitizeFilter(filter, logger, depth = 0) {
+function sanitizeFilter(filter, logger, depth = 0, predicates = null) {
   if (depth > MAX_FILTER_DEPTH) {
     throw new ValidationError(
       "ERR_SKALEX_VALIDATION_FILTER_DEPTH",
@@ -88,14 +98,21 @@ function sanitizeFilter(filter, logger, depth = 0) {
     );
   }
   if (filter === null || typeof filter !== "object") return filter;
-  if (Array.isArray(filter)) return filter.map(f => sanitizeFilter(f, logger, depth + 1));
+  if (Array.isArray(filter)) return filter.map(f => sanitizeFilter(f, logger, depth + 1, predicates));
   const out = {};
   for (const key of Object.keys(filter)) {
     if (key === "$fn") {
+      const val = filter[key];
+      // Only string names can be resolved against the allowlist.
+      // Functions, objects, and code strings are always stripped.
+      if (typeof val === "string" && predicates && val in predicates) {
+        out[key] = predicates[val];
+        continue;
+      }
       if (logger) logger(`[MCP] $fn stripped from agent-supplied filter`, "warn");
       continue;
     }
-    out[key] = sanitizeFilter(filter[key], logger, depth + 1);
+    out[key] = sanitizeFilter(filter[key], logger, depth + 1, predicates);
   }
   return out;
 }
@@ -216,10 +233,12 @@ const TOOL_DEFS = [
  * @param {string} name - Tool name.
  * @param {object} args - Tool arguments.
  * @param {object} db   - Skalex instance.
+ * @param {Record<string, Function>|null} [predicates] - Named predicate allowlist.
  * @returns {Promise<object>} Plain value to be JSON.stringify'd into content text.
  */
-async function callTool(name, args, db) {
+async function callTool(name, args, db, predicates = null) {
   const log = db._logger;
+  const _sanitize = (f) => sanitizeFilter(f, log, 0, predicates);
   switch (name) {
     case "skalex_collections":
       return Object.keys(db.collections).filter(n => !n.startsWith("_"));
@@ -234,7 +253,7 @@ async function callTool(name, args, db) {
       const opts = {};
       if (args.limit) opts.limit = args.limit;
       if (args.sort)  opts.sort  = args.sort;
-      return col.find(sanitizeFilter(args.filter || {}, log), opts);
+      return col.find(_sanitize(args.filter || {}), opts);
     }
 
     case "skalex_insert": {
@@ -244,14 +263,14 @@ async function callTool(name, args, db) {
 
     case "skalex_update": {
       const col = db.useCollection(_validateCollection(args.collection));
-      const filter = sanitizeFilter(args.filter || {}, log);
+      const filter = _sanitize(args.filter || {});
       if (args.many) return col.updateMany(filter, args.update || {});
       return col.updateOne(filter, args.update || {});
     }
 
     case "skalex_delete": {
       const col = db.useCollection(_validateCollection(args.collection));
-      const filter = sanitizeFilter(args.filter || {}, log);
+      const filter = _sanitize(args.filter || {});
       if (args.many) return col.deleteMany(filter);
       return col.deleteOne(filter);
     }
@@ -261,7 +280,7 @@ async function callTool(name, args, db) {
       return col.search(args.query, {
         limit:    args.limit    ?? 10,
         minScore: args.minScore ?? 0,
-        filter:   sanitizeFilter(args.filter, log),
+        filter:   _sanitize(args.filter),
       });
     }
 
