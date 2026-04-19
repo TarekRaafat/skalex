@@ -1,3 +1,5 @@
+import { AdapterError } from "../../engine/errors.js";
+
 /**
  * StorageAdapter  -  interface all storage backends must implement.
  *
@@ -11,7 +13,7 @@ class StorageAdapter {
    * @returns {Promise<string|null>}
    */
   async read(name) {
-    throw new Error("StorageAdapter.read() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.read() not implemented");
   }
 
   /**
@@ -21,7 +23,7 @@ class StorageAdapter {
    * @returns {Promise<void>}
    */
   async write(name, data) {
-    throw new Error("StorageAdapter.write() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.write() not implemented");
   }
 
   /**
@@ -30,7 +32,7 @@ class StorageAdapter {
    * @returns {Promise<void>}
    */
   async delete(name) {
-    throw new Error("StorageAdapter.delete() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.delete() not implemented");
   }
 
   /**
@@ -38,7 +40,7 @@ class StorageAdapter {
    * @returns {Promise<string[]>}
    */
   async list() {
-    throw new Error("StorageAdapter.list() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "StorageAdapter.list() not implemented");
   }
 
   /**
@@ -50,6 +52,24 @@ class StorageAdapter {
   async writeAll(entries) {
     for (const { name, data } of entries) await this.write(name, data);
   }
+
+  // ─── Capability checks ────────────────────────────────────────────────
+  //
+  // Replaces duck-typed `typeof adapter.readRaw === "function"` checks
+  // throughout the engine. Subclasses override to return true when they
+  // implement the corresponding optional methods.
+
+  /** Whether this adapter supports batch writes with native atomicity. */
+  get supportsBatch() { return false; }
+
+  /** Whether this adapter supports raw file reads (readRaw). */
+  get supportsRawRead() { return typeof this.readRaw === "function"; }
+
+  /** Whether this adapter supports raw file writes (writeRaw). */
+  get supportsRawWrite() { return typeof this.writeRaw === "function"; }
+
+  /** Whether this adapter supports path operations (join, ensureDir). */
+  get supportsPath() { return typeof this.join === "function" && typeof this.ensureDir === "function"; }
 }
 
 export default StorageAdapter;

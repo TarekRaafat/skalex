@@ -18,6 +18,8 @@
  */
 import LLMAdapter from "./base.js";
 import { SYSTEM_GENERATE, SYSTEM_SUMMARIZE } from "./prompts.js";
+import { AdapterError } from "../../engine/errors.js";
+import { fetchWithRetry } from "../shared/fetch.js";
 
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
@@ -93,35 +95,19 @@ class OllamaLLMAdapter extends LLMAdapter {
   }
 
   async _post(body) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(`${this.host}/api/generate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...this.headers,
-          },
-          body: JSON.stringify(body),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`Ollama API error ${response.status}: ${err}`);
-        }
-        return response.json();
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(`${this.host}/api/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.headers,
+      },
+      body: JSON.stringify(body),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `Ollama API error ${response.status}: ${err}`, { status: response.status, adapter: "ollama" });
     }
-    throw lastErr;
+    return response.json();
   }
 }
 

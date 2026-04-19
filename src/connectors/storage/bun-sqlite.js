@@ -1,4 +1,5 @@
 import StorageAdapter from "./base.js";
+import { AdapterError } from "../../engine/errors.js";
 
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
@@ -26,7 +27,7 @@ class BunSQLiteAdapter extends StorageAdapter {
   constructor(path = ":memory:", { table = _env("SKALEX_TABLE") ?? "skalex_store" } = {}) {
     super();
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {
-      throw new Error(`BunSQLiteAdapter: invalid table name "${table}". Use only letters, digits, and underscores.`);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_BUN_INVALID_TABLE", `BunSQLiteAdapter: invalid table name "${table}". Use only letters, digits, and underscores.`);
     }
     this._path  = path;
     this._table = table;
@@ -61,6 +62,8 @@ class BunSQLiteAdapter extends StorageAdapter {
     await this._open();
     this._stmts.write.run(name, data);
   }
+
+  get supportsBatch() { return true; }
 
   async writeAll(entries) {
     await this._open();

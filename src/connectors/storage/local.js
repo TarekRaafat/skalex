@@ -1,4 +1,5 @@
 import StorageAdapter from "./base.js";
+import { AdapterError } from "../../engine/errors.js";
 
 /**
  * LocalStorageAdapter  -  browser localStorage backend.
@@ -15,7 +16,7 @@ class LocalStorageAdapter extends StorageAdapter {
     super();
     this._prefix = `skalex:${namespace}:`;
     if (typeof localStorage === "undefined") {
-      throw new Error("LocalStorageAdapter requires a browser environment with localStorage");
+      throw new AdapterError("ERR_SKALEX_ADAPTER_NO_LOCALSTORAGE", "LocalStorageAdapter requires a browser environment with localStorage");
     }
   }
 

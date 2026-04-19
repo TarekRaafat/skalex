@@ -14,6 +14,8 @@
  *   OLLAMA_EMBED_RETRY_DELAY  -  base retry delay in ms, doubles each attempt (default: 1000)
  */
 import EmbeddingAdapter from "./base.js";
+import { AdapterError } from "../../engine/errors.js";
+import { fetchWithRetry } from "../shared/fetch.js";
 
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
@@ -48,36 +50,20 @@ class OllamaEmbeddingAdapter extends EmbeddingAdapter {
   }
 
   async embed(text) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(`${this.host}/api/embeddings`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...this.headers,
-          },
-          body: JSON.stringify({ model: this.model, prompt: text }),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`Ollama embedding API error ${response.status}: ${err}`);
-        }
-        const data = await response.json();
-        return data.embedding;
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(`${this.host}/api/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.headers,
+      },
+      body: JSON.stringify({ model: this.model, prompt: text }),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `Ollama embedding API error ${response.status}: ${err}`, { status: response.status, adapter: "ollama-embedding" });
     }
-    throw lastErr;
+    const data = await response.json();
+    return data.embedding;
   }
 }
 

@@ -1,4 +1,5 @@
 import StorageAdapter from "./base.js";
+import { AdapterError } from "../../engine/errors.js";
 
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
@@ -31,9 +32,9 @@ const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 class LibSQLAdapter extends StorageAdapter {
   constructor(client, { table = _env("SKALEX_TABLE") ?? "skalex_store" } = {}) {
     super();
-    if (!client) throw new TypeError("LibSQLAdapter: a libsql client is required.");
+    if (!client) throw new AdapterError("ERR_SKALEX_ADAPTER_LIBSQL_BINDING_REQUIRED", "LibSQLAdapter: a libsql client is required.");
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {
-      throw new Error(`LibSQLAdapter: invalid table name "${table}". Use only letters, digits, and underscores.`);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_LIBSQL_INVALID_TABLE", `LibSQLAdapter: invalid table name "${table}". Use only letters, digits, and underscores.`);
     }
     this._client = client;
     this._table  = table;
@@ -64,6 +65,8 @@ class LibSQLAdapter extends StorageAdapter {
       args: [name, data],
     });
   }
+
+  get supportsBatch() { return true; }
 
   async writeAll(entries) {
     await this._ensureTable();

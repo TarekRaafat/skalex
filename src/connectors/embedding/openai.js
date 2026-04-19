@@ -15,6 +15,8 @@
  *   OPENAI_EMBED_RETRY_DELAY  -  base retry delay in ms, doubles each attempt (default: 1000)
  */
 import EmbeddingAdapter from "./base.js";
+import { AdapterError } from "../../engine/errors.js";
+import { fetchWithRetry } from "../shared/fetch.js";
 
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
@@ -45,7 +47,7 @@ class OpenAIEmbeddingAdapter extends EmbeddingAdapter {
     fetch: fetchFn = globalThis.fetch,
   } = {}) {
     super();
-    if (!apiKey) throw new Error("OpenAIEmbeddingAdapter requires an apiKey");
+    if (!apiKey) throw new AdapterError("ERR_SKALEX_ADAPTER_MISSING_API_KEY", "OpenAIEmbeddingAdapter requires an apiKey");
     this.apiKey       = apiKey;
     this.model        = model;
     this.baseUrl      = baseUrl;
@@ -59,42 +61,26 @@ class OpenAIEmbeddingAdapter extends EmbeddingAdapter {
   }
 
   async embed(text) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(this.baseUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${this.apiKey}`,
-            ...(this.organization && { "OpenAI-Organization": this.organization }),
-            ...this.headers,
-          },
-          body: JSON.stringify({
-            input: text,
-            model: this.model,
-            ...(this.dimensions !== undefined && { dimensions: this.dimensions }),
-          }),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`OpenAI embedding API error ${response.status}: ${err}`);
-        }
-        const data = await response.json();
-        return data.data[0].embedding;
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(this.baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.apiKey}`,
+        ...(this.organization && { "OpenAI-Organization": this.organization }),
+        ...this.headers,
+      },
+      body: JSON.stringify({
+        input: text,
+        model: this.model,
+        ...(this.dimensions !== undefined && { dimensions: this.dimensions }),
+      }),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `OpenAI embedding API error ${response.status}: ${err}`, { status: response.status, adapter: "openai-embedding" });
     }
-    throw lastErr;
+    const data = await response.json();
+    return data.data[0].embedding;
   }
 }
 

@@ -1,3 +1,5 @@
+import { AdapterError } from "../../engine/errors.js";
+
 /**
  * LLMAdapter  -  interface all language model backends must implement.
  *
@@ -13,7 +15,7 @@ class LLMAdapter {
    * @returns {Promise<object>} A filter object compatible with matchesFilter().
    */
   async generate(schema, nlQuery) {
-    throw new Error("LLMAdapter.generate() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "LLMAdapter.generate() not implemented");
   }
 
   /**
@@ -22,7 +24,7 @@ class LLMAdapter {
    * @returns {Promise<string>}
    */
   async summarize(texts) {
-    throw new Error("LLMAdapter.summarize() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "LLMAdapter.summarize() not implemented");
   }
 }
 

@@ -1,3 +1,5 @@
+import { AdapterError } from "../../engine/errors.js";
+
 /**
  * EmbeddingAdapter  -  interface all embedding backends must implement.
  *
@@ -12,7 +14,7 @@ class EmbeddingAdapter {
    * @returns {Promise<number[]>}
    */
   async embed(text) {
-    throw new Error("EmbeddingAdapter.embed() not implemented");
+    throw new AdapterError("ERR_SKALEX_ADAPTER_NOT_IMPLEMENTED", "EmbeddingAdapter.embed() not implemented");
   }
 }
 

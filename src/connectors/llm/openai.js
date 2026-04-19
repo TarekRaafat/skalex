@@ -19,6 +19,8 @@
  */
 import LLMAdapter from "./base.js";
 import { SYSTEM_GENERATE, SYSTEM_SUMMARIZE } from "./prompts.js";
+import { AdapterError } from "../../engine/errors.js";
+import { fetchWithRetry } from "../shared/fetch.js";
 
 const _env = k => globalThis.process?.env?.[k] ?? globalThis.Deno?.env?.get(k);
 
@@ -59,7 +61,7 @@ class OpenAILLMAdapter extends LLMAdapter {
     summarizePrompt = SYSTEM_SUMMARIZE,
   } = {}) {
     super();
-    if (!apiKey) throw new Error("OpenAILLMAdapter requires an apiKey");
+    if (!apiKey) throw new AdapterError("ERR_SKALEX_ADAPTER_MISSING_API_KEY", "OpenAILLMAdapter requires an apiKey");
     this.apiKey          = apiKey;
     this.model           = model;
     this.baseUrl         = baseUrl;
@@ -111,37 +113,21 @@ class OpenAILLMAdapter extends LLMAdapter {
   }
 
   async _post(body) {
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const controller = this.timeout != null ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this._fetch(this.baseUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${this.apiKey}`,
-            ...(this.organization && { "OpenAI-Organization": this.organization }),
-            ...this.headers,
-          },
-          body: JSON.stringify(body),
-          ...(controller && { signal: controller.signal }),
-        });
-        if (!response.ok) {
-          const err = (await response.text()).slice(0, 200);
-          throw new Error(`OpenAI API error ${response.status}: ${err}`);
-        }
-        return response.json();
-      } catch (err) {
-        lastErr = err;
-        if (attempt < this.retries) {
-          await new Promise(r => setTimeout(r, this.retryDelay * 2 ** attempt));
-        }
-      } finally {
-        if (timer !== null) clearTimeout(timer);
-      }
+    const response = await fetchWithRetry(this.baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.apiKey}`,
+        ...(this.organization && { "OpenAI-Organization": this.organization }),
+        ...this.headers,
+      },
+      body: JSON.stringify(body),
+    }, { retries: this.retries, retryDelay: this.retryDelay, timeout: this.timeout, fetchFn: this._fetch });
+    if (!response.ok) {
+      const err = (await response.text()).slice(0, 200);
+      throw new AdapterError("ERR_SKALEX_ADAPTER_HTTP", `OpenAI API error ${response.status}: ${err}`, { status: response.status, adapter: "openai" });
     }
-    throw lastErr;
+    return response.json();
   }
 }
 

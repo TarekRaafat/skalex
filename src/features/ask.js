@@ -1,6 +1,7 @@
 /**
  * ask.js  -  query cache and LLM filter utilities for db.ask().
  */
+import { QueryError } from "../engine/errors.js";
 
 // ─── Hash ─────────────────────────────────────────────────────────────────────
 
@@ -101,15 +102,15 @@ function processLLMFilter(filter, { regexMaxLength = 500 } = {}) {
       for (const op of Object.keys(val)) {
         if (op === "$regex" && typeof val.$regex === "string") {
           if (val.$regex.length > regexMaxLength)
-            throw new Error(`$regex pattern too long (max ${regexMaxLength} characters)`);
+            throw new QueryError("ERR_SKALEX_QUERY_REGEX_TOO_LONG", `$regex pattern too long (max ${regexMaxLength} characters)`);
           // Reject patterns with nested quantifiers that cause catastrophic backtracking.
           // e.g. (a+)+, (a|a)*, (x+){2,}
           if (/\([^)]*[+*][^)]*\)[+*{]/.test(val.$regex))
-            throw new Error(`$regex pattern rejected: nested quantifiers risk ReDoS`);
+            throw new QueryError("ERR_SKALEX_QUERY_REGEX_REDOS", `$regex pattern rejected: nested quantifiers risk ReDoS`);
           try {
             processed.$regex = new RegExp(val.$regex);
           } catch {
-            throw new Error(`invalid $regex pattern: "${val.$regex}"`);
+            throw new QueryError("ERR_SKALEX_QUERY_REGEX_INVALID", `invalid $regex pattern: "${val.$regex}"`);
           }
         } else if (["$gt", "$gte", "$lt", "$lte"].includes(op) && _isDateString(val[op])) {
           processed[op] = new Date(val[op]);
