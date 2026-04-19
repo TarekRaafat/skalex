@@ -1,3 +1,5 @@
+import { ValidationError } from "../engine/errors.js";
+
 /**
  * PluginEngine  -  pre/post hook system for all database operations.
  *
@@ -45,7 +47,7 @@ class PluginEngine {
    */
   register(plugin) {
     if (typeof plugin !== "object" || plugin === null) {
-      throw new TypeError("Plugin must be a non-null object.");
+      throw new ValidationError("ERR_SKALEX_VALIDATION_PLUGIN", "Plugin must be a non-null object.", { got: plugin === null ? "null" : typeof plugin });
     }
     this._plugins.push(plugin);
   }

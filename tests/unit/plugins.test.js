@@ -11,9 +11,9 @@ import MemoryAdapter from "../helpers/MemoryAdapter.js";
 describe("PluginEngine  -  register()", () => {
   test("throws if plugin is not an object", () => {
     const engine = new PluginEngine();
-    expect(() => engine.register(null)).toThrow(TypeError);
-    expect(() => engine.register("string")).toThrow(TypeError);
-    expect(() => engine.register(42)).toThrow(TypeError);
+    expect(() => engine.register(null)).toThrow(/Plugin must be a non-null object/);
+    expect(() => engine.register("string")).toThrow(/Plugin must be a non-null object/);
+    expect(() => engine.register(42)).toThrow(/Plugin must be a non-null object/);
   });
 
   test("accepts a plain object", () => {
@@ -90,10 +90,10 @@ function makeDb() {
 }
 
 describe("db.use()  -  throws on bad input", () => {
-  test("throws TypeError for non-object plugin", () => {
+  test("throws ValidationError for non-object plugin", () => {
     const db = makeDb();
-    expect(() => db.use(null)).toThrow(TypeError);
-    expect(() => db.use("plugin")).toThrow(TypeError);
+    expect(() => db.use(null)).toThrow(/Plugin must be a non-null object/);
+    expect(() => db.use("plugin")).toThrow(/Plugin must be a non-null object/);
   });
 });
 

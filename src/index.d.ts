@@ -126,8 +126,8 @@ export interface SkalexConfig {
   queryCache?: QueryCacheConfig;
   /** Global agent memory options. */
   memory?: MemoryConfig;
-  /** Custom logger function. Receives (message: string, level: 'info' | 'error'). */
-  logger?: (message: string, level: 'info' | 'error') => void;
+  /** Custom logger function. Receives (message: string, level: 'info' | 'warn' | 'error'). */
+  logger?: (message: string, level: 'info' | 'warn' | 'error') => void;
   /** Pre-built LLM adapter instance. Overrides ai.model factory. */
   llmAdapter?: LLMAdapter;
   /** Pre-built embedding adapter instance. Overrides ai.provider embedding factory. */
@@ -168,6 +168,7 @@ export interface SkalexConfig {
 export interface PluginInsertContext  { collection: string; doc: Record<string, unknown>; }
 export interface PluginUpdateContext  { collection: string; filter: object; update: object; result?: Record<string, unknown> | Record<string, unknown>[]; }
 export interface PluginDeleteContext  { collection: string; filter: object; result?: Record<string, unknown> | Record<string, unknown>[]; }
+export interface PluginRestoreContext { collection: string; filter: object; docs: Record<string, unknown>[]; }
 export interface PluginFindContext    { collection: string; filter: object; options: object; docs?: Record<string, unknown>[]; }
 export interface PluginSearchContext  { collection: string; query: string; options: object; docs?: Record<string, unknown>[]; scores?: number[]; }
 
@@ -178,6 +179,7 @@ export interface Plugin {
   afterUpdate?(ctx: PluginUpdateContext):  void | Promise<void>;
   beforeDelete?(ctx: PluginDeleteContext): void | Promise<void>;
   afterDelete?(ctx: PluginDeleteContext):  void | Promise<void>;
+  afterRestore?(ctx: PluginRestoreContext): void | Promise<void>;
   beforeFind?(ctx: PluginFindContext):     void | Promise<void>;
   afterFind?(ctx: PluginFindContext):      void | Promise<void>;
   beforeSearch?(ctx: PluginSearchContext): void | Promise<void>;
