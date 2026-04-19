@@ -52,12 +52,28 @@ class MutationPipeline {
     const ctx = this._ctx;
 
     await ctx.ensureConnected();
+
+    // Block non-transactional writes to collections locked by an active tx.
+    // Must run BEFORE _txSnapshotIfNeeded() because the snapshot would add
+    // this collection to touchedCollections even for a non-tx write (since
+    // _activeTxId is set on the shared Collection singleton).
+    // The tx proxy wraps each method call to set _isTxProxyCall = true for
+    // the duration of the call. Reads are unaffected (they don't go through
+    // the pipeline).
+    const txm = ctx.txManager;
+    if (!this._col._isTxProxyCall && txm.isCollectionLocked(this._col.name)) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_COLLECTION_LOCKED",
+        `Collection "${this._col.name}" is locked by an active transaction. ` +
+        `Non-transactional writes are blocked until the transaction commits or rolls back.`
+      );
+    }
+
     this._col._txSnapshotIfNeeded();
 
     // Determine if this mutation is part of the active transaction.
     // Collections obtained through the tx proxy have _activeTxId stamped.
     // Only those writes participate in snapshot/rollback.
-    const txm = ctx.txManager;
     const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
 
     // Detect stale continuations from aborted transactions.

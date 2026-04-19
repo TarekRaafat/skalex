@@ -39,3 +39,98 @@ describe("transactions  -  read-committed isolation", () => {
     expect(secondRead.docs).toHaveLength(2);
   });
 });
+
+// ─── Collection-level locking during transactions ─────────────────────────
+
+describe("transactions - collection-level locking", () => {
+  test("non-tx write to a tx-touched collection is rejected", async () => {
+    const db = makeDb();
+    await db.connect();
+
+    // Pre-populate so the tx touches "items" on first write
+    const items = db.useCollection("items");
+    await items.insertOne({ v: 0 });
+
+    let writeError = null;
+    await db.transaction(async (tx) => {
+      const txItems = tx.useCollection("items");
+      await txItems.insertOne({ v: 1 });
+
+      // Outside the tx, attempt a write to the same collection
+      try {
+        await items.insertOne({ v: 2 });
+      } catch (err) {
+        writeError = err;
+      }
+    });
+
+    expect(writeError).not.toBeNull();
+    expect(writeError.code).toBe("ERR_SKALEX_TX_COLLECTION_LOCKED");
+  });
+
+  test("non-tx write succeeds after tx commits", async () => {
+    const db = makeDb();
+    await db.connect();
+    const items = db.useCollection("items");
+
+    await db.transaction(async (tx) => {
+      await tx.useCollection("items").insertOne({ v: 1 });
+    });
+
+    // After commit, collection is unlocked
+    await items.insertOne({ v: 2 });
+    const all = await items.find({});
+    expect(all.docs).toHaveLength(2);
+  });
+
+  test("non-tx write succeeds after tx rolls back", async () => {
+    const db = makeDb();
+    await db.connect();
+    const items = db.useCollection("items");
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx.useCollection("items").insertOne({ v: 1 });
+        throw new Error("force rollback");
+      });
+    } catch { /* expected */ }
+
+    // After rollback, collection is unlocked
+    await items.insertOne({ v: 2 });
+    const all = await items.find({});
+    expect(all.docs).toHaveLength(1);
+    expect(all.docs[0].v).toBe(2);
+  });
+
+  test("writes to a different collection during tx are not blocked", async () => {
+    const db = makeDb();
+    await db.connect();
+
+    await db.transaction(async (tx) => {
+      await tx.useCollection("items").insertOne({ v: 1 });
+
+      // Write to a different, untouched collection should succeed
+      const other = db.useCollection("other");
+      await other.insertOne({ v: 2 });
+    });
+
+    const other = await db.useCollection("other").find({});
+    expect(other.docs).toHaveLength(1);
+  });
+
+  test("reads on a locked collection are not blocked", async () => {
+    const db = makeDb();
+    await db.connect();
+    const items = db.useCollection("items");
+    await items.insertOne({ v: 0 });
+
+    await db.transaction(async (tx) => {
+      await tx.useCollection("items").insertOne({ v: 1 });
+
+      // Read on the same collection via non-tx handle should work
+      const result = await items.findOne({ v: 0 });
+      expect(result).not.toBeNull();
+      expect(result.v).toBe(0);
+    });
+  });
+});

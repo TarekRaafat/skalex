@@ -137,7 +137,25 @@ class TransactionManager {
             return (name) => {
               const col = target.useCollection(name);
               col._activeTxId = ctx.id;
-              return col;
+              // Return a Proxy of the Collection that marks each method
+              // call as originating from the tx proxy. This lets the
+              // pipeline distinguish tx writes from non-tx writes on the
+              // same shared Collection instance.
+              return new Proxy(col, {
+                get(colTarget, colProp) {
+                  const v = Reflect.get(colTarget, colProp);
+                  if (typeof v !== "function") return v;
+                  return function (...args) {
+                    colTarget._isTxProxyCall = true;
+                    const result = v.apply(colTarget, args);
+                    if (result && typeof result.then === "function") {
+                      return result.finally(() => { colTarget._isTxProxyCall = false; });
+                    }
+                    colTarget._isTxProxyCall = false;
+                    return result;
+                  };
+                },
+              });
             };
           }
           const value = Reflect.get(target, prop);
@@ -266,6 +284,19 @@ class TransactionManager {
       ctx.snapshots.set(name, snap);
     }
     ctx.touchedCollections.add(name);
+  }
+
+  /**
+   * Check whether a collection is currently locked by an active transaction.
+   * A collection is locked from the moment it receives its first transactional
+   * write (snapshotIfNeeded) until the transaction commits or rolls back.
+   *
+   * @param {string} name - Collection name.
+   * @returns {boolean}
+   */
+  isCollectionLocked(name) {
+    const ctx = this._ctx;
+    return ctx !== null && !ctx.aborted && ctx.touchedCollections.has(name);
   }
 
   /**
