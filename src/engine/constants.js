@@ -24,4 +24,5 @@ export const Hooks = Object.freeze({
   AFTER_FIND:    "afterFind",
   BEFORE_SEARCH: "beforeSearch",
   AFTER_SEARCH:  "afterSearch",
+  AFTER_RESTORE: "afterRestore",
 });
