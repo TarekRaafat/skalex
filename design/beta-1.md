@@ -332,6 +332,68 @@ If too heavy, at minimum add `types` entries pointing to `.d.ts` files in `src/`
 
 ---
 
+### 6. Complete DataStore abstraction
+
+**Issue:** None (alpha.4 #17 partial)
+**Severity:** P1 - architecture
+**Effort:** Large
+
+**Problem:** alpha.4 introduced `InMemoryDataStore` as an internal seam for Collection's code, but persistence, transactions, and the TTL sweeper still read `col.data` / `col.index` directly. The abstraction covers ~30% of access points. A future disk-backed engine still requires rewriting `saveAtomic`, `loadAll`, `_applySnapshot`, and `sweep()`.
+
+**Fix:** Route all remaining data access through the DataStore interface:
+- `PersistenceManager.saveAtomic` / `save` / `loadAll` read via `store.getAll()` / `store.count()` instead of `col.data`.
+- `Skalex._applySnapshot` uses `store.replaceAll(snap.data)` instead of direct assignment.
+- `sweep()` receives the DataStore and mutates via `store.filter()` + `store.replaceAll()` instead of in-place array ops.
+- The DataStore gains `serialize()` / `deserialize()` capability hooks so adapters can opt into their own serialization.
+
+**Pairs with:** beta.1 #4 (WAL) - both touch the persistence paths.
+
+**Scope:** `src/engine/persistence.js`, `src/engine/ttl.js`, `src/index.js`, `src/engine/datastore.js`.
+
+**Test:** All existing tests pass with persistence/TTL/snapshot going through the DataStore. A stub DataStore that logs operations verifies every path is covered.
+
+**Depends on:** alpha.4 #17 (initial DataStore introduction).
+
+---
+
+### 7. Per-module explicit dependencies
+
+**Issue:** None (alpha.4 #14 completion)
+**Severity:** P2 - architecture
+**Effort:** Medium
+
+**Problem:** Extracted alpha.4 modules pull dependencies from the `_ctx` object (`_ctx.fs`, `_ctx.embed`, `_ctx.logger`, etc.). Over time `_ctx` accumulates 18+ properties and becomes a god object of its own. Modules have no declared dependency surface.
+
+**Fix:** Convert extracted modules to receive explicit dependencies in their constructor/function signature, not via `_ctx`. Pairs with formalizing `ICollectionContext` as a typed interface (alpha.4 #14).
+
+**Scope:** `src/engine/exporter.js`, `src/engine/vector-search.js`, `src/engine/document-builder.js`, `src/engine/query-planner.js`, `src/engine/ai.js`, `src/engine/importer.js`, `src/engine/collection.js` (call sites).
+
+**Test:** Each module has a standalone unit test that constructs it with minimal explicit dependencies (no `_ctx`).
+
+**Depends on:** alpha.4 #14.
+
+---
+
+### 8. Tx proxy via AsyncLocalStorage (concurrent unawaited edge case)
+
+**Issue:** None (documented in `weak-spots.md`)
+**Severity:** P3 - correctness
+**Effort:** Medium
+
+**Problem:** Collection is a singleton per name. The tx proxy wraps method calls with a depth counter to distinguish tx-proxy writes from non-tx writes on the same instance. If a user does `const p = tx.insertOne(...); db.insertOne(...); await p;` (fire-and-forget), the counter is still elevated when the second call runs, bypassing the lock.
+
+**Fix:** Replace the instance-level depth counter with `AsyncLocalStorage` to track tx identity per async context. Each async call chain carries its own tx state; concurrent chains don't interfere.
+
+**Caveat:** `AsyncLocalStorage` is Node.js only. Requires a runtime shim for Bun / Deno / browser (Deno has it since 1.25; Bun since 0.6; browser needs a fallback).
+
+**Scope:** `src/engine/transaction.js`, `src/engine/pipeline.js`.
+
+**Test:** Regression test for the fire-and-forget pattern — non-tx write starts while tx write is in flight, lock blocks correctly.
+
+**Depends on:** Confirmed cross-runtime AsyncLocalStorage availability.
+
+---
+
 ## Regression Test Requirements
 
 | Fix | Test scenario |
@@ -341,6 +403,9 @@ If too heavy, at minimum add `types` entries pointing to `.d.ts` files in `src/`
 | #3 (connector exports) | `require()` and `import` resolve for each connector subpath; `types:check` passes for consumer imports |
 | #4 (WAL) | WAL written before flush, deleted after; simulated crash mid-flush recovers to consistent state; adapter without WAL degrades gracefully |
 | #5 (BigInt out-of-band) | Round-trip BigInt/Date; backwards compat; auto-migration; literal `__skalex_bigint__` key not misinterpreted |
+| #6 (DataStore completion) | Persistence/TTL/snapshot go through DataStore; stub DataStore logs every access path |
+| #7 (per-module dependencies) | Each extracted module instantiable with explicit deps; no `_ctx` references in module bodies |
+| #8 (AsyncLocalStorage tx proxy) | Fire-and-forget `const p = tx.insertOne(...); db.insertOne(...); await p;` correctly blocks the non-tx write |
 
 ---
 

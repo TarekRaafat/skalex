@@ -943,6 +943,28 @@ alpha.4 is done when:
 
 ---
 
+## Deferred from alpha.4
+
+Items surfaced during alpha.4 review that were consciously deferred. Not bugs to fix now; work sized for future releases.
+
+| Item | Target | Why deferred |
+|---|---|---|
+| Complete DataStore abstraction (rewrite persistence/transactions/TTL to go through `_ds`) | beta.1 | Pairs with WAL work, which touches the same persistence paths. Fixing both together is cheaper than twice. |
+| Replace `_MUTATION_METHODS` hardcoded set with declarative marker (decorator / naming convention / metadata) | alpha.5 | Needs design decision on the marker pattern. Current hardcoded set is correct; adding a forgot-to-update regression test is adequate short-term guard. |
+| Refactor `_ctx` into per-module explicit dependencies | beta.1 | Pairs with `ICollectionContext` formalization. Touches every extracted module. |
+| Tx proxy composability for future wrappers (audit/rate-limit/retry) | when needed | No concrete use case. Premature abstraction. |
+| Automated release gate via pre-commit hook / CI check | alpha.5 | Tooling work with design decisions (local vs CI, opt-in vs forced). Doesn't affect release correctness. |
+| Tests using `CollectionContext.forTesting()` factory | alpha.5 | Factory exists and is usable; validating it doesn't block alpha.4. |
+| Windows actual-run verification | opportunistic | Can't self-verify from non-Windows dev environment. Fix is correct by inspection. |
+| Reduce module sprawl / merge trivially small files (e.g. `document-builder.js` at 41 lines) | alpha.5 or later | Requires architectural review; reversing the decomposition immediately would confuse everyone. |
+| Test audit: collapse tautological tests (e.g. `Hooks.X === "x"` pins) | anytime | Low value, low risk. Not blocking. |
+| Stats cache + bypass-pipeline hole (direct `col.data` mutation invalidates cache only via length check) | alpha.5 or never | Only affects code that bypasses the pipeline (tests, future plugins). No production path hits it. |
+| Browser build `node:*` stub automation (pre-build validator) | alpha.5 tooling | `npm run build` now part of gate; regression surfaces on first run. Automation is nice-to-have. |
+| Concurrent unawaited tx writes edge case (fire-and-forget pattern slipping past lock) | beta.1 or never | Documented in `weak-spots.md`. Fix requires AsyncLocalStorage or a larger refactor. Exotic pattern. |
+| Release cadence reform (smaller releases) | alpha.5 planning | Process change, not code change. |
+
+---
+
 ## Non-Goals
 
 alpha.4 is not the release for:
