@@ -25,7 +25,7 @@
 **Zero overhead. Maximum reach.**
 - **Zero dependencies**: install the package, nothing else. No driver, no ORM, no server process.
 - **Full build matrix**: ESM, ESM minified, CJS, CJS minified, browser ESM (`dist/skalex.browser.js`, no `node:*` imports), UMD/IIFE (`dist/skalex.umd.min.js`, CDN default)
-- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by a 715-test cross-runtime suite
+- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by **1,125 tests** (896 unit/integration + 229 cross-runtime smoke)
 - **Pluggable storage**: `FsAdapter` (Node), `LocalStorageAdapter` (browser), `EncryptedAdapter` (AES-256-GCM), or bring your own
 
 **Queries that scale with your data.**
@@ -41,7 +41,7 @@
 - Strict mode: `createCollection(name, { strict: true })` rejects unknown fields; `onSchemaError: "warn" | "strip"` for softer handling
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
 - TTL documents: `insertOne(doc, { ttl: "30m" })`, swept on connect; `defaultTtl` per collection; `ttlSweepInterval` for live processes
-- Transactions: lazy copy-on-first-write snapshots, configurable timeout, serialised execution, stale proxy detection; non-transactional writes not captured by rollback
+- Transactions: lazy copy-on-first-write snapshots, configurable timeout, serialised execution, stale proxy detection, collection locking (non-tx writes to tx-touched collections throw `ERR_SKALEX_TX_COLLECTION_LOCKED`), configurable deferred-effect error strategy
 - Change log: `createCollection(name, { changelog: true })`, point-in-time restore
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: `createCollection(name, { versioning: true })`, auto-increments `_version`
@@ -67,6 +67,7 @@
 
 **React to every change.**
 - `collection.watch(filter?, callback?)`: observe mutations; callback or `AsyncIterableIterator`
+- `collection.watch(filter, { maxBufferSize })`: iterator backpressure; oldest events dropped when buffer is full, `iter.dropped` reports the count
 - `db.watch(callback)`: cross-collection global observer; fires for every mutation across all collections
 - Events: `{ op, collection, doc, prev? }` emitted after every insert, update, delete, restore
 
@@ -76,11 +77,12 @@
 - `stdio` transport (default) and `http + SSE` transport
 - Tools: `find`, `insert`, `update`, `delete`, `search`, `ask`, `schema`, `collections`
 - Access control: `scopes` map per collection; `read` / `write` / `admin`
+- Named-predicate allowlist: `db.mcp({ predicates: { isHighValue: (doc) => ... } })` lets agents reference server-side `$fn` predicates by name without code crossing the wire
 
 **Extend anything.**
 - `db.use(plugin)`: register pre/post hooks on all operations
-- Hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
-- All hooks awaited in order; errors propagate to the caller
+- Hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `afterRestore`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
+- All hooks awaited in order; errors propagate to the caller per the `deferredEffectErrors` strategy
 
 **Full visibility per session.**
 - `db.sessionStats(sessionId?)`: reads, writes, lastActive per session
@@ -103,6 +105,8 @@
 - `encrypt: { key }`: AES-256-GCM at-rest encryption, transparent to all callers
 - `session` option on all reads and writes: audit trail + session stats
 - `debug: true`: connect/disconnect logging
+- **ES2024 `using`**: `await using db = new Skalex(...)` auto-disconnects on scope exit via `Symbol.asyncDispose`
+- **Typed error hierarchy**: `SkalexError`, `ValidationError`, `UniqueConstraintError`, `TransactionError`, `PersistenceError`, `AdapterError`, `QueryError` with stable `ERR_SKALEX_<SUBSYSTEM>_<SPECIFIC>` codes
 
 ---
 
