@@ -9,12 +9,20 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import http from "node:http";
+import { readFileSync } from "node:fs";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 import MockTransport from "../helpers/MockTransport.js";
 import StdioTransport from "../../src/connectors/mcp/transports/stdio.js";
 import HttpTransport from "../../src/connectors/mcp/transports/http.js";
 import { sanitizeFilter } from "../../src/connectors/mcp/tools.js";
+
+// Read the canonical package version once so the version-pin test catches
+// drift between package.json and the MCP SERVER_INFO constant without
+// needing to hand-edit the test on every release bump.
+const PKG_VERSION = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8")
+).version;
 
 function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });
@@ -45,7 +53,10 @@ describe("MCP protocol  -  initialize", () => {
     expect(res.result.serverInfo.name).toBe("skalex");
     // Pin the version to the current package version so a forgotten bump
     // during a release surfaces as a test failure.
-    expect(res.result.serverInfo.version).toBe("4.0.0-alpha.4");
+    // Read version from package.json so a forgotten SERVER_INFO bump
+    // during a release surfaces as a test failure without requiring
+    // manual edits to this test on every version bump.
+    expect(res.result.serverInfo.version).toBe(PKG_VERSION);
   });
 
   test("responds to ping", async () => {
