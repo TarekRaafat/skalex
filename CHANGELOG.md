@@ -56,6 +56,7 @@ Architecture decomposition, performance optimization, and code quality. The Skal
 - **`buildDoc` null guard on `embedFn`** - throws `AdapterError` with `ERR_SKALEX_ADAPTER_EMBEDDING_REQUIRED` instead of raw `TypeError` when `embed` is set but no embedding adapter is configured.
 - **Logger type widened** - `SkalexConfig.logger` level type changed from `'info' | 'error'` to `'info' | 'warn' | 'error'` to match runtime behavior (engine emits `'warn'` for schema validation, orphan cleanup, etc.).
 - **`D1Adapter.writeAll` cross-chunk atomicity documented** - JSDoc notes that cross-chunk atomicity is not guaranteed and references the D1 Sessions API (alpha.4 #18) for future atomic multi-chunk commits.
+- **`afterUpdate` / `afterDelete` / `afterRestore` hook payloads strip `_vector`** - previously these hooks received raw docs with `_vector` intact while `afterInsert` received stripped docs, an inconsistency plugins had to handle per-hook. All after-hook payloads now deliver vector-stripped docs for consistency. Plugins that specifically inspected `_vector` in these hooks must read it from the collection directly instead.
 
 ### Documented
 

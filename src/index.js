@@ -586,7 +586,8 @@ class Skalex {
    * @throws {TransactionError} ERR_SKALEX_TX_NESTED - called inside another transaction.
    * @throws {TransactionError} ERR_SKALEX_TX_TIMEOUT - timeout elapsed before commit.
    */
-  transaction(fn, opts = {}) {
+  // eslint-disable-next-line require-await -- async wraps the sync-throw nested-tx check as a promise rejection so callers using .catch() (not try/await) still see it.
+  async transaction(fn, opts = {}) {
     if (this._txManager.active) {
       throw new TransactionError(
         "ERR_SKALEX_TX_NESTED",
