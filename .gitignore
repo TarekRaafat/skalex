@@ -133,7 +133,7 @@ dist
 .pnp.*
 .DS_Store
 
-# Bun lock file (npm is the primary package manager)
+# Bun lock file (Bun is the primary package manager)
 bun.lock
 
 # Runtime data directories
