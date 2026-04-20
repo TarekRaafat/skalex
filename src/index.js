@@ -209,7 +209,7 @@ class Skalex {
    * Connect to the database: load data, run pending migrations, sweep TTL docs.
    * @returns {Promise<void>}
    */
-  async connect() {
+  connect() {
     if (this._connectPromise) return this._connectPromise;
     this._connectPromise = this._doConnect().catch((err) => {
       this._connectPromise = null;
@@ -287,8 +287,8 @@ class Skalex {
    * isConnected) so migrations can use collection APIs without deadlocking.
    * @returns {Promise<void>}
    */
-  async _ensureConnected() {
-    if (this.isConnected || this._bootstrapping) return;
+  _ensureConnected() {
+    if (this.isConnected || this._bootstrapping) return undefined;
     return this.connect();
   }
 
@@ -586,7 +586,7 @@ class Skalex {
    * @throws {TransactionError} ERR_SKALEX_TX_NESTED - called inside another transaction.
    * @throws {TransactionError} ERR_SKALEX_TX_TIMEOUT - timeout elapsed before commit.
    */
-  async transaction(fn, opts = {}) {
+  transaction(fn, opts = {}) {
     if (this._txManager.active) {
       throw new TransactionError(
         "ERR_SKALEX_TX_NESTED",
@@ -646,7 +646,7 @@ class Skalex {
    * @param {string} filePath - Absolute or relative path to the file.
    * @returns {Promise<Document[]>}
    */
-  async import(filePath) {
+  import(filePath) {
     return this._importer.import(filePath);
   }
 
@@ -657,7 +657,7 @@ class Skalex {
    * @param {string} text
    * @returns {Promise<number[]>}
    */
-  async embed(text) {
+  embed(text) {
     return this._ai.embed(text);
   }
 
@@ -672,7 +672,7 @@ class Skalex {
    * @param {{ limit?: number }} [opts]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
-  async ask(collectionName, nlQuery, opts) {
+  ask(collectionName, nlQuery, opts) {
     return this._ai.ask(collectionName, nlQuery, opts);
   }
 
@@ -718,7 +718,7 @@ class Skalex {
    * @param {{ _id?: string }} [opts]
    * @returns {Promise<void>}
    */
-  async restore(collectionName, timestamp, opts = {}) {
+  restore(collectionName, timestamp, opts = {}) {
     return this._changeLog.restore(collectionName, timestamp, opts);
   }
 
@@ -822,20 +822,34 @@ class Skalex {
   }
 
   // ── Backward-compatible accessors for extracted subsystem internals ────
-  // Tests and internal code may reach for these directly. The canonical
-  // owners are _ai, _ttlScheduler, and _importer.
+  //
+  // @deprecated These getters/setters proxy to the alpha.4-extracted
+  // subsystems (`_ai`, `_ttlScheduler`). They exist only to avoid breaking
+  // tests and internal code that reach into Skalex internals. Scheduled for
+  // removal in beta.1. New code should use the canonical owners directly:
+  //   - db._ai._embeddingAdapter, db._ai._aiAdapter, db._ai.queryCache,
+  //     db._ai._regexMaxLength
+  //   - db._ttlScheduler._timer, db._ttlScheduler._interval
 
+  /** @deprecated Use `db._ai._embeddingAdapter`. Removed in beta.1. */
   get _embeddingAdapter() { return this._ai._embeddingAdapter; }
+  /** @deprecated Use `db._ai._embeddingAdapter = v`. Removed in beta.1. */
   set _embeddingAdapter(v) { this._ai._embeddingAdapter = v; }
 
+  /** @deprecated Use `db._ai._aiAdapter`. Removed in beta.1. */
   get _aiAdapter() { return this._ai._aiAdapter; }
+  /** @deprecated Use `db._ai._aiAdapter = v`. Removed in beta.1. */
   set _aiAdapter(v) { this._ai._aiAdapter = v; }
 
+  /** @deprecated Use `db._ai.queryCache`. Removed in beta.1. */
   get _queryCache() { return this._ai.queryCache; }
 
+  /** @deprecated Use `db._ai._regexMaxLength`. Removed in beta.1. */
   get _regexMaxLength() { return this._ai._regexMaxLength; }
 
+  /** @deprecated Use `db._ttlScheduler._timer`. Removed in beta.1. */
   get _ttlTimer() { return this._ttlScheduler._timer; }
+  /** @deprecated Use `db._ttlScheduler._interval`. Removed in beta.1. */
   get _ttlSweepInterval() { return this._ttlScheduler._interval; }
 
   /**
