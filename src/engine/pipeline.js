@@ -132,10 +132,13 @@ class MutationPipeline {
       ctx.emitEvent(this._col.name, { op, collection: this._col.name, doc: stripVector(doc) });
     }
 
-    // After hook - fire per-doc for insert, single call for update/delete
+    // After hook - fire per-doc for insert, single call for update/delete.
+    // All hook payloads receive vector-stripped docs for consistency, so
+    // plugins don't have to handle _vector presence vs absence per hook type.
     if (afterHook) {
       if (afterHookPayload) {
-        await ctx.runAfterHook(afterHook, afterHookPayload(docs));
+        const stripped = docs.map(stripVector);
+        await ctx.runAfterHook(afterHook, afterHookPayload(stripped));
       } else {
         for (const doc of docs) {
           await ctx.runAfterHook(afterHook, { collection: this._col.name, doc: stripVector(doc) });
