@@ -73,13 +73,25 @@ export default [
     rules: { "no-console": "off" },
   },
 
-  // Abstract adapter base classes declare async methods that don't await
-  // to match the interface contract. Concrete subclasses do await.
+  // Test harness mocks that mirror real async signatures. The `forTesting`
+  // factory in collection-context produces stubs that callers `await`
+  // uniformly; forcing sync would break the contract.
+  {
+    files: ["src/engine/collection-context.js"],
+    rules: { "require-await": "off" },
+  },
+
+  // Adapter interface contracts: abstract base classes and concrete adapters
+  // declare async methods that callers await uniformly. Some concrete
+  // implementations are synchronous under the hood but must keep `async` to
+  // satisfy the interface contract (StorageAdapter, LLMAdapter,
+  // EmbeddingAdapter, MCP transport).
   {
     files: [
-      "src/connectors/storage/base.js",
-      "src/connectors/llm/base.js",
-      "src/connectors/embedding/base.js",
+      "src/connectors/storage/**/*.js",
+      "src/connectors/llm/**/*.js",
+      "src/connectors/embedding/**/*.js",
+      "src/connectors/mcp/transports/**/*.js",
     ],
     rules: { "require-await": "off" },
   },

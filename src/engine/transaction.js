@@ -88,6 +88,7 @@ class TransactionManager {
    *   `db._deferredEffectErrors` then to `"warn"`.
    * @returns {Promise<any>}
    */
+  // eslint-disable-next-line require-await -- async wraps synchronous validation throws as promise rejections.
   async run(fn, db, { timeout = 0, deferredEffectErrors } = {}) {
     validateDeferredEffectErrors(deferredEffectErrors, "transaction() options");
     const execute = async () => {

@@ -36,6 +36,7 @@ class SkalexAI {
    * @param {string} text
    * @returns {Promise<number[]>}
    */
+  // eslint-disable-next-line require-await -- async converts sync-throw to promise-rejection for caller symmetry.
   async embed(text) {
     if (!this._embeddingAdapter) {
       throw new AdapterError(

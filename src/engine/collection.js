@@ -244,7 +244,7 @@ class Collection {
    * @param {{ ttl?, embed?, session?, save? }} opts
    * @returns {Promise<{ docs: object[] }>}
    */
-  async _insertCore(items, { ttl, embed, session, save }) {
+  _insertCore(items, { ttl, embed, session, save }) {
     return this._pipeline.execute({
       op: Ops.INSERT,
       beforeHook: null, // handled per-item inside mutate
@@ -329,7 +329,7 @@ class Collection {
   /**
    * Shared update implementation for one or many documents.
    */
-  async _updateCore(oldDocs, filter, update, { save, session }) {
+  _updateCore(oldDocs, filter, update, { save, session }) {
     return this._pipeline.execute({
       op: Ops.UPDATE,
       beforeHook: Hooks.BEFORE_UPDATE,
@@ -338,7 +338,7 @@ class Collection {
       save,
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, update, result: docs.length === 1 ? docs[0] : docs }),
-      mutate: async (assertTxAlive) => {
+      mutate: (assertTxAlive) => {
         const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
         const prevDocs = this._changelogEnabled ? oldDocs.map(doc => structuredClone(doc)) : oldDocs.map(() => null);
         const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update, { needsPrev }));
@@ -576,7 +576,7 @@ class Collection {
       save,
       session,
       afterHookPayload: (restored) => ({ collection: this.name, filter, docs: restored }),
-      mutate: async (assertTxAlive) => {
+      mutate: (assertTxAlive) => {
         assertTxAlive();
         delete item._deletedAt;
         item.updatedAt = new Date();
@@ -903,7 +903,7 @@ class Collection {
    * Shared delete implementation.
    * @param {"soft"|"hard"|"hardMany"} mode
    */
-  async _deleteCore(mode, items, filter, { save, session }) {
+  _deleteCore(mode, items, filter, { save, session }) {
     return this._pipeline.execute({
       op: Ops.DELETE,
       beforeHook: Hooks.BEFORE_DELETE,
@@ -912,7 +912,7 @@ class Collection {
       save,
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, result: docs.length === 1 ? docs[0] : docs }),
-      mutate: async (assertTxAlive) => {
+      mutate: (assertTxAlive) => {
         assertTxAlive(); // guard before first in-memory state change
         if (mode === "soft") {
           const now = new Date();
@@ -958,7 +958,7 @@ class Collection {
    * @param {object} [filter={}]
    * @param {{ dir?: string, name?: string, format?: "json"|"csv" }} [options]
    */
-  async export(filter = {}, options = {}) {
+  export(filter = {}, options = {}) {
     return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
@@ -1120,7 +1120,7 @@ class Collection {
    * @param {{ ttl?: number|string, embed?: string|Function }} [opts]
    * @returns {Promise<object>}
    */
-  async _buildDoc(item, { ttl, embed } = {}) {
+  _buildDoc(item, { ttl, embed } = {}) {
     return buildDoc(item, {
       ttl,
       embed,

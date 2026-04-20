@@ -79,7 +79,7 @@ class Memory {
    * @param {{ limit?: number, minScore?: number }} [opts]
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
-  async recall(query, { limit = 10, minScore = 0 } = {}) {
+  recall(query, { limit = 10, minScore = 0 } = {}) {
     return this._col.search(query, { limit, minScore });
   }
 

@@ -236,7 +236,7 @@ const TOOL_DEFS = [
  * @param {Record<string, Function>|null} [predicates] - Named predicate allowlist.
  * @returns {Promise<object>} Plain value to be JSON.stringify'd into content text.
  */
-async function callTool(name, args, db, predicates = null) {
+function callTool(name, args, db, predicates = null) {
   const log = db._logger;
   const _sanitize = (f) => sanitizeFilter(f, log, 0, predicates);
   switch (name) {
