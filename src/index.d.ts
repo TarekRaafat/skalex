@@ -582,6 +582,7 @@ export interface UpsertManyOptions extends InsertManyOptions {
 
 export declare class Collection<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly name: string;
+  readonly [Symbol.toStringTag]: string;
 
   // Insert
   insertOne(item: Partial<T>, options?: InsertOneOptions): Promise<DocOf<T>>;
@@ -599,6 +600,14 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   upsert(filter: Filter<T>, doc: Partial<T>, options?: UpdateOptions): Promise<DocOf<T>>;
   /** Batch upsert: match each doc on matchKey, update if found, insert otherwise. */
   upsertMany(docs: Partial<T>[], matchKey: keyof T & string, options?: UpsertManyOptions): Promise<DocOf<T>[]>;
+
+  /**
+   * Apply an update descriptor (`$set`, `$inc`, `$push`, or direct assignment)
+   * to a document in place. Used internally by update/upsert paths; exposed
+   * primarily for advanced plugin authors. System fields (`_id`, `createdAt`,
+   * `updatedAt`) and prototype-polluting keys are silently skipped.
+   */
+  applyUpdate(item: DocOf<T>, update: UpdateDescriptor<T>): DocOf<T>;
 
   // Delete
   deleteOne(filter: Filter<T>, options?: DeleteOptions): Promise<DocOf<T> | null>;
@@ -692,6 +701,10 @@ export declare class Skalex {
   readonly isConnected: boolean;
   readonly debug: boolean;
 
+  /** ES2024 explicit resource management: `await using db = new Skalex(...)` auto-disconnects on scope exit. */
+  [Symbol.asyncDispose](): Promise<void>;
+  readonly [Symbol.toStringTag]: string;
+
   // Connection
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -704,6 +717,7 @@ export declare class Skalex {
   // Persistence
   saveData(collectionName?: string): Promise<void>;
   loadData(): Promise<void>;
+  buildIndex<T = Record<string, unknown>>(data: T[], keyField: string): Map<unknown, T>;
 
   // Migrations
   addMigration(migration: Migration): void;
