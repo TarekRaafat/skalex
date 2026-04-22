@@ -111,6 +111,14 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 #### Done
 
+**[alpha.5] - 2026-04-22 - Tactical cleanup, automated release gate**
+- [x] Replace `_MUTATION_METHODS` hardcoded set with naming-convention regex (`_MUTATION_METHOD_PATTERN`)
+- [x] `npm run verify` script and GitHub Actions CI (enforces the mandatory gate on every push and PR)
+- [x] `scripts/verify-node-stubs.mjs` pre-build guard for the browser bundle (catches `node:*` imports missing from Rollup's `external` list)
+- [x] Isolated Collection tests using `CollectionContext.forTesting()` (validates alpha.4 #14 end-to-end)
+- [x] Test audit: folded tautological `Hooks.AFTER_RESTORE` pin into the main Hooks values test
+- [x] Module consolidation evaluated and declined (document-builder/exporter/vector-search stay separate - different concerns, different deps)
+
 **[alpha.4] - 2026-04-20 - Architecture decomposition, performance, code quality**
 - [x] `find()` limit-only fast path: early termination without full sort
 - [x] Skip `structuredClone` for `prev` when changelog is disabled
@@ -174,7 +182,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **TypeScript & testing**
 - [x] Full TypeScript definitions with generics and union types
-- [x] Cross-runtime smoke test suite: **1125 tests** verified across Node.js, Bun, Deno, and headless Chromium ESM + UMD (**229 smoke**), on top of **896 vitest unit and integration tests**
+- [x] Cross-runtime smoke test suite: **1,137 tests** verified across Node.js, Bun, Deno, and headless Chromium ESM + UMD (**229 smoke**), on top of **908 vitest unit and integration tests**
 - [x] Adapter conformance test suite: same tests against MemoryAdapter, FsAdapter (json/gz), EncryptedAdapter
 
 **Storage adapters**

@@ -2,9 +2,24 @@
 
 This file collects every upgrade guide Skalex v4 has shipped. Start with the section matching the version you are upgrading from.
 
+- [4.0.0-alpha.4 → 4.0.0-alpha.5](#400-alpha4--400-alpha5) (no breaking changes)
 - [4.0.0-alpha.3 → 4.0.0-alpha.4](#400-alpha3--400-alpha4)
 - [4.0.0-alpha.2.x → 4.0.0-alpha.3](#400-alpha2x--400-alpha3)
 - [v3 → v4.0.0-alpha.1](#v3--v4)
+
+---
+
+## 4.0.0-alpha.4 → 4.0.0-alpha.5
+
+**No breaking changes.** alpha.5 is a tactical cleanup release: automated release gate, CI enforcement, `node:*` stub validator, isolated Collection testing pattern, and a naming-convention regex replacing the `_MUTATION_METHODS` hardcoded set.
+
+No API changes. No behaviour changes. Drop-in upgrade:
+
+```sh
+npm install skalex@4.0.0-alpha.5
+```
+
+No other action required.
 
 ---
 

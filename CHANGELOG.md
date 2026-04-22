@@ -7,6 +7,47 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.5] - 2026-04-22
+
+Tactical cleanup release. No breaking changes, no architectural decomposition, no new user-facing features. Closes the alpha.4 self-review gaps, automates the release gate, and replaces a hand-maintained mutation method list with a naming-convention regex.
+
+### Added
+
+- **`npm run verify` script** - single command that runs the full mandatory gate (`test` -> `build` -> `lint` -> `deps:check` -> `types:check`). Replaces the ad-hoc 5-command chain that was documented but not consolidated. `npm run test:all` now chains `verify` + `smoke` for the pre-ship gate.
+- **GitHub Actions CI (`.github/workflows/verify.yml`)** - runs `npm run verify` on every push to master and every PR. A second smoke matrix job runs the cross-runtime tests against the built artifacts on Node, Bun, Deno, and browser (Chromium via Playwright). Concurrency group cancels in-progress runs when a new commit arrives. Addresses the alpha.4 retrospective finding: the documented gate was not enforced, so regressions surfaced only under manual review.
+- **`scripts/verify-node-stubs.mjs`** - pre-build guard that walks `src/` for every `node:*` import (and dynamic `import()` / `require()` variants) and asserts each is declared in Rollup's `external` array. Wired into `npm run build`. Catches the class of silent browser-build breakage that took 5 self-review rounds to surface during alpha.4 (`node:util` imported without a matching stub).
+- **`tests/unit/collection-isolated.test.js`** - 11 new tests prove `CollectionContext.forTesting()` covers enough of the context surface to instantiate and exercise a Collection without a Skalex instance. Documents the canonical isolation pattern for plugin authors.
+- **Exported `_MUTATION_METHOD_PATTERN`** from `src/engine/transaction.js` so tests can verify the regex directly.
+
+### Changed
+
+- **`_MUTATION_METHODS` hardcoded set replaced with a naming-convention regex** - `_MUTATION_METHOD_PATTERN` matches any method starting with `insert`, `update`, `upsert`, or `delete` (optionally suffixed) and `restore`. Adding a new mutation method (e.g. `upsertWhere`, `deleteByFilter`) no longer requires a manual list update. Three regression tests guard the pattern: positive (all 9 current mutations match), negative (reads/internal methods do not match), and convention-extension (hypothetical new mutations match automatically).
+- **`npm run build` now prepended with `verify-node-stubs`** - the stub validator runs before Rollup so a missing `node:*` external fails the build with a clear diff instead of a cryptic Rollup trace.
+- **Rollup `external` list tightened** - removed `node:os` which is declared but not imported anywhere (caught by the new verifier).
+
+### Fixed
+
+- **Stale `rollup.config.js` external entry** - `node:os` removed.
+- **Redundant test cleanup** - folded the standalone `Hooks.AFTER_RESTORE` pin into the main `Hooks` values block (covered end-to-end by the `afterRestore` hook regression tests in `collection-features.test.js`).
+
+### Tooling
+
+- `package.json` scripts: added `verify`, `verify:stubs`; `test:all` now chains `verify` + `smoke`.
+- GitHub Actions workflow pins Node 20 and uses `actions/cache` for `npm ci`. Smoke matrix uses `oven-sh/setup-bun@v2`, `denoland/setup-deno@v2`, and Playwright's `--with-deps chromium` installer.
+
+### Tests
+
+- **908 vitest tests** across 36 files (10 net added: 11 new isolated Collection tests + 3 new pattern tests - 1 tautological completeness - 1 redundant AFTER_RESTORE pin - 2 merged-into-neighbour).
+- **229 smoke tests** unchanged: Node 79, Bun 54, Deno 47, browser 49.
+- **1,137 total tests** verified.
+- `eslint` (0 errors, 0 warnings), `madge --circular`, `tsd`, `verify-node-stubs`, and `bun run build` all clean.
+
+### Deferred
+
+The alpha-4 review pushed module consolidation (merging `document-builder.js`, `exporter.js`, `vector-search.js`) into alpha.5 as a judgment call. Evaluated and declined: the three files serve different concerns with different dependency surfaces, merging would hurt code locality without saving meaningful code. Decision recorded in the alpha-5 plan execution notes.
+
+---
+
 ## [4.0.0-alpha.4] - 2026-04-20
 
 Architecture decomposition, performance optimization, and code quality. The Skalex and Collection god objects are broken apart into focused modules, hot paths are optimized, transaction isolation is tightened, and every adapter throw is migrated to the typed error hierarchy.

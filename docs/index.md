@@ -26,7 +26,7 @@
 > No server. No config. No dependencies. The AI-first JavaScript database - built for AI agents, local-first apps, and every JavaScript runtime. :rocket:
 
 > [!WARNING]
-> **v4.0.0-alpha.4**: this is a pre-release. The API may change before the stable `4.0.0` release. Pin the exact version in your `package.json` and review the [CHANGELOG](https://github.com/TarekRaafat/skalex/blob/master/CHANGELOG.md) before upgrading.
+> **v4.0.0-alpha.5**: this is a pre-release. The API may change before the stable `4.0.0` release. Pin the exact version in your `package.json` and review the [CHANGELOG](https://github.com/TarekRaafat/skalex/blob/master/CHANGELOG.md) before upgrading.
 
 ## What is Skalex? <!-- {docsify-ignore} -->
 
@@ -55,7 +55,7 @@
 - Pure Vanilla JavaScript: zero runtime dependencies
 - Isomorphic: Node.js ≥18, Bun, Deno 2.x, browsers, edge runtimes
 - Full build matrix ships in the box: `dist/skalex.esm.js`, `dist/skalex.esm.min.js`, `dist/skalex.cjs`, `dist/skalex.min.cjs`, `dist/skalex.browser.js`, `dist/skalex.umd.min.js`
-- CDN-ready - **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.4"></script>` → `window.Skalex`
+- CDN-ready - **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5"></script>` → `window.Skalex`
 - npm + bundler: `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors'` - single subpackage, fully tree-shakeable; scoped: `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`
 - Full TypeScript definitions with generics and union types; no `@types/` package needed
 - Pluggable connectors: storage (`FsAdapter`, `LocalStorageAdapter`, `EncryptedAdapter`, `BunSQLiteAdapter`, `D1Adapter`, `LibSQLAdapter`), embedding (`OpenAIEmbeddingAdapter`, `OllamaEmbeddingAdapter`), LLM (`OpenAILLMAdapter`, `AnthropicLLMAdapter`, `OllamaLLMAdapter`)
