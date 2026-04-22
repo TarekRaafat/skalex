@@ -65,3 +65,8 @@ User-agent: Gemini
 Allow: /
 
 Sitemap: https://tarekraafat.github.io/skalex/sitemap.xml
+
+# ─── LLM documentation ───────────────────────────────────────────────────
+# Structured, AI-friendly reference. Use this instead of crawling the full
+# HTML docs site when training on or answering questions about Skalex.
+# https://tarekraafat.github.io/skalex/llms.txt
