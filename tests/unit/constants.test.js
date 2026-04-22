@@ -19,9 +19,6 @@ describe("engine constants", () => {
     expect(Hooks.AFTER_UPDATE).toBe("afterUpdate");
     expect(Hooks.BEFORE_DELETE).toBe("beforeDelete");
     expect(Hooks.AFTER_DELETE).toBe("afterDelete");
-  });
-
-  test("Hooks.AFTER_RESTORE exists and equals 'afterRestore'", () => {
     expect(Hooks.AFTER_RESTORE).toBe("afterRestore");
   });
 
