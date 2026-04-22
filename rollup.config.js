@@ -4,7 +4,7 @@ import terser from "@rollup/plugin-terser";
 
 const input = "src/index.js";
 
-const external = ["node:fs", "node:path", "node:zlib", "node:crypto", "node:os", "node:http"];
+const external = ["node:fs", "node:path", "node:zlib", "node:crypto", "node:http"];
 
 /**
  * Replaces node:* built-in imports with empty stubs for browser builds.

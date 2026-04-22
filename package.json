@@ -100,19 +100,21 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "rollup -c && cp src/index.d.ts dist/skalex.d.ts",
+    "build": "node scripts/verify-node-stubs.mjs && rollup -c && cp src/index.d.ts dist/skalex.d.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/ tests/",
     "deps:check": "madge --circular src/",
     "types:check": "tsd",
+    "verify:stubs": "node scripts/verify-node-stubs.mjs",
+    "verify": "npm run test && npm run build && npm run lint && npm run deps:check && npm run types:check",
     "smoke:node": "node tests/smoke/node.test.cjs",
     "smoke:bun": "bun tests/smoke/bun.test.js && bun tests/smoke/bun-sqlite.test.js",
     "smoke:deno": "deno run tests/smoke/deno.test.js",
     "smoke:browser": "node tests/smoke/browser.test.js",
     "smoke": "npm run smoke:node && npm run smoke:bun && npm run smoke:deno && npm run smoke:browser",
-    "test:all": "npm run test && npm run lint && npm run deps:check && npm run types:check && npm run smoke"
+    "test:all": "npm run verify && npm run smoke"
   },
   "tsd": {
     "directory": "tests/types"
