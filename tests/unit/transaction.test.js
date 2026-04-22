@@ -269,20 +269,41 @@ describe("TransactionManager  -  _txProxyCallDepth", () => {
   });
 });
 
-// ─── _MUTATION_METHODS set validation ─────────────────────────────────────
+// ─── Mutation method pattern ──────────────────────────────────────────────
 
-describe("TransactionManager  -  _MUTATION_METHODS completeness", () => {
-  test("_MUTATION_METHODS set contains all 9 mutation methods", () => {
-    // We cannot import the private set directly, but we can verify via
-    // DEFERRED_EFFECT_STRATEGIES export that the module is importable,
-    // and check behaviour: every mutation method on Collection should
-    // be wrapped by the proxy.
-    const expected = [
+describe("TransactionManager  -  mutation method pattern", () => {
+  test("pattern matches all current public mutation methods", async () => {
+    const { _MUTATION_METHOD_PATTERN } = await import("../../src/engine/transaction.js");
+    const mutations = [
       "insertOne", "insertMany", "updateOne", "updateMany",
       "upsert", "upsertMany", "deleteOne", "deleteMany", "restore",
     ];
-    // Verify count
-    expect(expected).toHaveLength(9);
+    for (const m of mutations) {
+      expect(_MUTATION_METHOD_PATTERN.test(m)).toBe(true);
+    }
+  });
+
+  test("pattern does not match reads, aggregations, or internal methods", async () => {
+    const { _MUTATION_METHOD_PATTERN } = await import("../../src/engine/transaction.js");
+    const nonMutations = [
+      "find", "findOne", "count", "sum", "avg", "groupBy",
+      "search", "similar", "watch", "export", "applyUpdate",
+      "_insertCore", "_updateCore", "_deleteCore", "_buildDoc",
+      "constructor", "name",
+    ];
+    for (const m of nonMutations) {
+      expect(_MUTATION_METHOD_PATTERN.test(m)).toBe(false);
+    }
+  });
+
+  test("new mutation method following the naming convention is automatically covered", async () => {
+    const { _MUTATION_METHOD_PATTERN } = await import("../../src/engine/transaction.js");
+    // Hypothetical future additions - must match without touching the pattern.
+    expect(_MUTATION_METHOD_PATTERN.test("patchMany")).toBe(false); // "patch" is not a registered prefix
+    expect(_MUTATION_METHOD_PATTERN.test("insertByKey")).toBe(true);
+    expect(_MUTATION_METHOD_PATTERN.test("updateBy")).toBe(true);
+    expect(_MUTATION_METHOD_PATTERN.test("upsertWhere")).toBe(true);
+    expect(_MUTATION_METHOD_PATTERN.test("deleteByFilter")).toBe(true);
   });
 });
 

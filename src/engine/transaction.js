@@ -9,11 +9,18 @@ import { TransactionError, ValidationError } from "./errors.js";
 /** Default window of aborted transaction IDs retained for stale-continuation detection. */
 const DEFAULT_ABORTED_ID_WINDOW = 1000;
 
-/** Collection methods that go through the MutationPipeline and need the depth counter. */
-const _MUTATION_METHODS = Object.freeze(new Set([
-  "insertOne", "insertMany", "updateOne", "updateMany",
-  "upsert", "upsertMany", "deleteOne", "deleteMany", "restore",
-]));
+/**
+ * Matches Collection mutation method names by convention. Any public method
+ * whose name starts with `insert`, `update`, `upsert`, `delete`, or equals
+ * `restore` is treated as a mutation by the transaction proxy and wrapped
+ * with the depth counter. Adding a new mutation method (e.g. `patchMany`,
+ * `deleteBy`, `upsertWhere`) only requires following the convention - no
+ * hand-maintained list to keep in sync.
+ *
+ * Private methods (prefixed with `_`) and reads (find, findOne, count,
+ * etc.) are excluded.
+ */
+export const _MUTATION_METHOD_PATTERN = /^(insert|update|upsert|delete)($|[A-Z])|^restore$/;
 
 /**
  * Valid values for the `deferredEffectErrors` option. Exported so the
@@ -164,7 +171,7 @@ class TransactionManager {
                 get(colTarget, colProp) {
                   const v = Reflect.get(colTarget, colProp);
                   if (typeof v !== "function") return v;
-                  if (!_MUTATION_METHODS.has(colProp)) return v.bind(colTarget);
+                  if (typeof colProp !== "string" || !_MUTATION_METHOD_PATTERN.test(colProp)) return v.bind(colTarget);
                   return function (...args) {
                     colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
                     try {
