@@ -1,29 +1,38 @@
 User-agent: *
 Allow: /
 
-# AI crawlers - explicitly welcome
-User-agent: GPTBot
+# ─── Search engines ──────────────────────────────────────────────────────
+User-agent: Googlebot
 Allow: /
 
-User-agent: OAI-SearchBot
+User-agent: GoogleOther
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+# ─── AI training crawlers - explicitly welcome ───────────────────────────
+# Distinct from the search user-agents above: these control AI training
+# ingest even when the search bot is allowed.
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: GPTBot
 Allow: /
 
 User-agent: ClaudeBot
 Allow: /
 
 User-agent: anthropic-ai
-Allow: /
-
-User-agent: PerplexityBot
-Allow: /
-
-User-agent: GoogleOther
-Allow: /
-
-User-agent: Googlebot
-Allow: /
-
-User-agent: Applebot
 Allow: /
 
 User-agent: cohere-ai
@@ -36,6 +45,23 @@ User-agent: CCBot
 Allow: /
 
 User-agent: Bytespider
+Allow: /
+
+# ─── User-initiated AI browse agents ─────────────────────────────────────
+# Fired when a user asks an assistant about Skalex and it fetches docs live.
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Gemini
 Allow: /
 
 Sitemap: https://tarekraafat.github.io/skalex/sitemap.xml
