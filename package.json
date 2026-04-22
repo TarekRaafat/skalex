@@ -63,40 +63,51 @@
       "types": "./dist/skalex.d.ts"
     },
     "./connectors": {
-      "import": "./src/connectors/index.js"
+      "import": "./src/connectors/index.js",
+      "types": "./src/connectors/index.d.ts"
     },
     "./connectors/storage": {
-      "import": "./src/connectors/storage/index.js"
+      "import": "./src/connectors/storage/index.js",
+      "types": "./src/connectors/storage/index.d.ts"
     },
     "./connectors/embedding": {
-      "import": "./src/connectors/embedding/index.js"
+      "import": "./src/connectors/embedding/index.js",
+      "types": "./src/connectors/embedding/index.d.ts"
     },
     "./connectors/llm": {
-      "import": "./src/connectors/llm/index.js"
+      "import": "./src/connectors/llm/index.js",
+      "types": "./src/connectors/llm/index.d.ts"
     },
     "./connectors/fs": {
-      "import": "./src/connectors/storage/fs.js"
+      "import": "./src/connectors/storage/fs.js",
+      "types": "./src/connectors/storage/fs.d.ts"
     },
     "./connectors/encrypted": {
-      "import": "./src/connectors/storage/encrypted.js"
+      "import": "./src/connectors/storage/encrypted.js",
+      "types": "./src/connectors/storage/encrypted.d.ts"
     },
     "./connectors/local": {
-      "import": "./src/connectors/storage/local.js"
+      "import": "./src/connectors/storage/local.js",
+      "types": "./src/connectors/storage/local.d.ts"
     },
     "./connectors/d1": {
-      "import": "./src/connectors/storage/d1.js"
+      "import": "./src/connectors/storage/d1.js",
+      "types": "./src/connectors/storage/d1.d.ts"
     },
     "./connectors/bun-sqlite": {
-      "import": "./src/connectors/storage/bun-sqlite.js"
+      "import": "./src/connectors/storage/bun-sqlite.js",
+      "types": "./src/connectors/storage/bun-sqlite.d.ts"
     },
     "./connectors/libsql": {
-      "import": "./src/connectors/storage/libsql.js"
+      "import": "./src/connectors/storage/libsql.js",
+      "types": "./src/connectors/storage/libsql.d.ts"
     }
   },
   "files": [
     "dist",
     "src/connectors",
-    "src/engine/errors.js"
+    "src/engine/errors.js",
+    "src/index.d.ts"
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
