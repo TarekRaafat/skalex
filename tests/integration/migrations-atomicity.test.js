@@ -11,11 +11,14 @@ import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
 // Helper: decode a persisted _meta blob and return the first doc, or null.
+// The on-disk payload is wrapped as `{ data: { data: [...docs], ... }, meta }`
+// by the out-of-band type serializer introduced in alpha.6.
 async function readMetaDoc(adapter) {
   const raw = await adapter.read("_meta");
   if (!raw) return null;
   const parsed = JSON.parse(raw);
-  return parsed?.data?.[0] ?? null;
+  const payload = parsed?.data ?? parsed;
+  return payload?.data?.[0] ?? null;
 }
 
 // ─── Rollback + clean retry ───────────────────────────────────────────────

@@ -22,34 +22,144 @@ import PluginEngine from "./features/plugins.js";
 import SkalexMCPServer from "./connectors/mcp/index.js";
 
 /**
- * BigInt- and Date-safe JSON serializer. Encodes BigInt values as tagged objects
- * and Date instances as tagged ISO strings so they survive the round-trip.
- * Uses `function` (not arrow) so `this` is the holder object - needed because
- * JSON.stringify calls Date.toJSON() before the replacer sees the value.
+ * BigInt- and Date-safe JSON serializer.
+ *
+ * Encodes BigInt and Date values out-of-band: the data tree stores the string
+ * form (ISO for Date, digits for BigInt), and a parallel `meta.types` map
+ * records the paths to each typed value so the decoder can reconstruct them.
+ *
+ * Wire format:
+ *   { "data": <encoded-value>, "meta": { "types": { "bigint": [[path...]], "Date": [[path...]] } } }
+ *
+ * Why out-of-band: the pre-alpha.6 format embedded tagged objects
+ * (`{ __skalex_bigint__: "..." }`) directly in the data. Any user document
+ * that legitimately stored those keys was silently revived as BigInt/Date
+ * on load. Keeping type metadata parallel to the data eliminates that
+ * collision - user objects round-trip as themselves.
+ *
+ * Legacy reads still work: `_deserialize` detects the old inline-tag format
+ * and falls through to the original reviver for documents persisted before
+ * this change.
  * @param {any} value
  * @returns {string}
  */
-const _serialize = (value) =>
-  JSON.stringify(value, function (key, v) {
-    const raw = this[key];
-    if (raw instanceof Date) return { __skalex_date__: raw.toISOString() };
-    if (typeof v === "bigint") return { __skalex_bigint__: v.toString() };
-    return v;
-  });
+const _serialize = (value) => {
+  const types = { bigint: [], Date: [] };
+  const encoded = _encodeValue(value, [], types);
+  const meta = {};
+  if (types.bigint.length) meta.bigint = types.bigint;
+  if (types.Date.length) meta.Date = types.Date;
+  return JSON.stringify({ data: encoded, meta: { types: meta } });
+};
 
 /**
- * Counterpart to `_serialize`. Revives tagged BigInt and Date objects.
+ * Walk `v` into a plain JSON-safe structure, recording the path of every
+ * BigInt / Date value into `types`.
+ * @param {any} v
+ * @param {Array<string|number>} path - mutated during traversal; captured per hit
+ * @param {{ bigint: Array<Array<string|number>>, Date: Array<Array<string|number>> }} types
+ * @returns {any}
+ */
+function _encodeValue(v, path, types) {
+  if (v instanceof Date) {
+    types.Date.push(path.slice());
+    return v.toISOString();
+  }
+  if (typeof v === "bigint") {
+    types.bigint.push(path.slice());
+    return v.toString();
+  }
+  if (Array.isArray(v)) {
+    const out = new Array(v.length);
+    for (let i = 0; i < v.length; i++) {
+      path.push(i);
+      out[i] = _encodeValue(v[i], path, types);
+      path.pop();
+    }
+    return out;
+  }
+  if (v && typeof v === "object" && v.constructor === Object) {
+    const out = {};
+    for (const k of Object.keys(v)) {
+      path.push(k);
+      out[k] = _encodeValue(v[k], path, types);
+      path.pop();
+    }
+    return out;
+  }
+  return v;
+}
+
+/**
+ * Counterpart to `_serialize`. Detects the out-of-band format via the
+ * `{ data, meta }` wrapper and reconstructs typed values from `meta.types`.
+ * Falls back to the legacy inline-tag reviver for pre-alpha.6 data.
  * @param {string} text
  * @returns {any}
  */
-const _deserialize = (text) =>
-  JSON.parse(text, (_, v) => {
+const _deserialize = (text) => {
+  const parsed = JSON.parse(text);
+  if (_isWrappedPayload(parsed)) {
+    let data = parsed.data;
+    const typeMap = parsed.meta?.types ?? {};
+    if (Array.isArray(typeMap.bigint)) {
+      for (const path of typeMap.bigint) {
+        data = _applyTypeAtPath(data, path, (s) => BigInt(s));
+      }
+    }
+    if (Array.isArray(typeMap.Date)) {
+      for (const path of typeMap.Date) {
+        data = _applyTypeAtPath(data, path, (s) => new Date(s));
+      }
+    }
+    return data;
+  }
+  // Legacy format - revive inline tag objects for backward compatibility.
+  return JSON.parse(text, (_, v) => {
     if (v && typeof v === "object") {
       if ("__skalex_bigint__" in v) return BigInt(v.__skalex_bigint__);
       if ("__skalex_date__" in v) return new Date(v.__skalex_date__);
     }
     return v;
   });
+};
+
+/**
+ * Returns true when the parsed value is an out-of-band wrapped payload.
+ * The wrapper has exactly two own keys, `data` and `meta`, and `meta.types`
+ * is an object. Any other shape is treated as legacy data.
+ * @param {any} v
+ * @returns {boolean}
+ */
+function _isWrappedPayload(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  if (!("data" in v) || !("meta" in v)) return false;
+  if (!v.meta || typeof v.meta !== "object") return false;
+  if (!("types" in v.meta) || typeof v.meta.types !== "object") return false;
+  return true;
+}
+
+/**
+ * Replace the value at `path` inside `root` with `convert(value)`.
+ * Returns the (possibly new) root - when `path` is empty, `root` itself
+ * is replaced.
+ * @param {any} root
+ * @param {Array<string|number>} path
+ * @param {(v: any) => any} convert
+ * @returns {any}
+ */
+function _applyTypeAtPath(root, path, convert) {
+  if (!Array.isArray(path) || path.length === 0) return convert(root);
+  let parent = root;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (parent == null) return root;
+    parent = parent[path[i]];
+  }
+  if (parent == null) return root;
+  const key = path[path.length - 1];
+  parent[key] = convert(parent[key]);
+  return root;
+}
 
 /**
  * Skalex  -  an in-process document database with file-system persistence.

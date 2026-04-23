@@ -769,7 +769,9 @@ describe("write queue", () => {
     expect(docs).toHaveLength(3);
     const stored = adapter._store.get("items");
     const parsed = JSON.parse(stored);
-    expect(parsed.data).toHaveLength(3);
+    // Alpha.6 wraps every persisted payload as `{ data, meta }` for out-of-band
+    // BigInt/Date type metadata. The collection payload lives at `parsed.data`.
+    expect(parsed.data.data).toHaveLength(3);
     await db.disconnect();
   });
 
@@ -784,7 +786,7 @@ describe("write queue", () => {
     const stored = adapter._store.get("items");
     const parsed = JSON.parse(stored);
     // Both documents must be reflected in the final persisted snapshot
-    expect(parsed.data.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.data.data.length).toBeGreaterThanOrEqual(2);
     await db.disconnect();
   });
 });
