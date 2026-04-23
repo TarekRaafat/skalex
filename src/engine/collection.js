@@ -1204,6 +1204,61 @@ class Collection {
     return findIndex(filter, this._ds.data);
   }
 
+  // ─── Rehydrate (changelog restore) ───────────────────────────────────────
+
+  /**
+   * Replace the entire collection state with the given archived documents.
+   * Used by `ChangeLog.restore()` to replay historical state faithfully:
+   * `_id`, `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector`
+   * are preserved exactly as archived. Pipeline side effects (plugins,
+   * events, changelog, validation, schema checks, FIFO cap) are bypassed
+   * because the archived state was already valid when it was captured.
+   *
+   * Not public API - invoked only from `ChangeLog.restore()`.
+   *
+   * @param {object[]} docs - Archived documents in their final-state form.
+   */
+  _rehydrateAll(docs) {
+    // `replaceAll` swaps the data array and rebuilds the primary _id index.
+    this._ds.replaceAll(docs.map(d => ({ ...d })));
+    if (this._fieldIndex) this._fieldIndex.buildFromData(this._ds.data);
+    this._ctx.persistence.markDirty(this._ctx.collections, this.name);
+  }
+
+  /**
+   * Replace (or remove) a single document with an archived state. Used for
+   * per-document `ChangeLog.restore()` so timestamps and other system
+   * fields come back exactly as they were archived.
+   *
+   * @param {string} id - Document _id to restore.
+   * @param {object|null} archived - Archived doc snapshot, or null when the
+   *   document should not exist at the restored timestamp.
+   */
+  _rehydrateOne(id, archived) {
+    const existing = this._ds.getById(id);
+    if (archived == null) {
+      if (!existing) return;
+      const idx = this._ds.indexOf(existing);
+      if (idx !== -1) {
+        this._removeFromIndex(existing);
+        this._ds.spliceAt(idx);
+      }
+      this._ctx.persistence.markDirty(this._ctx.collections, this.name);
+      return;
+    }
+    const clone = { ...archived };
+    if (existing) {
+      const idx = this._ds.indexOf(existing);
+      if (idx === -1) return;
+      this._ds.replaceAt(idx, clone);
+      this._updateInIndex(existing, clone);
+    } else {
+      this._ds.push(clone);
+      this._addToIndex(clone);
+    }
+    this._ctx.persistence.markDirty(this._ctx.collections, this.name);
+  }
+
   // ─── Private index helpers ────────────────────────────────────────────────
 
   _addToIndex(doc) {

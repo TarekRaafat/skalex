@@ -78,7 +78,9 @@ class ChangeLog {
     const relevant = allEntries.filter(e => new Date(e.timestamp) <= ts);
 
     if (_id) {
-      // Restore a single document
+      // Restore a single document. The archived snapshot is rehydrated
+      // directly via the collection's internal `_rehydrateOne` path so
+      // timestamps, version, expiry, and vector are preserved exactly.
       const docEntries = relevant.filter(e => e.docId === _id);
       if (docEntries.length === 0) return;
 
@@ -86,21 +88,8 @@ class ChangeLog {
 
       this._restoring = true;
       try {
-        if (last.op === Ops.DELETE) {
-          // Document should not exist at this point in time
-          const existing = await col.findOne({ _id });
-          if (existing) await col.deleteOne({ _id });
-          return;
-        }
-
-        const existing = await col.findOne({ _id });
-        if (existing) {
-          // Overwrite with the snapshotted doc (excluding system timestamps)
-          const { _id: _docId, createdAt: _c, updatedAt: _u, ...fields } = last.doc;
-          await col.updateOne({ _id }, fields);
-        } else {
-          await col.insertOne({ ...last.doc });
-        }
+        const archived = last.op === Ops.DELETE ? null : last.doc;
+        col._rehydrateOne(_id, archived);
       } finally {
         this._restoring = false;
       }
@@ -108,7 +97,8 @@ class ChangeLog {
       return;
     }
 
-    // Restore entire collection  -  replay all entries in order
+    // Restore entire collection - replay all entries in order, then rehydrate
+    // the resulting state in a single atomic swap.
     const state = new Map(); // docId → { doc, deleted }
 
     for (const entry of relevant) {
@@ -119,14 +109,14 @@ class ChangeLog {
       }
     }
 
+    const restored = [];
+    for (const { doc, deleted } of state.values()) {
+      if (!deleted && doc) restored.push(doc);
+    }
+
     this._restoring = true;
     try {
-      await col.deleteMany({});
-      for (const [, { doc, deleted }] of state) {
-        if (!deleted && doc) {
-          await col.insertOne({ ...doc });
-        }
-      }
+      col._rehydrateAll(restored);
     } finally {
       this._restoring = false;
     }
