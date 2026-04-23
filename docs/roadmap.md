@@ -80,8 +80,8 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Persistence state encapsulation: move per-collection write-tracking state out of the collection store and into the persistence manager - cleaner separation of concerns
 
 **DX & tooling**
-- [ ] `[beta.1]` Fix lossy changelog restore (rehydrate raw snapshots instead of replaying through `insertOne`/`updateOne`)
-- [ ] `[beta.1]` Normalize connector subpath exports (add `require`/`types` entries for all connector subpaths)
+- [ ] Normalize connector subpath exports - add `require` / CJS bundles for all connector subpaths (alpha.6 shipped `types` entries; CJS deferred because it requires per-connector rollup outputs)
+- [ ] Make `Symbol.asyncDispose` / `Symbol.dispose` declarations in `src/index.d.ts` tolerant of consumer tsconfigs targeting `lib: ES2022` or earlier - today's declaration triggers `TS2550` for those consumers even though Node 18+ supports `await using` at runtime. Regression-guard strategy needs design (zero-dep constraint rules out `tsc`-based checks; presence check via grep is brittle; tsd's existing compile-check only covers the default lib target)
 - [ ] `create-skalex`: scaffolding CLI - `npm create skalex@latest` for instant project setup with runtime-specific templates
 - [ ] Interactive playground: browser-based sandbox hosted on the docs site - try Skalex with zero installation
 - [ ] Test utilities: `createTestDb(options?)` helper pre-configured with MemoryAdapter for frictionless unit and integration testing
@@ -100,7 +100,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Stress and performance test suite: benchmark hot paths (`insertOne`, `find`, `updateOne`) under load, detect memory leaks in long-running processes, and guard against performance regressions across releases
 - [ ] Performance characteristics documentation: document expected throughput, latency, and memory usage for common workloads and collection sizes
 - [ ] Dataset size and memory architecture guide: recommended collection sizes, index strategy for large datasets, and memory characteristics of the in-memory architecture - set clear expectations for what Skalex is designed for
-- [ ] Custom serializer protocol guide: document the tagged-object convention for BigInt and Date preservation so custom serializer/deserializer implementations handle type round-trips correctly
+- [ ] Custom serializer protocol guide: document the out-of-band `{ data, meta: { types } }` wrapper format so custom serializer/deserializer implementations handle BigInt and Date round-trips correctly and remain compatible with legacy inline-tag payloads
 
 **Framework adapters**
 - [ ] `skalex/react`: React hooks and context integration
@@ -110,6 +110,14 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `skalex/eleva`: Eleva.js signals and reactive store integration
 
 #### Done
+
+**[alpha.6] - 2026-04-23 - Correctness and packaging**
+- [x] Out-of-band BigInt/Date type metadata (`{ data, meta: { types } }` wrapper) - fixes literal-key collision and silent data revival
+- [x] Legacy `__skalex_bigint__` / `__skalex_date__` inline-tag payloads continue to load, migrate to new format on next save
+- [x] `MutationPipeline.executeBatch()` - single-pass batch variant that amortizes connection / lock / snapshot / save / session-stats overhead
+- [x] `upsertMany()` refactored onto `executeBatch` - one save per batch, one session-stats increment, per-doc hooks/events/changelog preserved
+- [x] Exact changelog restore via `Collection._rehydrateAll` / `_rehydrateOne` - `createdAt`, `updatedAt`, `_version`, `_expiresAt`, `_vector` preserved verbatim
+- [x] Connector subpath `types` entries for all 10 `skalex/connectors/*` subpaths (`fs`, `encrypted`, `local`, `d1`, `bun-sqlite`, `libsql`, and 4 aggregate index subpaths)
 
 **[alpha.5] - 2026-04-22 - Tactical cleanup, automated release gate**
 - [x] Replace `_MUTATION_METHODS` hardcoded set with naming-convention regex (`_MUTATION_METHOD_PATTERN`)
@@ -182,7 +190,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **TypeScript & testing**
 - [x] Full TypeScript definitions with generics and union types
-- [x] Cross-runtime smoke test suite: **1,137 tests** verified across Node.js, Bun, Deno, and headless Chromium ESM + UMD (**229 smoke**), on top of **908 vitest unit and integration tests**
+- [x] Cross-runtime smoke test suite: **1,164 tests** verified across Node.js, Bun, Deno, and headless Chromium ESM + UMD (**229 smoke**), on top of **935 vitest unit and integration tests**
 - [x] Adapter conformance test suite: same tests against MemoryAdapter, FsAdapter (json/gz), EncryptedAdapter
 
 **Storage adapters**

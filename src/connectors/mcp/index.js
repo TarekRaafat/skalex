@@ -30,7 +30,7 @@ import { ok, error, parse, toolResult, toolError, METHOD_NOT_FOUND, INVALID_PARA
 import HttpTransport from "./transports/http.js";
 import StdioTransport from "./transports/stdio.js";
 
-const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.5" };
+const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.6" };
 const PROTOCOL_VERSION = "2024-11-05";
 
 class SkalexMCPServer {

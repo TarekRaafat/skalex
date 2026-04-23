@@ -441,7 +441,7 @@ Returns the shared `ChangeLog` instance. Only available when at least one collec
 
 #### `restore(collectionName, timestamp, options?)`
 
-Replays the changelog to rebuild a collection's state at a point in time.
+Replays the changelog to rebuild a collection's state at a point in time. Archived documents are rehydrated exactly - `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp, bypassing the mutation pipeline so no timestamps or versions are regenerated.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -691,7 +691,7 @@ Updates the first match, or inserts `{ ...filter, ...doc }` if no match is found
 
 #### `upsertMany(docs, matchKey, options?)`
 
-Batch upsert. For each doc in `docs`, matches on `matchKey` and updates if found, inserts otherwise. Issues a single save at the end (honouring `autoSave`).
+Batch upsert. For each doc in `docs`, matches on `matchKey` and updates if found, inserts otherwise. Runs through a single pipeline pass: one connection check, one lock check, one snapshot, one dirty mark, one save, one session-stats increment. Per-document `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` plugin hooks, watch events, and changelog entries still fire with op-correct payloads.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -1498,6 +1498,8 @@ Each entry: `{ _id, op, collection, docId, doc, prev?, timestamp, session? }`
 
 Replays log entries to rebuild the collection's state at the given point in time. With `{ _id }`, restores only a single document.
 
+Archived documents are rehydrated exactly: `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp. The restore path bypasses the mutation pipeline (plugins, events, validation, FIFO cap, changelog-of-restore) because archived state was already valid when captured.
+
 Restored state is automatically persisted to disk after both single-document and full-collection restore paths.
 
 **Returns:** `Promise<void>`
@@ -1890,8 +1892,8 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -1908,10 +1910,10 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.5"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.6"></script>
 
 <script>
   // Skalex is available as window.Skalex

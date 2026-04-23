@@ -25,7 +25,7 @@
 **Zero overhead. Maximum reach.**
 - **Zero dependencies**: install the package, nothing else. No driver, no ORM, no server process.
 - **Full build matrix**: ESM, ESM minified, CJS, CJS minified, browser ESM (`dist/skalex.browser.js`, no `node:*` imports), UMD/IIFE (`dist/skalex.umd.min.js`, CDN default)
-- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by **1,137 tests** (908 unit/integration + 229 cross-runtime smoke) gated by CI on every push and PR
+- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by **1,164 tests** (935 unit/integration + 229 cross-runtime smoke) gated by CI on every push and PR
 - **Pluggable storage**: `FsAdapter` (Node), `LocalStorageAdapter` (browser), `EncryptedAdapter` (AES-256-GCM), or bring your own
 
 **Queries that scale with your data.**
@@ -116,7 +116,7 @@
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.5 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **v4.0.0-alpha.6 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 Requires **Node.js ≥ 18**.
 
@@ -126,8 +126,8 @@ Requires **Node.js ≥ 18**.
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5/dist/skalex.browser.js";
-  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/dist/skalex.browser.js";
+  import { LocalStorageAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/src/connectors/storage/browser.js";
   // browser.js also exports EncryptedAdapter for AES-256-GCM at-rest encryption
 
   const db = new Skalex({ adapter: new LocalStorageAdapter({ namespace: "myapp" }) });
@@ -155,10 +155,10 @@ import { StorageAdapter, FsAdapter, EmbeddingAdapter, OpenAIEmbeddingAdapter,
 
 ```html
 <!-- jsDelivr (recommended) -->
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.5"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6"></script>
 
 <!-- unpkg -->
-<script src="https://unpkg.com/skalex@4.0.0-alpha.5"></script>
+<script src="https://unpkg.com/skalex@4.0.0-alpha.6"></script>
 ```
 
 ---

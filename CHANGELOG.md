@@ -7,6 +7,41 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.6] - 2026-04-23
+
+Correctness and packaging release. Out-of-band type metadata eliminates a silent BigInt/Date revival collision, changelog restore now faithfully rehydrates archived system fields and keeps emitting watch events for external observers, `upsertMany` runs through a single batched pipeline pass, the serializer walker correctly handles null-prototype containers and `toJSON` objects, and every connector subpath ships its own `.d.ts` entry. No breaking changes for the public API; on-disk persistence format changes but legacy payloads continue to load.
+
+### Added
+
+- **Out-of-band BigInt/Date type metadata** - persisted payloads are now wrapped as `{ data, meta: { types: { bigint: [[path...]], Date: [[path...]] } } }`. BigInt and Date values are encoded as their string form inside `data`, with their paths recorded in parallel under `meta.types`. Documents that happen to contain a literal `__skalex_bigint__` or `__skalex_date__` key round-trip as exact strings/objects instead of being silently revived as typed values. Pre-alpha.6 payloads continue to load via the legacy inline-tag reviver and migrate to the new format on next save.
+- **`MutationPipeline.executeBatch()`** - new batch variant of `execute()` that amortizes connection, lock check, snapshot, dirty mark, save, and session-stats overhead across many documents while preserving per-doc events and changelog entries with op-per-doc accuracy.
+- **`Collection._rehydrateAll` / `_rehydrateOne`** - internal helpers that replay archived document state directly into the `DataStore` and indexes, bypassing the mutation pipeline. Used by `ChangeLog.restore()` so `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back exactly as archived.
+- **Connector subpath `types` entries** - every `skalex/connectors/*` subpath in `exports` now advertises a `.d.ts` declaration adjacent to its `.js` file (`fs`, `encrypted`, `local`, `d1`, `bun-sqlite`, `libsql`, plus the aggregate `connectors`, `connectors/storage`, `connectors/embedding`, `connectors/llm`). Subpath consumers get TypeScript support without importing the root types.
+
+### Changed
+
+- **`upsertMany()` runs in a single pipeline pass** - the per-doc loop over `upsert()` is replaced by a single `executeBatch` call. One `ensureConnected`, one lock check, one `_txSnapshotIfNeeded`, one `markDirty`, one `_saveIfNeeded`, one `sessionStats.recordWrite`. Per-document `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` plugin hooks, watch events, and changelog entries still fire with op-correct payloads. An autoSave on a 5-doc batch now writes once; it used to write once per document.
+- **`ChangeLog.restore()` rehydrates archived documents exactly** - point-in-time restore no longer replays through `insertOne` / `updateOne`. Archived snapshots are written directly into the collection so timestamps, version, expiry, and vector come back unchanged. Pre-alpha.6 restore regenerated `createdAt`, `updatedAt`, `_version`, and `_expiresAt` to current values, silently corrupting the historical state it claimed to restore.
+
+### Fixed
+
+- **Serializer walker now handles null-prototype containers and `toJSON` objects** - `_encodeValue` accepts any non-array object (plain `{}`, `Object.create(null)`, or class instances with enumerable own properties) and honors `toJSON()` when present, matching `JSON.stringify` semantics. Caught during pre-release self-review: a null-prototype container holding a BigInt would have thrown `TypeError: Do not know how to serialize a BigInt` at save time because the walker's prior `v.constructor === Object` check skipped it.
+- **`ChangeLog.restore()` emits watch events again** - the rehydrate path now fires `delete` / `insert` / `update` events on `db.watch()` so external observers (search indexes, caches, reactive UIs) stay in sync with the restored collection state. `_rehydrateAll` emits one `delete` per pre-restore document and one `insert` per restored document; `_rehydrateOne` emits the op-correct transition. Plugin hooks remain intentionally not fired - their contract assumes fresh user-initiated writes, not historical replay.
+
+### Tests
+
+- **935 vitest tests** across 39 files (+27 over alpha.5, across 3 new test files). New files:
+  - `tests/integration/serializer-out-of-band.test.js` (10 tests) - BigInt / Date round-trip, nested depth, literal-key collision fix, legacy format read, auto-migration on next save, null-prototype container round-trip, `toJSON`-object round-trip.
+  - `tests/integration/upsert-many-batch.test.js` (8 tests) - per-doc hooks, per-doc events, per-doc changelog, single save, single session-stats, transaction rollback, mixed batches, empty input.
+  - `tests/integration/changelog-exact-restore.test.js` (9 tests) - timestamp preservation, `_version` preservation, `_expiresAt` preservation, `_vector` preservation, full-collection restore, DELETE-entry restore, single-doc restore emits DELETE / UPDATE events, full-collection restore emits delete-then-insert batch.
+  - `tests/types/connectors.test-d.ts` - tsd coverage for all 10 connector subpath declarations.
+
+### Deferred
+
+- **Connector subpath `require` entries** - CJS bundles per connector subpath would add 10+ rollup outputs per build. Deferred per the design doc's explicit "at minimum, add `types`" guidance. Tracked for a later release.
+
+---
+
 ## [4.0.0-alpha.5] - 2026-04-22
 
 Tactical cleanup release. No breaking changes, no architectural decomposition, no new user-facing features. Closes the alpha.4 self-review gaps, automates the release gate, and replaces a hand-maintained mutation method list with a naming-convention regex.

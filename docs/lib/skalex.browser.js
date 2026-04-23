@@ -713,10 +713,13 @@ class MutationPipeline {
       ctx.emitEvent(this._col.name, { op, collection: this._col.name, doc: stripVector(doc) });
     }
 
-    // After hook - fire per-doc for insert, single call for update/delete
+    // After hook - fire per-doc for insert, single call for update/delete.
+    // All hook payloads receive vector-stripped docs for consistency, so
+    // plugins don't have to handle _vector presence vs absence per hook type.
     if (afterHook) {
       if (afterHookPayload) {
-        await ctx.runAfterHook(afterHook, afterHookPayload(docs));
+        const stripped = docs.map(stripVector);
+        await ctx.runAfterHook(afterHook, afterHookPayload(stripped));
       } else {
         for (const doc of docs) {
           await ctx.runAfterHook(afterHook, { collection: this._col.name, doc: stripVector(doc) });
@@ -725,6 +728,105 @@ class MutationPipeline {
     }
 
     return { docs, prevDocs };
+  }
+
+  /**
+   * Batch mutation variant used by operations that resolve to a mix of
+   * inserts and updates (currently `upsertMany`). Amortizes per-doc pipeline
+   * overhead into a single pass:
+   *
+   *   - `ensureConnected`, lock check, `_txSnapshotIfNeeded`, `assertTxAlive`
+   *     eager check, `markDirty`, `_saveIfNeeded`, and `sessionStats.recordWrite`
+   *     all run once for the whole batch.
+   *
+   * Preserves per-document correctness where it matters to observers:
+   *
+   *   - Changelog entries are emitted per document, using the per-doc `op`
+   *     string in `result.ops` when present, otherwise falling back to the
+   *     batch-level `op`.
+   *   - Watch events fire per document with the same op-per-doc semantics.
+   *
+   * Plugin hooks are NOT dispatched here. The caller is responsible for
+   * firing `beforeInsert` / `beforeUpdate` inside `mutateBatch` (before the
+   * in-memory state change) and `afterInsert` / `afterUpdate` after the
+   * returned promise resolves, so upsertMany preserves the existing per-doc
+   * hook contract that callers already rely on.
+   *
+   * @param {object} opts
+   * @param {string}   opts.op           - Default op for changelog/events.
+   * @param {Function} opts.mutateBatch  - async (assertTxAlive) => { docs: object[], prevDocs?: (object|null)[], ops?: string[] }
+   * @param {boolean|undefined} opts.save
+   * @param {string|undefined}  opts.session
+   * @returns {Promise<{ docs: object[], prevDocs: (object|null)[], ops: string[] }>}
+   */
+  async executeBatch({ op, mutateBatch, save, session }) {
+    const ctx = this._ctx;
+
+    await ctx.ensureConnected();
+
+    const txm = ctx.txManager;
+    if (!(this._col._txProxyCallDepth > 0) && txm.isCollectionLocked(this._col.name)) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_COLLECTION_LOCKED",
+        `Collection "${this._col.name}" is locked by an active transaction. ` +
+        `Non-transactional writes are blocked until the transaction commits or rolls back.`
+      );
+    }
+
+    this._col._txSnapshotIfNeeded();
+
+    const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
+    const entryTxId = isTxWrite ? txm.context.id : null;
+    const collTxId = this._col._createdInTxId;
+
+    const assertTxAlive = () => {
+      if (entryTxId !== null && txm._abortedIds.has(entryTxId)) {
+        throw new TransactionError(
+          "ERR_SKALEX_TX_ABORTED",
+          `Transaction ${entryTxId} was aborted. No further mutations allowed.`
+        );
+      }
+      if (collTxId !== null && txm._abortedIds.has(collTxId)) {
+        throw new TransactionError(
+          "ERR_SKALEX_TX_ABORTED",
+          `Transaction ${collTxId} was aborted. Collection obtained inside that transaction cannot be used for further mutations.`
+        );
+      }
+    };
+
+    if (isTxWrite || collTxId !== null) assertTxAlive();
+
+    const result = await mutateBatch(assertTxAlive);
+    const docs = Array.isArray(result?.docs) ? result.docs : [];
+    const prevDocs = Array.isArray(result?.prevDocs) ? result.prevDocs : [];
+    const ops = Array.isArray(result?.ops) ? result.ops : [];
+
+    if (docs.length === 0) {
+      return { docs, prevDocs, ops };
+    }
+
+    ctx.persistence.markDirty(ctx.collections, this._col.name);
+    await this._col._saveIfNeeded(save);
+
+    if (this._col._changelogEnabled) {
+      for (let i = 0; i < docs.length; i++) {
+        await ctx.logChange(ops[i] || op, this._col.name, docs[i], prevDocs[i] ?? null, session || null);
+      }
+    }
+
+    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session))) {
+      ctx.sessionStats.recordWrite(session);
+    }
+
+    for (let i = 0; i < docs.length; i++) {
+      ctx.emitEvent(this._col.name, {
+        op: ops[i] || op,
+        collection: this._col.name,
+        doc: stripVector(docs[i]),
+      });
+    }
+
+    return { docs, prevDocs, ops };
   }
 }
 
@@ -1512,7 +1614,7 @@ class Collection {
    * @param {{ ttl?, embed?, session?, save? }} opts
    * @returns {Promise<{ docs: object[] }>}
    */
-  async _insertCore(items, { ttl, embed, session, save }) {
+  _insertCore(items, { ttl, embed, session, save }) {
     return this._pipeline.execute({
       op: Ops.INSERT,
       beforeHook: null, // handled per-item inside mutate
@@ -1597,7 +1699,7 @@ class Collection {
   /**
    * Shared update implementation for one or many documents.
    */
-  async _updateCore(oldDocs, filter, update, { save, session }) {
+  _updateCore(oldDocs, filter, update, { save, session }) {
     return this._pipeline.execute({
       op: Ops.UPDATE,
       beforeHook: Hooks.BEFORE_UPDATE,
@@ -1606,7 +1708,7 @@ class Collection {
       save,
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, update, result: docs.length === 1 ? docs[0] : docs }),
-      mutate: async (assertTxAlive) => {
+      mutate: (assertTxAlive) => {
         const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
         const prevDocs = this._changelogEnabled ? oldDocs.map(doc => structuredClone(doc)) : oldDocs.map(() => null);
         const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update, { needsPrev }));
@@ -1806,16 +1908,123 @@ class Collection {
       );
     }
     for (let i = 0; i < docs.length; i++) _assertPlainObject("upsertMany", docs[i], `doc at index ${i}`);
-    await this._ctx.ensureConnected();
-    const { save, ...rest } = options;
+    if (docs.length === 0) return [];
 
-    const results = [];
-    for (const doc of docs) {
-      results.push(await this.upsert({ [matchKey]: doc[matchKey] }, doc, { ...rest, save: false }));
+    const { save, ttl, embed, session } = options;
+
+    // Route the whole batch through a single pipeline pass so `ensureConnected`,
+    // lock check, `_txSnapshotIfNeeded`, `markDirty`, `_saveIfNeeded`, and the
+    // session-stats increment all run once instead of once per document.
+    // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure;
+    // afterInsert/afterUpdate outside) preserve the contract consumers rely on.
+    const result = await this._pipeline.executeBatch({
+      op: Ops.UPDATE,
+      save,
+      session,
+      mutateBatch: async (assertTxAlive) => {
+        const outDocs = [];
+        const prevDocs = [];
+        const ops = [];
+        const newInserts = [];
+        const batchIds = new Set();
+
+        for (const raw of docs) {
+          const filter = { [matchKey]: raw[matchKey] };
+          const existing = this._findRaw(filter);
+
+          if (existing) {
+            // Update path - mirrors _updateCore's single-doc flow.
+            await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
+              collection: this.name,
+              filter,
+              update: raw,
+            });
+            const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
+            const prev = this._changelogEnabled ? structuredClone(existing) : null;
+            const next = this._prepareUpdatedDoc(existing, raw, { needsPrev });
+            this._assertUniqueCandidates([existing], [next]);
+
+            assertTxAlive();
+            const idx = this._ds.indexOf(existing);
+            if (idx === -1) {
+              throw new PersistenceError(
+                "ERR_SKALEX_PERSISTENCE_DOC_MISSING",
+                `Document "${existing._id}" no longer exists in collection "${this.name}"`,
+                { id: existing._id, collection: this.name }
+              );
+            }
+            this._ds.replaceAt(idx, next);
+            this._updateInIndex(existing, next);
+
+            outDocs.push(next);
+            prevDocs.push(prev);
+            ops.push(Ops.UPDATE);
+          } else {
+            // Insert path - mirrors _insertCore's per-doc flow.
+            const body = { ...resolveFilterToValues(filter), ...raw };
+            const validated = this._applyValidation(body);
+            await this._ctx.plugins.run(Hooks.BEFORE_INSERT, {
+              collection: this.name,
+              doc: validated,
+            });
+            const newDoc = await this._buildDoc(validated, { ttl, embed });
+            if (this._ds.has(newDoc._id) || batchIds.has(newDoc._id)) {
+              throw new UniqueConstraintError(
+                "ERR_SKALEX_UNIQUE_DUPLICATE_ID",
+                `Duplicate _id "${newDoc._id}" in collection "${this.name}"`,
+                { id: newDoc._id, collection: this.name }
+              );
+            }
+            batchIds.add(newDoc._id);
+            newInserts.push(newDoc);
+
+            assertTxAlive();
+            if (this._fieldIndex) this._fieldIndex.assertUniqueBatch([newDoc]);
+            this._addToIndex(newDoc);
+            this._ds.push(newDoc);
+
+            outDocs.push(newDoc);
+            prevDocs.push(null);
+            ops.push(Ops.INSERT);
+          }
+        }
+
+        // Apply FIFO capacity enforcement once after all inserts land.
+        if (newInserts.length > 0) {
+          const evicted = this._enforceCapAfterInsert();
+          for (const doc of evicted) {
+            this._ctx.emitEvent(this.name, {
+              op: Ops.DELETE,
+              collection: this.name,
+              doc: stripVector(doc),
+            });
+          }
+        }
+
+        return { docs: outDocs, prevDocs, ops };
+      },
+    });
+
+    // Fire per-doc after hooks outside the mutate closure so they see the
+    // committed state, matching updateOne/insertOne behavior.
+    for (let i = 0; i < result.docs.length; i++) {
+      const doc = stripVector(result.docs[i]);
+      if (result.ops[i] === Ops.INSERT) {
+        await this._ctx.runAfterHook(Hooks.AFTER_INSERT, {
+          collection: this.name,
+          doc,
+        });
+      } else {
+        await this._ctx.runAfterHook(Hooks.AFTER_UPDATE, {
+          collection: this.name,
+          filter: { [matchKey]: docs[i][matchKey] },
+          update: docs[i],
+          result: doc,
+        });
+      }
     }
 
-    await this._saveIfNeeded(save);
-    return results;
+    return result.docs.map(stripVector);
   }
 
   // ─── Soft-delete restore ──────────────────────────────────────────────────
@@ -1844,7 +2053,7 @@ class Collection {
       save,
       session,
       afterHookPayload: (restored) => ({ collection: this.name, filter, docs: restored }),
-      mutate: async (assertTxAlive) => {
+      mutate: (assertTxAlive) => {
         assertTxAlive();
         delete item._deletedAt;
         item.updatedAt = new Date();
@@ -2171,7 +2380,7 @@ class Collection {
    * Shared delete implementation.
    * @param {"soft"|"hard"|"hardMany"} mode
    */
-  async _deleteCore(mode, items, filter, { save, session }) {
+  _deleteCore(mode, items, filter, { save, session }) {
     return this._pipeline.execute({
       op: Ops.DELETE,
       beforeHook: Hooks.BEFORE_DELETE,
@@ -2180,7 +2389,7 @@ class Collection {
       save,
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, result: docs.length === 1 ? docs[0] : docs }),
-      mutate: async (assertTxAlive) => {
+      mutate: (assertTxAlive) => {
         assertTxAlive(); // guard before first in-memory state change
         if (mode === "soft") {
           const now = new Date();
@@ -2226,7 +2435,7 @@ class Collection {
    * @param {object} [filter={}]
    * @param {{ dir?: string, name?: string, format?: "json"|"csv" }} [options]
    */
-  async export(filter = {}, options = {}) {
+  export(filter = {}, options = {}) {
     return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
@@ -2365,6 +2574,106 @@ class Collection {
     return findIndex(filter, this._ds.data);
   }
 
+  // ─── Rehydrate (changelog restore) ───────────────────────────────────────
+
+  /**
+   * Replace the entire collection state with the given archived documents.
+   * Used by `ChangeLog.restore()` to replay historical state faithfully:
+   * `_id`, `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector`
+   * are preserved exactly as archived. Plugins, changelog logging,
+   * validation, schema checks, and FIFO cap enforcement are bypassed
+   * because the archived state was already valid when it was captured.
+   *
+   * Watch events ARE emitted so external observers (search indexes, caches,
+   * reactive UIs) stay in sync with the collection's new state. The set of
+   * events mirrors what a naive `deleteMany({})` + per-doc `insertOne`
+   * implementation would emit: one `delete` per pre-restore document, then
+   * one `insert` per restored document. Plugin hooks are intentionally NOT
+   * fired - their contract assumes fresh user-initiated writes, not
+   * historical replay.
+   *
+   * Not public API - invoked only from `ChangeLog.restore()`.
+   *
+   * @param {object[]} docs - Archived documents in their final-state form.
+   */
+  _rehydrateAll(docs) {
+    // Snapshot old docs for event emission before state is replaced.
+    const previous = this._ds.data.slice();
+    const replacement = docs.map(d => ({ ...d }));
+    // `replaceAll` swaps the data array and rebuilds the primary _id index.
+    this._ds.replaceAll(replacement);
+    if (this._fieldIndex) this._fieldIndex.buildFromData(this._ds.data);
+    this._ctx.persistence.markDirty(this._ctx.collections, this.name);
+
+    // Emit per-doc events so watch listeners observe the replacement.
+    for (const doc of previous) {
+      this._ctx.emitEvent(this.name, {
+        op: Ops.DELETE,
+        collection: this.name,
+        doc: stripVector(doc),
+      });
+    }
+    for (const doc of replacement) {
+      this._ctx.emitEvent(this.name, {
+        op: Ops.INSERT,
+        collection: this.name,
+        doc: stripVector(doc),
+      });
+    }
+  }
+
+  /**
+   * Replace (or remove) a single document with an archived state. Used for
+   * per-document `ChangeLog.restore()` so timestamps and other system
+   * fields come back exactly as they were archived.
+   *
+   * Emits a watch event for the observed transition (delete / update /
+   * insert depending on whether the document existed before and after).
+   * Plugin hooks are intentionally NOT fired - see `_rehydrateAll`.
+   *
+   * @param {string} id - Document _id to restore.
+   * @param {object|null} archived - Archived doc snapshot, or null when the
+   *   document should not exist at the restored timestamp.
+   */
+  _rehydrateOne(id, archived) {
+    const existing = this._ds.getById(id);
+    if (archived == null) {
+      if (!existing) return;
+      const removedSnapshot = stripVector(existing);
+      const idx = this._ds.indexOf(existing);
+      if (idx !== -1) {
+        this._removeFromIndex(existing);
+        this._ds.spliceAt(idx);
+      }
+      this._ctx.persistence.markDirty(this._ctx.collections, this.name);
+      this._ctx.emitEvent(this.name, {
+        op: Ops.DELETE,
+        collection: this.name,
+        doc: removedSnapshot,
+      });
+      return;
+    }
+    const clone = { ...archived };
+    let op;
+    if (existing) {
+      const idx = this._ds.indexOf(existing);
+      if (idx === -1) return;
+      this._ds.replaceAt(idx, clone);
+      this._updateInIndex(existing, clone);
+      op = Ops.UPDATE;
+    } else {
+      this._ds.push(clone);
+      this._addToIndex(clone);
+      op = Ops.INSERT;
+    }
+    this._ctx.persistence.markDirty(this._ctx.collections, this.name);
+    this._ctx.emitEvent(this.name, {
+      op,
+      collection: this.name,
+      doc: stripVector(clone),
+    });
+  }
+
   // ─── Private index helpers ────────────────────────────────────────────────
 
   _addToIndex(doc) {
@@ -2388,7 +2697,7 @@ class Collection {
    * @param {{ ttl?: number|string, embed?: string|Function }} [opts]
    * @returns {Promise<object>}
    */
-  async _buildDoc(item, { ttl, embed } = {}) {
+  _buildDoc(item, { ttl, embed } = {}) {
     return buildDoc(item, {
       ttl,
       embed,
@@ -3368,6 +3677,7 @@ class SkalexAI {
    * @param {string} text
    * @returns {Promise<number[]>}
    */
+  // eslint-disable-next-line require-await -- async converts sync-throw to promise-rejection for caller symmetry.
   async embed(text) {
     if (!this._embeddingAdapter) {
       throw new AdapterError(
@@ -3957,11 +4267,18 @@ class PersistenceManager {
 /** Default window of aborted transaction IDs retained for stale-continuation detection. */
 const DEFAULT_ABORTED_ID_WINDOW = 1000;
 
-/** Collection methods that go through the MutationPipeline and need the depth counter. */
-const _MUTATION_METHODS = Object.freeze(new Set([
-  "insertOne", "insertMany", "updateOne", "updateMany",
-  "upsert", "upsertMany", "deleteOne", "deleteMany", "restore",
-]));
+/**
+ * Matches Collection mutation method names by convention. Any public method
+ * whose name starts with `insert`, `update`, `upsert`, `delete`, or equals
+ * `restore` is treated as a mutation by the transaction proxy and wrapped
+ * with the depth counter. Adding a new mutation method (e.g. `patchMany`,
+ * `deleteBy`, `upsertWhere`) only requires following the convention - no
+ * hand-maintained list to keep in sync.
+ *
+ * Private methods (prefixed with `_`) and reads (find, findOne, count,
+ * etc.) are excluded.
+ */
+const _MUTATION_METHOD_PATTERN = /^(insert|update|upsert|delete)($|[A-Z])|^restore$/;
 
 /**
  * Valid values for the `deferredEffectErrors` option. Exported so the
@@ -4036,6 +4353,7 @@ class TransactionManager {
    *   `db._deferredEffectErrors` then to `"warn"`.
    * @returns {Promise<any>}
    */
+  // eslint-disable-next-line require-await -- async wraps synchronous validation throws as promise rejections.
   async run(fn, db, { timeout = 0, deferredEffectErrors } = {}) {
     validateDeferredEffectErrors(deferredEffectErrors, "transaction() options");
     const execute = async () => {
@@ -4111,7 +4429,7 @@ class TransactionManager {
                 get(colTarget, colProp) {
                   const v = Reflect.get(colTarget, colProp);
                   if (typeof v !== "function") return v;
-                  if (!_MUTATION_METHODS.has(colProp)) return v.bind(colTarget);
+                  if (typeof colProp !== "string" || !_MUTATION_METHOD_PATTERN.test(colProp)) return v.bind(colTarget);
                   return function (...args) {
                     colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
                     try {
@@ -5549,7 +5867,7 @@ class Memory {
    * @param {{ limit?: number, minScore?: number }} [opts]
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
-  async recall(query, { limit = 10, minScore = 0 } = {}) {
+  recall(query, { limit = 10, minScore = 0 } = {}) {
     return this._col.search(query, { limit, minScore });
   }
 
@@ -5745,7 +6063,9 @@ class ChangeLog {
     const relevant = allEntries.filter(e => new Date(e.timestamp) <= ts);
 
     if (_id) {
-      // Restore a single document
+      // Restore a single document. The archived snapshot is rehydrated
+      // directly via the collection's internal `_rehydrateOne` path so
+      // timestamps, version, expiry, and vector are preserved exactly.
       const docEntries = relevant.filter(e => e.docId === _id);
       if (docEntries.length === 0) return;
 
@@ -5753,21 +6073,8 @@ class ChangeLog {
 
       this._restoring = true;
       try {
-        if (last.op === Ops.DELETE) {
-          // Document should not exist at this point in time
-          const existing = await col.findOne({ _id });
-          if (existing) await col.deleteOne({ _id });
-          return;
-        }
-
-        const existing = await col.findOne({ _id });
-        if (existing) {
-          // Overwrite with the snapshotted doc (excluding system timestamps)
-          const { _id: _docId, createdAt: _c, updatedAt: _u, ...fields } = last.doc;
-          await col.updateOne({ _id }, fields);
-        } else {
-          await col.insertOne({ ...last.doc });
-        }
+        const archived = last.op === Ops.DELETE ? null : last.doc;
+        col._rehydrateOne(_id, archived);
       } finally {
         this._restoring = false;
       }
@@ -5775,7 +6082,8 @@ class ChangeLog {
       return;
     }
 
-    // Restore entire collection  -  replay all entries in order
+    // Restore entire collection - replay all entries in order, then rehydrate
+    // the resulting state in a single atomic swap.
     const state = new Map(); // docId → { doc, deleted }
 
     for (const entry of relevant) {
@@ -5786,14 +6094,14 @@ class ChangeLog {
       }
     }
 
+    const restored = [];
+    for (const { doc, deleted } of state.values()) {
+      if (!deleted && doc) restored.push(doc);
+    }
+
     this._restoring = true;
     try {
-      await col.deleteMany({});
-      for (const [, { doc, deleted }] of state) {
-        if (!deleted && doc) {
-          await col.insertOne({ ...doc });
-        }
-      }
+      col._rehydrateAll(restored);
     } finally {
       this._restoring = false;
     }
@@ -6330,7 +6638,7 @@ const TOOL_DEFS = [
  * @param {Record<string, Function>|null} [predicates] - Named predicate allowlist.
  * @returns {Promise<object>} Plain value to be JSON.stringify'd into content text.
  */
-async function callTool(name, args, db, predicates = null) {
+function callTool(name, args, db, predicates = null) {
   const log = db._logger;
   const _sanitize = (f) => sanitizeFilter(f, log, 0, predicates);
   switch (name) {
@@ -6719,7 +7027,7 @@ class StdioTransport {
  * await server.listen();
  */
 
-const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.4" };
+const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.6" };
 const PROTOCOL_VERSION = "2024-11-05";
 
 class SkalexMCPServer {
@@ -6912,34 +7220,159 @@ class SkalexMCPServer {
 }
 
 /**
- * BigInt- and Date-safe JSON serializer. Encodes BigInt values as tagged objects
- * and Date instances as tagged ISO strings so they survive the round-trip.
- * Uses `function` (not arrow) so `this` is the holder object - needed because
- * JSON.stringify calls Date.toJSON() before the replacer sees the value.
+ * BigInt- and Date-safe JSON serializer.
+ *
+ * Encodes BigInt and Date values out-of-band: the data tree stores the string
+ * form (ISO for Date, digits for BigInt), and a parallel `meta.types` map
+ * records the paths to each typed value so the decoder can reconstruct them.
+ *
+ * Wire format:
+ *   { "data": <encoded-value>, "meta": { "types": { "bigint": [[path...]], "Date": [[path...]] } } }
+ *
+ * Why out-of-band: the pre-alpha.6 format embedded tagged objects
+ * (`{ __skalex_bigint__: "..." }`) directly in the data. Any user document
+ * that legitimately stored those keys was silently revived as BigInt/Date
+ * on load. Keeping type metadata parallel to the data eliminates that
+ * collision - user objects round-trip as themselves.
+ *
+ * Legacy reads still work: `_deserialize` detects the old inline-tag format
+ * and falls through to the original reviver for documents persisted before
+ * this change.
  * @param {any} value
  * @returns {string}
  */
-const _serialize = (value) =>
-  JSON.stringify(value, function (key, v) {
-    const raw = this[key];
-    if (raw instanceof Date) return { __skalex_date__: raw.toISOString() };
-    if (typeof v === "bigint") return { __skalex_bigint__: v.toString() };
-    return v;
-  });
+const _serialize = (value) => {
+  const types = { bigint: [], Date: [] };
+  const encoded = _encodeValue(value, [], types);
+  const meta = {};
+  if (types.bigint.length) meta.bigint = types.bigint;
+  if (types.Date.length) meta.Date = types.Date;
+  return JSON.stringify({ data: encoded, meta: { types: meta } });
+};
 
 /**
- * Counterpart to `_serialize`. Revives tagged BigInt and Date objects.
+ * Walk `v` into a plain JSON-safe structure, recording the path of every
+ * BigInt / Date value into `types`. Semantics match `JSON.stringify`:
+ *
+ *   - `Date` is recorded under `types.Date` and emitted as its ISO string.
+ *   - `BigInt` is recorded under `types.bigint` and emitted as its decimal string.
+ *   - Any object exposing a `toJSON()` method is walked against that return
+ *     value (after the Date/BigInt handlers, so Date's own `toJSON` is not
+ *     double-applied).
+ *   - Arrays and any non-array object (plain `{}`, `Object.create(null)`, or
+ *     class instances with enumerable own properties) walk their own keys.
+ *
+ * @param {any} v
+ * @param {Array<string|number>} path - mutated during traversal; captured per hit
+ * @param {{ bigint: Array<Array<string|number>>, Date: Array<Array<string|number>> }} types
+ * @returns {any}
+ */
+function _encodeValue(v, path, types) {
+  if (v instanceof Date) {
+    types.Date.push(path.slice());
+    return v.toISOString();
+  }
+  if (typeof v === "bigint") {
+    types.bigint.push(path.slice());
+    return v.toString();
+  }
+  if (v === null || typeof v !== "object") return v;
+  // Honor `toJSON` to match `JSON.stringify` - class instances that expose
+  // their own JSON representation are walked against it, not their internals.
+  if (typeof v.toJSON === "function") {
+    return _encodeValue(v.toJSON(), path, types);
+  }
+  if (Array.isArray(v)) {
+    const out = new Array(v.length);
+    for (let i = 0; i < v.length; i++) {
+      path.push(i);
+      out[i] = _encodeValue(v[i], path, types);
+      path.pop();
+    }
+    return out;
+  }
+  // Walk any non-array object uniformly. `JSON.stringify` enumerates own
+  // enumerable properties regardless of prototype, so `Object.create(null)`
+  // containers and class instances with data fields are handled the same.
+  const out = {};
+  for (const k of Object.keys(v)) {
+    path.push(k);
+    out[k] = _encodeValue(v[k], path, types);
+    path.pop();
+  }
+  return out;
+}
+
+/**
+ * Counterpart to `_serialize`. Detects the out-of-band format via the
+ * `{ data, meta }` wrapper and reconstructs typed values from `meta.types`.
+ * Falls back to the legacy inline-tag reviver for pre-alpha.6 data.
  * @param {string} text
  * @returns {any}
  */
-const _deserialize = (text) =>
-  JSON.parse(text, (_, v) => {
+const _deserialize = (text) => {
+  const parsed = JSON.parse(text);
+  if (_isWrappedPayload(parsed)) {
+    let data = parsed.data;
+    const typeMap = parsed.meta?.types ?? {};
+    if (Array.isArray(typeMap.bigint)) {
+      for (const path of typeMap.bigint) {
+        data = _applyTypeAtPath(data, path, (s) => BigInt(s));
+      }
+    }
+    if (Array.isArray(typeMap.Date)) {
+      for (const path of typeMap.Date) {
+        data = _applyTypeAtPath(data, path, (s) => new Date(s));
+      }
+    }
+    return data;
+  }
+  // Legacy format - revive inline tag objects for backward compatibility.
+  return JSON.parse(text, (_, v) => {
     if (v && typeof v === "object") {
       if ("__skalex_bigint__" in v) return BigInt(v.__skalex_bigint__);
       if ("__skalex_date__" in v) return new Date(v.__skalex_date__);
     }
     return v;
   });
+};
+
+/**
+ * Returns true when the parsed value is an out-of-band wrapped payload.
+ * The wrapper has exactly two own keys, `data` and `meta`, and `meta.types`
+ * is an object. Any other shape is treated as legacy data.
+ * @param {any} v
+ * @returns {boolean}
+ */
+function _isWrappedPayload(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  if (!("data" in v) || !("meta" in v)) return false;
+  if (!v.meta || typeof v.meta !== "object") return false;
+  if (!("types" in v.meta) || typeof v.meta.types !== "object") return false;
+  return true;
+}
+
+/**
+ * Replace the value at `path` inside `root` with `convert(value)`.
+ * Returns the (possibly new) root - when `path` is empty, `root` itself
+ * is replaced.
+ * @param {any} root
+ * @param {Array<string|number>} path
+ * @param {(v: any) => any} convert
+ * @returns {any}
+ */
+function _applyTypeAtPath(root, path, convert) {
+  if (!Array.isArray(path) || path.length === 0) return convert(root);
+  let parent = root;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (parent == null) return root;
+    parent = parent[path[i]];
+  }
+  if (parent == null) return root;
+  const key = path[path.length - 1];
+  parent[key] = convert(parent[key]);
+  return root;
+}
 
 /**
  * Skalex  -  an in-process document database with file-system persistence.
@@ -7099,7 +7532,7 @@ class Skalex {
    * Connect to the database: load data, run pending migrations, sweep TTL docs.
    * @returns {Promise<void>}
    */
-  async connect() {
+  connect() {
     if (this._connectPromise) return this._connectPromise;
     this._connectPromise = this._doConnect().catch((err) => {
       this._connectPromise = null;
@@ -7177,8 +7610,8 @@ class Skalex {
    * isConnected) so migrations can use collection APIs without deadlocking.
    * @returns {Promise<void>}
    */
-  async _ensureConnected() {
-    if (this.isConnected || this._bootstrapping) return;
+  _ensureConnected() {
+    if (this.isConnected || this._bootstrapping) return undefined;
     return this.connect();
   }
 
@@ -7476,6 +7909,7 @@ class Skalex {
    * @throws {TransactionError} ERR_SKALEX_TX_NESTED - called inside another transaction.
    * @throws {TransactionError} ERR_SKALEX_TX_TIMEOUT - timeout elapsed before commit.
    */
+  // eslint-disable-next-line require-await -- async wraps the sync-throw nested-tx check as a promise rejection so callers using .catch() (not try/await) still see it.
   async transaction(fn, opts = {}) {
     if (this._txManager.active) {
       throw new TransactionError(
@@ -7536,7 +7970,7 @@ class Skalex {
    * @param {string} filePath - Absolute or relative path to the file.
    * @returns {Promise<Document[]>}
    */
-  async import(filePath) {
+  import(filePath) {
     return this._importer.import(filePath);
   }
 
@@ -7547,7 +7981,7 @@ class Skalex {
    * @param {string} text
    * @returns {Promise<number[]>}
    */
-  async embed(text) {
+  embed(text) {
     return this._ai.embed(text);
   }
 
@@ -7562,7 +7996,7 @@ class Skalex {
    * @param {{ limit?: number }} [opts]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
    */
-  async ask(collectionName, nlQuery, opts) {
+  ask(collectionName, nlQuery, opts) {
     return this._ai.ask(collectionName, nlQuery, opts);
   }
 
@@ -7608,7 +8042,7 @@ class Skalex {
    * @param {{ _id?: string }} [opts]
    * @returns {Promise<void>}
    */
-  async restore(collectionName, timestamp, opts = {}) {
+  restore(collectionName, timestamp, opts = {}) {
     return this._changeLog.restore(collectionName, timestamp, opts);
   }
 
@@ -7712,20 +8146,34 @@ class Skalex {
   }
 
   // ── Backward-compatible accessors for extracted subsystem internals ────
-  // Tests and internal code may reach for these directly. The canonical
-  // owners are _ai, _ttlScheduler, and _importer.
+  //
+  // @deprecated These getters/setters proxy to the alpha.4-extracted
+  // subsystems (`_ai`, `_ttlScheduler`). They exist only to avoid breaking
+  // tests and internal code that reach into Skalex internals. Scheduled for
+  // removal in beta.1. New code should use the canonical owners directly:
+  //   - db._ai._embeddingAdapter, db._ai._aiAdapter, db._ai.queryCache,
+  //     db._ai._regexMaxLength
+  //   - db._ttlScheduler._timer, db._ttlScheduler._interval
 
+  /** @deprecated Use `db._ai._embeddingAdapter`. Removed in beta.1. */
   get _embeddingAdapter() { return this._ai._embeddingAdapter; }
+  /** @deprecated Use `db._ai._embeddingAdapter = v`. Removed in beta.1. */
   set _embeddingAdapter(v) { this._ai._embeddingAdapter = v; }
 
+  /** @deprecated Use `db._ai._aiAdapter`. Removed in beta.1. */
   get _aiAdapter() { return this._ai._aiAdapter; }
+  /** @deprecated Use `db._ai._aiAdapter = v`. Removed in beta.1. */
   set _aiAdapter(v) { this._ai._aiAdapter = v; }
 
+  /** @deprecated Use `db._ai.queryCache`. Removed in beta.1. */
   get _queryCache() { return this._ai.queryCache; }
 
+  /** @deprecated Use `db._ai._regexMaxLength`. Removed in beta.1. */
   get _regexMaxLength() { return this._ai._regexMaxLength; }
 
+  /** @deprecated Use `db._ttlScheduler._timer`. Removed in beta.1. */
   get _ttlTimer() { return this._ttlScheduler._timer; }
+  /** @deprecated Use `db._ttlScheduler._interval`. Removed in beta.1. */
   get _ttlSweepInterval() { return this._ttlScheduler._interval; }
 
   /**

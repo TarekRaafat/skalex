@@ -2,10 +2,33 @@
 
 This file collects every upgrade guide Skalex v4 has shipped. Start with the section matching the version you are upgrading from.
 
+- [4.0.0-alpha.5 → 4.0.0-alpha.6](#400-alpha5--400-alpha6) (no breaking changes)
 - [4.0.0-alpha.4 → 4.0.0-alpha.5](#400-alpha4--400-alpha5) (no breaking changes)
 - [4.0.0-alpha.3 → 4.0.0-alpha.4](#400-alpha3--400-alpha4)
 - [4.0.0-alpha.2.x → 4.0.0-alpha.3](#400-alpha2x--400-alpha3)
 - [v3 → v4.0.0-alpha.1](#v3--v4)
+
+---
+
+## 4.0.0-alpha.5 → 4.0.0-alpha.6
+
+**No breaking changes for the public API.** alpha.6 lands correctness and packaging improvements: out-of-band type metadata, `upsertMany` batch pipeline, exact changelog restore via direct rehydrate, and connector subpath `types` entries, plus two correctness fixes surfaced during pre-release review (serializer support for null-prototype and `toJSON` containers, watch-event emission preserved during `db.restore`).
+
+```sh
+npm install skalex@4.0.0-alpha.6
+```
+
+### On-disk format change (automatic)
+
+Persisted collections use a new wrapper format: `{ data: <payload>, meta: { types: { bigint: [[path...]], Date: [[path...]] } } }`. Pre-alpha.6 payloads (inline `__skalex_bigint__` / `__skalex_date__` tags) continue to load correctly. Each collection migrates to the new format the next time it is saved. No manual action required.
+
+### Impact on consumers
+
+- Code that treats a document with a literal `__skalex_bigint__` or `__skalex_date__` key as a string or plain object now round-trips faithfully. Previously, saving and reloading such a document silently revived it as a BigInt or Date - a quiet data corruption vector. If you were relying on that behavior (by storing BigInt-tagged-looking objects as plain data), audit the affected collections.
+- `upsertMany` now runs in a single pipeline pass. Plugin hook ordering is preserved (`beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` still fire per document), but the call stack and save cadence change:
+  - `autoSave` triggers exactly one write per `upsertMany` call instead of one per document.
+  - Session stats record one write per batch instead of per document. If your telemetry expected per-document increments, revise it to divide by batch size or switch to counting events.
+- `db.restore(collection, timestamp)` now reproduces archived documents verbatim. `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` match the archived snapshot instead of being regenerated to current values. If you ever relied on restored documents having fresh timestamps, that was pre-existing undocumented behavior and you should move to the new contract.
 
 ---
 
