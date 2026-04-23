@@ -199,6 +199,65 @@ describe("out-of-band type serializer", () => {
     await db2.disconnect();
   });
 
+  test("null-prototype object containers with BigInt values round-trip", async () => {
+    // Pre-alpha.6 encoded values through a `JSON.stringify` replacer which
+    // walked own enumerable properties regardless of prototype. The alpha.6
+    // walker must match that: an `Object.create(null)` container holding a
+    // BigInt must still be detected and encoded rather than passed through
+    // un-walked (which would then crash `JSON.stringify` on the raw BigInt).
+    const adapter = new MemoryAdapter();
+    const db1 = new Skalex({ adapter });
+    await db1.connect();
+    const container = Object.create(null);
+    container.big = 99999999999999n;
+    container.nested = Object.create(null);
+    container.nested.count = 42n;
+    await db1.useCollection("np").insertOne({ _id: "n", container }, { save: true });
+    await db1.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await db2.connect();
+    const found = await db2.useCollection("np").findOne({ _id: "n" });
+    expect(typeof found.container.big).toBe("bigint");
+    expect(found.container.big).toBe(99999999999999n);
+    expect(typeof found.container.nested.count).toBe("bigint");
+    expect(found.container.nested.count).toBe(42n);
+    await db2.disconnect();
+  });
+
+  test("objects exposing toJSON() are walked against the returned representation", async () => {
+    // Mirrors `JSON.stringify` semantics: a class instance that defines
+    // `toJSON()` is serialized as whatever that method returns. The alpha.6
+    // walker honors this so BigInt / Date values inside the returned
+    // representation are detected and round-tripped correctly.
+    const adapter = new MemoryAdapter();
+    const db1 = new Skalex({ adapter });
+    await db1.connect();
+    // Wrapped value with a custom JSON representation holding a BigInt.
+    const doc = {
+      _id: "tj",
+      amount: {
+        currency: "USD",
+        toJSON() {
+          return { currency: this.currency, microcents: 12345678901234n };
+        },
+      },
+    };
+    await db1.useCollection("wrap").insertOne(doc, { save: true });
+    await db1.disconnect();
+
+    const db2 = new Skalex({ adapter });
+    await db2.connect();
+    const found = await db2.useCollection("wrap").findOne({ _id: "tj" });
+    expect(found.amount.currency).toBe("USD");
+    expect(typeof found.amount.microcents).toBe("bigint");
+    expect(found.amount.microcents).toBe(12345678901234n);
+    // Post-toJSON representation is what lands on disk; `toJSON` itself
+    // does not survive the round-trip (same as `JSON.stringify`).
+    expect(typeof found.amount.toJSON).toBe("undefined");
+    await db2.disconnect();
+  });
+
   test("meta.types omits type keys with no matches", async () => {
     // A plain payload still has createdAt/updatedAt Dates on each doc, so the
     // Date key will be populated. But `bigint` should not appear when no

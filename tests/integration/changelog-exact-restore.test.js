@@ -156,6 +156,81 @@ describe("changelog restore - exact rehydrate", () => {
     expect(bR._version).toBe(1);
   });
 
+  test("single-doc restore emits a DELETE event when archived state is 'not present'", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    db.createCollection("items", { changelog: true });
+    const col = db.useCollection("items");
+
+    await col.insertOne({ _id: "x", n: 1 });
+    await tick();
+    await col.deleteOne({ _id: "x" });
+    const deletedAt = new Date();
+    await tick();
+    await col.insertOne({ _id: "x", n: 99 });
+
+    const events = [];
+    const unsub = db.watch((ev) => { if (ev.collection === "items") events.push(ev.op); });
+    await db.restore("items", deletedAt, { _id: "x" });
+    unsub();
+    expect(events).toEqual(["delete"]);
+    await db.disconnect();
+  });
+
+  test("single-doc restore emits an UPDATE event when replacing an existing doc", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    db.createCollection("items", { changelog: true });
+    const col = db.useCollection("items");
+
+    await col.insertOne({ _id: "x", v: 1 });
+    await tick();
+    await col.updateOne({ _id: "x" }, { v: 2 });
+    const snap = (await col.findOne({ _id: "x" })).updatedAt;
+    await tick();
+    await col.updateOne({ _id: "x" }, { v: 99 });
+
+    const events = [];
+    const unsub = db.watch((ev) => { if (ev.collection === "items") events.push(ev.op); });
+    await db.restore("items", new Date(snap.getTime() + 1), { _id: "x" });
+    unsub();
+    expect(events).toEqual(["update"]);
+    await db.disconnect();
+  });
+
+  test("full-collection restore emits a delete-then-insert event per doc", async () => {
+    const adapter = new MemoryAdapter();
+    const db = new Skalex({ adapter });
+    await db.connect();
+    db.createCollection("items", { changelog: true });
+    const col = db.useCollection("items");
+
+    await col.insertOne({ _id: "a", v: 1 });
+    await col.insertOne({ _id: "b", v: 1 });
+    const snap = new Date();
+    await tick();
+    // Mutations after the snapshot timestamp that will be rolled back.
+    await col.updateOne({ _id: "a" }, { v: 99 });
+    await col.deleteOne({ _id: "b" });
+    await col.insertOne({ _id: "c", v: 42 });
+
+    const events = [];
+    const unsub = db.watch((ev) => {
+      if (ev.collection === "items") events.push({ op: ev.op, id: ev.doc._id });
+    });
+    await db.restore("items", snap);
+    unsub();
+
+    // Pre-restore docs (a, c): 2 delete events. Restored docs (a, b): 2 insert events.
+    const deletes = events.filter(e => e.op === "delete").map(e => e.id).sort();
+    const inserts = events.filter(e => e.op === "insert").map(e => e.id).sort();
+    expect(deletes).toEqual(["a", "c"]);
+    expect(inserts).toEqual(["a", "b"]);
+    await db.disconnect();
+  });
+
   test("restoring a DELETE entry removes the document without regenerating state", async () => {
     const adapter = new MemoryAdapter();
     const db = new Skalex({ adapter });

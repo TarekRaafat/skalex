@@ -54,7 +54,16 @@ const _serialize = (value) => {
 
 /**
  * Walk `v` into a plain JSON-safe structure, recording the path of every
- * BigInt / Date value into `types`.
+ * BigInt / Date value into `types`. Semantics match `JSON.stringify`:
+ *
+ *   - `Date` is recorded under `types.Date` and emitted as its ISO string.
+ *   - `BigInt` is recorded under `types.bigint` and emitted as its decimal string.
+ *   - Any object exposing a `toJSON()` method is walked against that return
+ *     value (after the Date/BigInt handlers, so Date's own `toJSON` is not
+ *     double-applied).
+ *   - Arrays and any non-array object (plain `{}`, `Object.create(null)`, or
+ *     class instances with enumerable own properties) walk their own keys.
+ *
  * @param {any} v
  * @param {Array<string|number>} path - mutated during traversal; captured per hit
  * @param {{ bigint: Array<Array<string|number>>, Date: Array<Array<string|number>> }} types
@@ -69,6 +78,12 @@ function _encodeValue(v, path, types) {
     types.bigint.push(path.slice());
     return v.toString();
   }
+  if (v === null || typeof v !== "object") return v;
+  // Honor `toJSON` to match `JSON.stringify` - class instances that expose
+  // their own JSON representation are walked against it, not their internals.
+  if (typeof v.toJSON === "function") {
+    return _encodeValue(v.toJSON(), path, types);
+  }
   if (Array.isArray(v)) {
     const out = new Array(v.length);
     for (let i = 0; i < v.length; i++) {
@@ -78,16 +93,16 @@ function _encodeValue(v, path, types) {
     }
     return out;
   }
-  if (v && typeof v === "object" && v.constructor === Object) {
-    const out = {};
-    for (const k of Object.keys(v)) {
-      path.push(k);
-      out[k] = _encodeValue(v[k], path, types);
-      path.pop();
-    }
-    return out;
+  // Walk any non-array object uniformly. `JSON.stringify` enumerates own
+  // enumerable properties regardless of prototype, so `Object.create(null)`
+  // containers and class instances with data fields are handled the same.
+  const out = {};
+  for (const k of Object.keys(v)) {
+    path.push(k);
+    out[k] = _encodeValue(v[k], path, types);
+    path.pop();
   }
-  return v;
+  return out;
 }
 
 /**
