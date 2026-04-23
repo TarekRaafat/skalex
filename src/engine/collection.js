@@ -538,16 +538,123 @@ class Collection {
       );
     }
     for (let i = 0; i < docs.length; i++) _assertPlainObject("upsertMany", docs[i], `doc at index ${i}`);
-    await this._ctx.ensureConnected();
-    const { save, ...rest } = options;
+    if (docs.length === 0) return [];
 
-    const results = [];
-    for (const doc of docs) {
-      results.push(await this.upsert({ [matchKey]: doc[matchKey] }, doc, { ...rest, save: false }));
+    const { save, ttl, embed, session } = options;
+
+    // Route the whole batch through a single pipeline pass so `ensureConnected`,
+    // lock check, `_txSnapshotIfNeeded`, `markDirty`, `_saveIfNeeded`, and the
+    // session-stats increment all run once instead of once per document.
+    // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure;
+    // afterInsert/afterUpdate outside) preserve the contract consumers rely on.
+    const result = await this._pipeline.executeBatch({
+      op: Ops.UPDATE,
+      save,
+      session,
+      mutateBatch: async (assertTxAlive) => {
+        const outDocs = [];
+        const prevDocs = [];
+        const ops = [];
+        const newInserts = [];
+        const batchIds = new Set();
+
+        for (const raw of docs) {
+          const filter = { [matchKey]: raw[matchKey] };
+          const existing = this._findRaw(filter);
+
+          if (existing) {
+            // Update path - mirrors _updateCore's single-doc flow.
+            await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
+              collection: this.name,
+              filter,
+              update: raw,
+            });
+            const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
+            const prev = this._changelogEnabled ? structuredClone(existing) : null;
+            const next = this._prepareUpdatedDoc(existing, raw, { needsPrev });
+            this._assertUniqueCandidates([existing], [next]);
+
+            assertTxAlive();
+            const idx = this._ds.indexOf(existing);
+            if (idx === -1) {
+              throw new PersistenceError(
+                "ERR_SKALEX_PERSISTENCE_DOC_MISSING",
+                `Document "${existing._id}" no longer exists in collection "${this.name}"`,
+                { id: existing._id, collection: this.name }
+              );
+            }
+            this._ds.replaceAt(idx, next);
+            this._updateInIndex(existing, next);
+
+            outDocs.push(next);
+            prevDocs.push(prev);
+            ops.push(Ops.UPDATE);
+          } else {
+            // Insert path - mirrors _insertCore's per-doc flow.
+            const body = { ...resolveFilterToValues(filter), ...raw };
+            const validated = this._applyValidation(body);
+            await this._ctx.plugins.run(Hooks.BEFORE_INSERT, {
+              collection: this.name,
+              doc: validated,
+            });
+            const newDoc = await this._buildDoc(validated, { ttl, embed });
+            if (this._ds.has(newDoc._id) || batchIds.has(newDoc._id)) {
+              throw new UniqueConstraintError(
+                "ERR_SKALEX_UNIQUE_DUPLICATE_ID",
+                `Duplicate _id "${newDoc._id}" in collection "${this.name}"`,
+                { id: newDoc._id, collection: this.name }
+              );
+            }
+            batchIds.add(newDoc._id);
+            newInserts.push(newDoc);
+
+            assertTxAlive();
+            if (this._fieldIndex) this._fieldIndex.assertUniqueBatch([newDoc]);
+            this._addToIndex(newDoc);
+            this._ds.push(newDoc);
+
+            outDocs.push(newDoc);
+            prevDocs.push(null);
+            ops.push(Ops.INSERT);
+          }
+        }
+
+        // Apply FIFO capacity enforcement once after all inserts land.
+        if (newInserts.length > 0) {
+          const evicted = this._enforceCapAfterInsert();
+          for (const doc of evicted) {
+            this._ctx.emitEvent(this.name, {
+              op: Ops.DELETE,
+              collection: this.name,
+              doc: stripVector(doc),
+            });
+          }
+        }
+
+        return { docs: outDocs, prevDocs, ops };
+      },
+    });
+
+    // Fire per-doc after hooks outside the mutate closure so they see the
+    // committed state, matching updateOne/insertOne behavior.
+    for (let i = 0; i < result.docs.length; i++) {
+      const doc = stripVector(result.docs[i]);
+      if (result.ops[i] === Ops.INSERT) {
+        await this._ctx.runAfterHook(Hooks.AFTER_INSERT, {
+          collection: this.name,
+          doc,
+        });
+      } else {
+        await this._ctx.runAfterHook(Hooks.AFTER_UPDATE, {
+          collection: this.name,
+          filter: { [matchKey]: docs[i][matchKey] },
+          update: docs[i],
+          result: doc,
+        });
+      }
     }
 
-    await this._saveIfNeeded(save);
-    return results;
+    return result.docs.map(stripVector);
   }
 
   // ─── Soft-delete restore ──────────────────────────────────────────────────

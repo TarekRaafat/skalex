@@ -148,6 +148,105 @@ class MutationPipeline {
 
     return { docs, prevDocs };
   }
+
+  /**
+   * Batch mutation variant used by operations that resolve to a mix of
+   * inserts and updates (currently `upsertMany`). Amortizes per-doc pipeline
+   * overhead into a single pass:
+   *
+   *   - `ensureConnected`, lock check, `_txSnapshotIfNeeded`, `assertTxAlive`
+   *     eager check, `markDirty`, `_saveIfNeeded`, and `sessionStats.recordWrite`
+   *     all run once for the whole batch.
+   *
+   * Preserves per-document correctness where it matters to observers:
+   *
+   *   - Changelog entries are emitted per document, using the per-doc `op`
+   *     string in `result.ops` when present, otherwise falling back to the
+   *     batch-level `op`.
+   *   - Watch events fire per document with the same op-per-doc semantics.
+   *
+   * Plugin hooks are NOT dispatched here. The caller is responsible for
+   * firing `beforeInsert` / `beforeUpdate` inside `mutateBatch` (before the
+   * in-memory state change) and `afterInsert` / `afterUpdate` after the
+   * returned promise resolves, so upsertMany preserves the existing per-doc
+   * hook contract that callers already rely on.
+   *
+   * @param {object} opts
+   * @param {string}   opts.op           - Default op for changelog/events.
+   * @param {Function} opts.mutateBatch  - async (assertTxAlive) => { docs: object[], prevDocs?: (object|null)[], ops?: string[] }
+   * @param {boolean|undefined} opts.save
+   * @param {string|undefined}  opts.session
+   * @returns {Promise<{ docs: object[], prevDocs: (object|null)[], ops: string[] }>}
+   */
+  async executeBatch({ op, mutateBatch, save, session }) {
+    const ctx = this._ctx;
+
+    await ctx.ensureConnected();
+
+    const txm = ctx.txManager;
+    if (!(this._col._txProxyCallDepth > 0) && txm.isCollectionLocked(this._col.name)) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_COLLECTION_LOCKED",
+        `Collection "${this._col.name}" is locked by an active transaction. ` +
+        `Non-transactional writes are blocked until the transaction commits or rolls back.`
+      );
+    }
+
+    this._col._txSnapshotIfNeeded();
+
+    const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
+    const entryTxId = isTxWrite ? txm.context.id : null;
+    const collTxId = this._col._createdInTxId;
+
+    const assertTxAlive = () => {
+      if (entryTxId !== null && txm._abortedIds.has(entryTxId)) {
+        throw new TransactionError(
+          "ERR_SKALEX_TX_ABORTED",
+          `Transaction ${entryTxId} was aborted. No further mutations allowed.`
+        );
+      }
+      if (collTxId !== null && txm._abortedIds.has(collTxId)) {
+        throw new TransactionError(
+          "ERR_SKALEX_TX_ABORTED",
+          `Transaction ${collTxId} was aborted. Collection obtained inside that transaction cannot be used for further mutations.`
+        );
+      }
+    };
+
+    if (isTxWrite || collTxId !== null) assertTxAlive();
+
+    const result = await mutateBatch(assertTxAlive);
+    const docs = Array.isArray(result?.docs) ? result.docs : [];
+    const prevDocs = Array.isArray(result?.prevDocs) ? result.prevDocs : [];
+    const ops = Array.isArray(result?.ops) ? result.ops : [];
+
+    if (docs.length === 0) {
+      return { docs, prevDocs, ops };
+    }
+
+    ctx.persistence.markDirty(ctx.collections, this._col.name);
+    await this._col._saveIfNeeded(save);
+
+    if (this._col._changelogEnabled) {
+      for (let i = 0; i < docs.length; i++) {
+        await ctx.logChange(ops[i] || op, this._col.name, docs[i], prevDocs[i] ?? null, session || null);
+      }
+    }
+
+    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session))) {
+      ctx.sessionStats.recordWrite(session);
+    }
+
+    for (let i = 0; i < docs.length; i++) {
+      ctx.emitEvent(this._col.name, {
+        op: ops[i] || op,
+        collection: this._col.name,
+        doc: stripVector(docs[i]),
+      });
+    }
+
+    return { docs, prevDocs, ops };
+  }
 }
 
 export default MutationPipeline;
