@@ -534,7 +534,7 @@ All 7 mutation methods (`insertOne`, `insertMany`, `updateOne`, `updateMany`, `d
 - **MCP HTTP CORS is opt-in**: `db.mcp({ transport: "http" })` no longer sends `Access-Control-Allow-Origin`; pass `allowedOrigin` to enable browser client access
 - **`db.import()` is JSON-only**: the `format` parameter and CSV import support have been removed; the `format: "csv"` path used a naive parser that corrupted values containing commas, making round-trips with `collection.export({ format: "csv" })` unreliable
 
-> See [MIGRATION](MIGRATION.md) for step-by-step instructions on §1 Node.js requirement, §2 sort direction, and §3 CSV import.
+> See [MIGRATION](MIGRATION.md) for step-by-step instructions on item 1 Node.js requirement, item 2 sort direction, and item 3 CSV import.
 
 ---
 

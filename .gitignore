@@ -154,3 +154,7 @@ LAUNCH.md
 design/audits/
 design/specs/
 design/archive/
+# Per-release internal plans (v4-release-plan.md is the only public planning doc)
+design/alpha-*.md
+design/beta-*.md
+design/rc-*.md
