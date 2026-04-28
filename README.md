@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/tarekraafat-skalex-badge.png)](https://mseep.ai/app/tarekraafat-skalex)
+
 <img src="./docs/imgs/skalex_banner.png" alt= "skalex Logo" id="logo">
 
 <br>
