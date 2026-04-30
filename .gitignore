@@ -158,3 +158,4 @@ design/archive/
 design/alpha-*.md
 design/beta-*.md
 design/rc-*.md
+design/[0-9]*-*.md

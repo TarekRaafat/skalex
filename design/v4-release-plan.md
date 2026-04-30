@@ -63,7 +63,7 @@ alpha.7 → alpha.8 → alpha.9 → alpha.10   │   beta.1 → beta.2 → beta.
 |---|---|---|---|
 | alpha.7 | DRY cleanup | No | Small |
 | alpha.8 | Persistence foundation: split collection store, versioned format, extract serializer | Internal only | Medium |
-| alpha.9 | Correctness and security: MCP sanitization, `applyUpdate` strictness, AI move, query cache migration, error catalogue | Yes (narrow) | Medium |
+| alpha.9 | Correctness and security: MCP sanitization, `applyUpdate` strictness, AI move, query cache migration, error catalogue, MCP recall tools | Yes (narrow) | Medium |
 | alpha.10 | Final API surface: type-precision audit, `UpdateDescriptor<T>` fix, `findOne` types, deprecated removal, uniform return meta, MCP write contract freeze, `createCollection` + `db.ask` strictness, by-ID helpers, `hasCollection`, inline migrations, `MemoryAdapter` export, `db.config()` readback, package hygiene | Yes (last window) | Medium-Large |
 | beta.1 | Storage engine: hybrid `DataStore` + `PersistenceBoundary`, WAL, unified save strategy, capability-getter migration | On-disk format v3 | Large |
 | beta.2 | Transactions: per-tx `Collection` wrappers, isolation rename, atomic rollback, `AbortSignal` | Tx callback signature | Medium |
@@ -172,9 +172,14 @@ Additional gates by release:
 - Range / B-tree index for `$gt` / `$lt`
 - Network adapter
 - Schema DSL helper
-- Tokenizer hook for Memory
+- Tokenizer hook for Memory (extended to also accept a summarizer hook)
 - ANN plugin surface
 - Collection internal split (extract watch, rehydrate, cap enforcement, and read/query modules)
+- Agent-memory cluster:
+  - Decay and importance scoring (query-time only, no hot-path cost when unused)
+  - First-class memory primitives (`collection.remember`, `collection.recall`)
+  - Hybrid retrieval engine (vector + keyword + filter + recency + importance, single scored call)
+  - Session scope helper (`db.scope({ userId, sessionId })`)
 
 **Deferred to 4.2:**
 
