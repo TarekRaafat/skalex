@@ -66,6 +66,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `BunPostgresAdapter`: Bun-native `bun:postgres` storage
 - [ ] `DenoKVAdapter`: Deno KV storage for Deno Deploy persistence
 - [ ] `DataStore` abstraction layer: introduce an interface between Collection and the raw `_data` array so the storage engine can be swapped from in-memory to disk-backed without changing the public API - prerequisite for scaling beyond in-memory limits
+- [ ] Connector maturity labels: mark every storage, embedding, and LLM adapter as production-ready or experimental in the connector docs and JSDoc, with a short capability matrix, so integrators choose against a documented stability tier instead of guessing
 
 **Resilience & memory**
 - [ ] Plugin hook timeouts: configurable timeout for `beforeHook`/`afterHook` execution in the mutation pipeline - a slow or hanging plugin should not block all database operations indefinitely
@@ -106,6 +107,9 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Performance characteristics documentation: document expected throughput, latency, and memory usage for common workloads and collection sizes
 - [ ] Dataset size and memory architecture guide: recommended collection sizes, index strategy for large datasets, and memory characteristics of the in-memory architecture - set clear expectations for what Skalex is designed for
 - [ ] TTL and capped-collection cookbook under encryption: document how `defaultTtl` / `_expiresAt` / `ttlSweepInterval` / `maxDocs` interact with `encrypt`, `autoSave`, and `lenientLoad`, with worked "bound this collection by age" and "bound this collection by size" recipes and any gotchas under encryption
+- [ ] Encryption composition guarantees: document and add regression tests proving that vector search (`search` / `similar`) and the changelog (`changelog` / `restore`) round-trip correctly under `encrypt` + `gz`, so the AI and audit features can be depended on inside an encrypted store without a maintainer confirming case by case
+- [ ] Licensing statement: a clear note in `README` and the docs that the whole package - core, AI, vector search, and MCP - ships under a single Apache-2.0 license, with no separate or additional terms for any feature
+- [ ] Introspection discoverability: surface `db.stats()` (and the planned `db.size()`) prominently in the docs and `llms.txt` alongside a memory-budgeting recipe, so the existing per-collection count and size API is found rather than re-requested
 - [ ] Custom serializer protocol guide: document the out-of-band `{ data, meta: { types } }` wrapper format so custom serializer/deserializer implementations handle BigInt and Date round-trips correctly and remain compatible with legacy inline-tag payloads
 
 **Framework adapters**
