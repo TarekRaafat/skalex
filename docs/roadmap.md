@@ -14,6 +14,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **Query & schema**
 - [ ] Additional query operators: `$exists`, `$type`, `$size`, `$all`, `$elemMatch` for deeper document filtering
+- [ ] Additional update operators: `$set`, `$unset`, `$setOnInsert`, `$addToSet`, `$pull` - field-level mutation parity with the existing `$inc` / `$push` so callers can express partial updates without read-modify-write
 - [ ] Aggregation pipeline: `$group`, `$project`, `$unwind`, `$lookup` stages (MongoDB-style)
 - [ ] Full-text search: tokenized inverted index for text fields; `$text` operator with ranking
 - [ ] Cursor-based pagination: `after` cursor complement to existing `page`/`limit`
@@ -21,6 +22,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Schema change safety: detect breaking schema changes before applying; `addMigration({ dryRun: true })` for safe previewing
 - [ ] Zod schema integration: pass a Zod schema to `createCollection` for validation and inference
 - [ ] Query cache invalidation on schema change: automatically clear cached natural-language filter translations when a collection's schema is modified - prevents stale filters from referencing removed or renamed fields
+- [ ] Configurable timestamp format: `createCollection(name, { timestamps: 'date' | 'iso' | 'epoch' })`, and allow schemas to declare `createdAt` / `updatedAt` as managed-but-declarable fields without a validation failure - removes the Date-to-ISO conversion boilerplate for apps whose domain types use string timestamps
 
 **AI**
 - [ ] Hybrid search: BM25 sparse + vector dense scoring with Reciprocal Rank Fusion - 15-30% better recall than cosine similarity alone
@@ -45,7 +47,7 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 **Security**
 - [ ] Field-level encryption: encrypt individual document fields with separate keys, independent of the storage adapter
 - [ ] Row-level security: per-collection access control functions evaluated at query time
-- [ ] Key rotation for `EncryptedAdapter`: rekey the entire database to a new encryption key without a full decrypt/re-encrypt cycle
+- [ ] Native key rotation (`db.rekey(newKey, options)`): atomically re-encrypt the entire database under a new key, with the old key valid until the rotation fully lands and automatic rollback on failure - replaces the hand-rolled dump/wipe/restore and its data-loss window
 - [ ] MCP HTTP authentication: optional API key or bearer token authentication for the HTTP transport - CORS origin checking alone is insufficient for production deployments
 - [ ] Linear-time ReDoS-safe `$regex` engine: Skalex currently defends against catastrophic backtracking with a length cap and a nested-quantifier heuristic in `compileRegexFilter()`. The heuristic catches common footguns like `(a+)+` but not all pathological patterns (e.g. `(a|a|a)+`, certain lookahead traps). A full guarantee would require a linear-time regex engine (RE2-style NFA or similar), which cannot be achieved with JavaScript's built-in `RegExp`. Would require a runtime dependency or a pure-JS NFA implementation; both are significant and at odds with the zero-dep constraint, so this is a long-horizon item rather than a near-term fix.
 
@@ -69,14 +71,17 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] Plugin hook timeouts: configurable timeout for `beforeHook`/`afterHook` execution in the mutation pipeline - a slow or hanging plugin should not block all database operations indefinitely
 - [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
 - [ ] Write-Ahead Log (WAL): journal mutations before applying so a hard kill or OOM crash never loses committed data
+- [ ] Debounced / coalesced `autoSave`: `autoSave: { debounceMs }` batches rapid mutations into a single whole-collection flush instead of re-encrypting the file on every write - cuts write amplification on hot paths (config reads, task polling); pairs with the graceful-shutdown flush so the in-flight window is not lost on exit
 - [ ] Multi-process `FsAdapter` safety: file-lock (`O_EXCL` sentinel + PID-based stale-lock detection) so multiple Node.js / Bun processes targeting the same data directory serialize writes without data loss; single-writer-per-directory remains the default, this is an opt-in `{ multiProcess: true }` flag
 - [ ] `FsAdapter { durable: true }`: call `F_FULLFSYNC` (macOS) or `fsync` + directory-sync (Linux) after every rename so writes survive a sudden power failure on SSDs with write caching; off by default to preserve current performance characteristics
 - [ ] `db.size(collection?)`: report per-collection and total in-memory footprint in bytes
 - [ ] Memory pressure events: `db.on('memoryWarning', cb)` fires when heap usage crosses a configurable threshold - lets apps shed load before OOM
 - [ ] Memory budgets with LRU eviction: configurable per-collection memory limit with least-recently-used eviction policy for long-running processes - complements `maxDocs` FIFO cap with a memory-aware alternative
 - [ ] Per-collection transaction locking: replace global serialization with per-collection locks so transactions touching disjoint collections can run concurrently - significantly improves write throughput for multi-collection workloads
+- [ ] Optimistic concurrency guard: `updateOne(filter, update, { ifVersion: n })` compare-and-set on `_version` - rejects the write with a typed error if the document changed since it was read, closing read-modify-write races durably (not just inside the in-memory transaction proxy) without holding a lock
 - [ ] Copy-on-write transaction isolation: transactional writes operate on a cloned copy; commit merges back, rollback discards - eliminates full-collection deep clone cost for large datasets
 - [ ] Crash recovery beyond sentinel warning: auto-rollback to last-known-good state or programmatic recovery callback when an incomplete flush is detected on load - currently only logs a warning
+- [ ] Error recoverability classification: a documented and machine-readable mapping of which `PersistenceError` / `ValidationError` codes mean data is recoverable vs lost, so consumers drive retry-vs-quarantine recovery off error codes instead of string matching - distinguishes "file absent / first boot", "present but undecryptable", and "structurally corrupt" as separate, typed outcomes
 - [ ] Persistence state encapsulation: move per-collection write-tracking state out of the collection store and into the persistence manager - cleaner separation of concerns
 
 **DX & tooling**
@@ -95,11 +100,12 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 - [ ] `npx skalex`: CLI inspector REPL for browsing database files without writing code
 - [ ] Query explain / execution plan debug tool
 - [ ] Migration rollback: `down()` migration support for reversible schema and data changes - currently only `up()` is supported with no programmatic rollback path
-- [ ] Automated backup & restore
+- [ ] Native consistent snapshot / restore: `db.snapshot(targetPath)` produces a single consistent, encrypted, restorable artifact, and `db.restore(path)` rehydrates it - point-in-time consistent against concurrent writes and independent of the OS toolchain (no `tar` on PATH)
 - [ ] Additional export formats (NDJSON, Parquet)
 - [ ] Stress and performance test suite: benchmark hot paths (`insertOne`, `find`, `updateOne`) under load, detect memory leaks in long-running processes, and guard against performance regressions across releases
 - [ ] Performance characteristics documentation: document expected throughput, latency, and memory usage for common workloads and collection sizes
 - [ ] Dataset size and memory architecture guide: recommended collection sizes, index strategy for large datasets, and memory characteristics of the in-memory architecture - set clear expectations for what Skalex is designed for
+- [ ] TTL and capped-collection cookbook under encryption: document how `defaultTtl` / `_expiresAt` / `ttlSweepInterval` / `maxDocs` interact with `encrypt`, `autoSave`, and `lenientLoad`, with worked "bound this collection by age" and "bound this collection by size" recipes and any gotchas under encryption
 - [ ] Custom serializer protocol guide: document the out-of-band `{ data, meta: { types } }` wrapper format so custom serializer/deserializer implementations handle BigInt and Date round-trips correctly and remain compatible with legacy inline-tag payloads
 
 **Framework adapters**
