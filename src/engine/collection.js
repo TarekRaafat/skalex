@@ -239,6 +239,33 @@ class Collection {
   }
 
   /**
+   * Shared per-document insert preamble for `_insertCore` and `upsertMany`.
+   *
+   * Validates the body, runs the `BEFORE_INSERT` hook, builds the document, and
+   * enforces `_id` uniqueness against both the live store and the in-flight
+   * batch (`batchIds`). Returns the prepared document WITHOUT indexing or
+   * pushing it: the caller owns the unique-field batch assertion, index
+   * insertion, and store push. This split is deliberate - `_insertCore` asserts
+   * uniqueness and indexes the whole batch together (so intra-batch unique
+   * collisions surface as "duplicate within batch" before any document lands),
+   * while `upsertMany` interleaves inserts with updates and commits each one as
+   * it goes. Keeping commit out of this helper preserves both timings.
+   * @param {object} body - raw document body to validate and build
+   * @param {{ ttl?: number|string, embed?: string|Function, batchIds: Set<string> }} opts
+   * @returns {Promise<object>} the prepared document (not yet indexed or pushed)
+   */
+  async _prepareInsertInBatch(body, { ttl, embed, batchIds }) {
+    const validated = this._applyValidation(body);
+    await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
+    const newDoc = await this._buildDoc(validated, { ttl, embed });
+    if (this._ds.has(newDoc._id) || batchIds.has(newDoc._id)) {
+      throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newDoc._id}" in collection "${this.name}"`, { id: newDoc._id, collection: this.name });
+    }
+    batchIds.add(newDoc._id);
+    return newDoc;
+  }
+
+  /**
    * Shared insert implementation for one or many documents.
    * @param {object[]} items
    * @param {{ ttl?, embed?, session?, save? }} opts
@@ -256,14 +283,7 @@ class Collection {
         const newItems = [];
         const batchIds = new Set();
         for (const item of items) {
-          const validated = this._applyValidation(item);
-          await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
-          const newItem = await this._buildDoc(validated, { ttl, embed });
-          if (this._ds.has(newItem._id) || batchIds.has(newItem._id)) {
-            throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newItem._id}" in collection "${this.name}"`, { id: newItem._id, collection: this.name });
-          }
-          batchIds.add(newItem._id);
-          newItems.push(newItem);
+          newItems.push(await this._prepareInsertInBatch(item, { ttl, embed, batchIds }));
         }
 
         assertTxAlive(); // guard before first in-memory state change
@@ -327,6 +347,27 @@ class Collection {
   }
 
   /**
+   * Shared per-document update preamble for `_updateCore` and `upsertMany`.
+   *
+   * Snapshots the previous document when the changelog needs it and applies the
+   * update descriptor via `_prepareUpdatedDoc`. Returns `{ next, prev }` WITHOUT
+   * touching live state: the caller owns the unique-candidate assertion and the
+   * store commit, which differ by path - `_updateCore` asserts once across the
+   * batch and commits through a pre-computed positions map, while `upsertMany`
+   * asserts and commits per document via `_commitUpdatedDoc`. `_prepareUpdatedDoc`
+   * does not mutate `oldDoc`, so snapshotting `prev` here is order-safe.
+   * @param {object} oldDoc
+   * @param {object} update - the update descriptor to apply
+   * @returns {{ next: object, prev: object|null }}
+   */
+  _prepareUpdateInBatch(oldDoc, update) {
+    const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
+    const prev = this._changelogEnabled ? structuredClone(oldDoc) : null;
+    const next = this._prepareUpdatedDoc(oldDoc, update, { needsPrev });
+    return { next, prev };
+  }
+
+  /**
    * Shared update implementation for one or many documents.
    */
   _updateCore(oldDocs, filter, update, { save, session }) {
@@ -339,9 +380,13 @@ class Collection {
       session,
       afterHookPayload: (docs) => ({ collection: this.name, filter, update, result: docs.length === 1 ? docs[0] : docs }),
       mutate: (assertTxAlive) => {
-        const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
-        const prevDocs = this._changelogEnabled ? oldDocs.map(doc => structuredClone(doc)) : oldDocs.map(() => null);
-        const nextDocs = oldDocs.map(doc => this._prepareUpdatedDoc(doc, update, { needsPrev }));
+        const nextDocs = [];
+        const prevDocs = [];
+        for (const oldDoc of oldDocs) {
+          const { next, prev } = this._prepareUpdateInBatch(oldDoc, update);
+          nextDocs.push(next);
+          prevDocs.push(prev);
+        }
 
         this._assertUniqueCandidates(oldDocs, nextDocs);
 
@@ -563,49 +608,30 @@ class Collection {
           const existing = this._findRaw(filter);
 
           if (existing) {
-            // Update path - mirrors _updateCore's single-doc flow.
+            // Update path. Shares the prepare preamble and commit primitive with
+            // _updateCore; the per-doc BEFORE_UPDATE hook and single-element
+            // unique assertion are upsertMany's interleaved semantics.
             await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
               collection: this.name,
               filter,
               update: raw,
             });
-            const needsPrev = this._changelogEnabled || this._onSchemaError === "strip";
-            const prev = this._changelogEnabled ? structuredClone(existing) : null;
-            const next = this._prepareUpdatedDoc(existing, raw, { needsPrev });
+            const { next, prev } = this._prepareUpdateInBatch(existing, raw);
             this._assertUniqueCandidates([existing], [next]);
 
             assertTxAlive();
-            const idx = this._ds.indexOf(existing);
-            if (idx === -1) {
-              throw new PersistenceError(
-                "ERR_SKALEX_PERSISTENCE_DOC_MISSING",
-                `Document "${existing._id}" no longer exists in collection "${this.name}"`,
-                { id: existing._id, collection: this.name }
-              );
-            }
-            this._ds.replaceAt(idx, next);
-            this._updateInIndex(existing, next);
+            this._commitUpdatedDoc(existing, next);
 
             outDocs.push(next);
             prevDocs.push(prev);
             ops.push(Ops.UPDATE);
           } else {
-            // Insert path - mirrors _insertCore's per-doc flow.
+            // Insert path. Shares the prepare preamble with _insertCore; the
+            // per-doc unique assertion, index insertion, and push stay here so
+            // upsertMany keeps committing each insert as it interleaves them
+            // with updates (rather than the batch-at-once path _insertCore uses).
             const body = { ...resolveFilterToValues(filter), ...raw };
-            const validated = this._applyValidation(body);
-            await this._ctx.plugins.run(Hooks.BEFORE_INSERT, {
-              collection: this.name,
-              doc: validated,
-            });
-            const newDoc = await this._buildDoc(validated, { ttl, embed });
-            if (this._ds.has(newDoc._id) || batchIds.has(newDoc._id)) {
-              throw new UniqueConstraintError(
-                "ERR_SKALEX_UNIQUE_DUPLICATE_ID",
-                `Duplicate _id "${newDoc._id}" in collection "${this.name}"`,
-                { id: newDoc._id, collection: this.name }
-              );
-            }
-            batchIds.add(newDoc._id);
+            const newDoc = await this._prepareInsertInBatch(body, { ttl, embed, batchIds });
             newInserts.push(newDoc);
 
             assertTxAlive();
