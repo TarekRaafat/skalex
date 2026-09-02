@@ -19,7 +19,7 @@ The path from alpha.6 to the 4.0.0 stable release. This document is the public s
 These hold for every release on the path to 4.0.0.
 
 1. **Every release is safer than the last.** No test-count regressions, no new skipped tests. P0 findings against shipped versions trigger out-of-band patch releases per section 1.5.
-2. **Zero runtime dependencies.** Every feature is reachable with `node:*` builtins and `fetch`.
+2. **Zero runtime dependencies.** Every feature is reachable with `node:*` builtins and `fetch`. Enforced by `npm run deps:zero` in the mandatory gate: the install-causing `package.json` fields (`dependencies`, `optionalDependencies`, `bundledDependencies`) stay empty. External integrations ship as optional, user-installed, dynamically imported adapters - never as dependencies.
 3. **Isomorphic.** Every release passes the Node, Bun, Deno, and browser smoke suites. One runtime red blocks the release.
 3a. **Minimal footprint.** The published bundle stays within the byte budget in `size-budget.json`. `npm run size` is part of the mandatory gate; a release over budget does not ship. Raising the budget is a deliberate, reviewed act with a rationale in the PR - never a silent bump to pass CI.
 4. **Breaking changes live in alpha and early beta.** alpha.10 is the last window for breaking public API changes. beta.1 is the last window for breaking on-disk format changes. After beta.2 the release is additive-only.
@@ -145,6 +145,7 @@ bun run build
 bun run size
 bun run lint
 bun run deps:check
+bun run deps:zero
 bun run types:check
 bun run smoke:node
 bun run smoke:bun
