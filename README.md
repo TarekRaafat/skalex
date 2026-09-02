@@ -12,7 +12,7 @@
 [![npm](https://img.shields.io/npm/dm/skalex?label=npm)](https://www.npmjs.com/package/skalex)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/TarekRaafat/skalex)
 
-**AI-first · Isomorphic · Zero-dependency · Local-first**
+**AI-first · Isomorphic · Zero-dependency · Lightweight · Local-first**
 
 > `Skalex` ships **vector search, agent memory, natural language queries, an MCP server, and AES-256-GCM encryption** in a single zero-dependency package - no server, no config, no external services. One `npm install skalex` on Node.js, Bun, Deno, browsers, and edge runtimes. All AI capabilities - cosine similarity search, semantic agent memory with compression, `db.ask()` NLP queries via any LLM, and a one-line MCP server for Claude Desktop and Cursor - are built into the core with zero additional dependencies.
 
@@ -24,6 +24,7 @@
 
 **Zero overhead. Maximum reach.**
 - **Zero dependencies**: install the package, nothing else. No driver, no ORM, no server process.
+- **Lightweight, and staying that way**: the full core bundle is ~28 KB gzipped. That is a promise, not a snapshot - a hard byte budget is enforced in CI on every push and PR, so Skalex will not quietly bloat.
 - **Full build matrix**: ESM, ESM minified, CJS, CJS minified, browser ESM (`dist/skalex.browser.js`, no `node:*` imports), UMD/IIFE (`dist/skalex.umd.min.js`, CDN default)
 - **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by **1,164 tests** (935 unit/integration + 229 cross-runtime smoke) gated by CI on every push and PR
 - **Pluggable storage**: `FsAdapter` (Node), `LocalStorageAdapter` (browser), `EncryptedAdapter` (AES-256-GCM), or bring your own
