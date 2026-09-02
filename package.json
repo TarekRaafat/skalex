@@ -112,6 +112,7 @@
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "node scripts/verify-node-stubs.mjs && rollup -c && cp src/index.d.ts dist/skalex.d.ts",
+    "size": "node scripts/check-size.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -119,7 +120,7 @@
     "deps:check": "madge --circular src/",
     "types:check": "tsd",
     "verify:stubs": "node scripts/verify-node-stubs.mjs",
-    "verify": "npm run test && npm run build && npm run lint && npm run deps:check && npm run types:check",
+    "verify": "npm run test && npm run build && npm run size && npm run lint && npm run deps:check && npm run types:check",
     "smoke:node": "node tests/smoke/node.test.cjs",
     "smoke:bun": "bun tests/smoke/bun.test.js && bun tests/smoke/bun-sqlite.test.js",
     "smoke:deno": "deno run tests/smoke/deno.test.js",

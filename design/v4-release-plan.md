@@ -21,6 +21,7 @@ These hold for every release on the path to 4.0.0.
 1. **Every release is safer than the last.** No test-count regressions, no new skipped tests. P0 findings against shipped versions trigger out-of-band patch releases per section 1.5.
 2. **Zero runtime dependencies.** Every feature is reachable with `node:*` builtins and `fetch`.
 3. **Isomorphic.** Every release passes the Node, Bun, Deno, and browser smoke suites. One runtime red blocks the release.
+3a. **Minimal footprint.** The published bundle stays within the byte budget in `size-budget.json`. `npm run size` is part of the mandatory gate; a release over budget does not ship. Raising the budget is a deliberate, reviewed act with a rationale in the PR - never a silent bump to pass CI.
 4. **Breaking changes live in alpha and early beta.** alpha.10 is the last window for breaking public API changes. beta.1 is the last window for breaking on-disk format changes. After beta.2 the release is additive-only.
 5. **Every release ships a `MIGRATION.md` section**, even a pure refactor.
 6. **Docs and code move together.** A behavior change without matching JSDoc, `.d.ts`, `ARCHITECTURE.md`, and `README.md` updates is incomplete.
@@ -141,6 +142,7 @@ Every release passes these before tagging:
 ```
 bun run test
 bun run build
+bun run size
 bun run lint
 bun run deps:check
 bun run types:check

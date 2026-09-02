@@ -1,0 +1,9 @@
+{
+  "_note": "Hard bundle-size budget, enforced by scripts/check-size.mjs (npm run size). Values are gzip bytes - what a consumer actually downloads. Exceeding a budget fails the build. Raising a budget is a deliberate act: run `npm run size -- --update` and justify the increase in the PR. See CLAUDE.md, Bundle Budget.",
+  "metric": "gzip",
+  "artifacts": [
+    { "file": "dist/skalex.esm.min.js", "gzipMax": 29500 },
+    { "file": "dist/skalex.min.cjs", "gzipMax": 29500 },
+    { "file": "dist/skalex.umd.min.js", "gzipMax": 29500 }
+  ]
+}
