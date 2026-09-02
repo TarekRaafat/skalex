@@ -14,6 +14,8 @@ Code-quality release. Pure refactors and hygiene ahead of the beta.1 storage-eng
 ### Internal
 
 - **`MutationPipeline._enterPipeline()`** - the pipeline-entry sequence shared by `execute()` and `executeBatch()` (connection check, tx-lock guard, `_txSnapshotIfNeeded`, transaction-affiliation detection, and the eager abort check) is extracted into one private helper. Both methods now begin with a single `const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();`, removing ~50 lines of byte-identical duplication so lock, snapshot, and abort semantics have exactly one definition. Pure refactor with no behavior change; `insertOne` throughput measured neutral (no hot-path regression).
+- **Removed dead `ChangeLog._restoring` flag** - the flag guarded `ChangeLog.log()` from logging a restore's own writes, but the alpha.6 rehydrate path (`_rehydrateOne` / `_rehydrateAll`) bypasses the mutation pipeline entirely, so `log()` is never reached during `restore()` and the guard was unreachable. The flag, its set/reset in `restore()`, and the guard in `log()` are removed.
+- **Documentation consistency sweep** - corrected stale in-code references that misdirect the next reader: the deprecated-accessor `@deprecated` JSDoc in `src/index.js` now says "Removed in alpha.10" (the actual removal release per the plan) instead of "beta.1"; the D1 `writeAll` cross-chunk-atomicity comment is reworded as a standing known-limitation pending the Cloudflare D1 Sessions API GA rather than a reference to a closed internal tracker.
 
 ### Tests
 

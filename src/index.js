@@ -957,25 +957,25 @@ class Skalex {
   //     db._ai._regexMaxLength
   //   - db._ttlScheduler._timer, db._ttlScheduler._interval
 
-  /** @deprecated Use `db._ai._embeddingAdapter`. Removed in beta.1. */
+  /** @deprecated Use `db._ai._embeddingAdapter`. Removed in alpha.10. */
   get _embeddingAdapter() { return this._ai._embeddingAdapter; }
-  /** @deprecated Use `db._ai._embeddingAdapter = v`. Removed in beta.1. */
+  /** @deprecated Use `db._ai._embeddingAdapter = v`. Removed in alpha.10. */
   set _embeddingAdapter(v) { this._ai._embeddingAdapter = v; }
 
-  /** @deprecated Use `db._ai._aiAdapter`. Removed in beta.1. */
+  /** @deprecated Use `db._ai._aiAdapter`. Removed in alpha.10. */
   get _aiAdapter() { return this._ai._aiAdapter; }
-  /** @deprecated Use `db._ai._aiAdapter = v`. Removed in beta.1. */
+  /** @deprecated Use `db._ai._aiAdapter = v`. Removed in alpha.10. */
   set _aiAdapter(v) { this._ai._aiAdapter = v; }
 
-  /** @deprecated Use `db._ai.queryCache`. Removed in beta.1. */
+  /** @deprecated Use `db._ai.queryCache`. Removed in alpha.10. */
   get _queryCache() { return this._ai.queryCache; }
 
-  /** @deprecated Use `db._ai._regexMaxLength`. Removed in beta.1. */
+  /** @deprecated Use `db._ai._regexMaxLength`. Removed in alpha.10. */
   get _regexMaxLength() { return this._ai._regexMaxLength; }
 
-  /** @deprecated Use `db._ttlScheduler._timer`. Removed in beta.1. */
+  /** @deprecated Use `db._ttlScheduler._timer`. Removed in alpha.10. */
   get _ttlTimer() { return this._ttlScheduler._timer; }
-  /** @deprecated Use `db._ttlScheduler._interval`. Removed in beta.1. */
+  /** @deprecated Use `db._ttlScheduler._interval`. Removed in alpha.10. */
   get _ttlSweepInterval() { return this._ttlScheduler._interval; }
 
   /**

@@ -112,7 +112,7 @@ class D1Adapter extends StorageAdapter {
    *
    * When Cloudflare D1 Sessions API reaches GA, this method should wrap
    * all chunks in a single session so a failure in any chunk rolls back
-   * earlier ones atomically. Tracked as alpha.4 #18.
+   * earlier ones atomically. Known limitation pending Cloudflare D1 Sessions API GA.
    *
    * @param {{ name: string, data: string }[]} entries
    */

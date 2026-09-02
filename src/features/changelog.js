@@ -15,7 +15,6 @@ class ChangeLog {
    */
   constructor(db) {
     this._db = db;
-    this._restoring = false;
   }
 
   /** Lazily resolved so it always reflects the current registry state. */
@@ -32,7 +31,6 @@ class ChangeLog {
    * @param {string|null} [session]
    */
   async log(op, collection, doc, prev = null, session = null) {
-    if (this._restoring) return;
     const entry = {
       op,
       collection,
@@ -86,13 +84,8 @@ class ChangeLog {
 
       const last = docEntries[docEntries.length - 1];
 
-      this._restoring = true;
-      try {
-        const archived = last.op === Ops.DELETE ? null : last.doc;
-        col._rehydrateOne(_id, archived);
-      } finally {
-        this._restoring = false;
-      }
+      const archived = last.op === Ops.DELETE ? null : last.doc;
+      col._rehydrateOne(_id, archived);
       await this._db.saveData(collection);
       return;
     }
@@ -114,12 +107,7 @@ class ChangeLog {
       if (!deleted && doc) restored.push(doc);
     }
 
-    this._restoring = true;
-    try {
-      col._rehydrateAll(restored);
-    } finally {
-      this._restoring = false;
-    }
+    col._rehydrateAll(restored);
     await this._db.saveData(collection);
   }
 }
