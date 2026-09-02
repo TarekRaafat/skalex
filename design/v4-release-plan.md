@@ -67,7 +67,7 @@ alpha.7 → alpha.8 → alpha.9 → alpha.10   │   beta.1 → beta.2 → beta.
 | alpha.10 | Final API surface: type-precision audit, `UpdateDescriptor<T>` fix, `findOne` types, deprecated removal, uniform return meta, MCP write contract freeze, `createCollection` + `db.ask` strictness, by-ID helpers, `hasCollection`, inline migrations, `MemoryAdapter` export, `db.config()` readback, package hygiene | Yes (last window) | Medium-Large |
 | beta.1 | Storage engine: hybrid `DataStore` + `PersistenceBoundary`, WAL, unified save strategy, opt-in `durable: true` fsync, capability-getter migration | On-disk format v3 | Large |
 | beta.2 | Transactions: per-tx `Collection` wrappers, isolation rename, atomic rollback, `AbortSignal` | Tx callback signature | Medium |
-| beta.3 | Performance and polish: delete-path index usage, filter cache, operator-only update fast path, events-async, changelog retention, feature-context refactor, stream iterator, `exists`/`has` shortcuts | No | Medium |
+| beta.3 | Performance and polish: delete-path index usage, filter cache, operator-only update fast path, dirty-page incremental flush, events-async, changelog retention, feature-context refactor, stream iterator, `exists`/`has` shortcuts | No | Medium |
 | rc.1 | Documentation, ADRs, migration guide, verification scripts | No | Small (no `src/*.js` changes) |
 | 4.0.0 | Stable release | No | - |
 
@@ -127,6 +127,7 @@ Nothing in the release train depends on `beta.3`. rc.1 branches off `beta.3` cle
 | WAL corruption under crash | beta.1 | Randomized crash fault injection, 1000 runs minimum. Invariant: post-recovery state equals last successfully committed state. |
 | Per-tx wrapper drift (wrapper lifetime vs tx lifetime) | beta.2 | Tests cover: wrapper captured outside `fn` throws `ERR_SKALEX_TX_STALE_PROXY`; wrapper state does not bleed between transactions; bare `Collection` never participates in tx dispatch. Identical transaction suite runs on Node, Bun, Deno, and browser. |
 | Rollback fails mid-sweep | beta.2 | `Promise.allSettled` per collection; typed `ERR_SKALEX_TX_ROLLBACK_PARTIAL` with `details.failed`. Fault-injection test required. |
+| Write throughput degrades as data grows (full-collection rewrite on every flush) | beta.3 | Dirty-page incremental flush (beta.3 #24): `_flush` writes only pages changed since the last flush, reusing the WAL's touched-page set. Gated by the flat-flush benchmark - a one-doc update on a 1M-doc collection flushes within 2× of the same op on a 1K-doc collection. |
 | Hot-path perf regression slips into beta.3 | beta.3 | Benchmark gate in CI; regression ≥ 5% fails the release. |
 | Delete-path benchmark regression remains after beta.3 | beta.3 | Gate beta.3 on `deleteOne({ _id })` being ≥100× faster than alpha.6 baseline on a 100K-doc collection. |
 | RC cycle too short | rc.1 | Tag 4.0.0 only when no open P0 issues exist and the maintainer is satisfied with rc.1 field exposure. No fixed soak length. Extend exposure on any P0 finding. |
@@ -157,7 +158,7 @@ Additional gates by release:
 | alpha.10 | `tsd` positive and negative cases green; `api-surface.md` snapshot committed |
 | beta.1 | 1000-run crash fault injection passes; hot-path benchmark within 1.05× alpha.6 |
 | beta.2 | Fire-and-forget + nested async tx tests green on every runtime (including browser) |
-| beta.3 | Hot-path benchmark no worse than beta.1; `deleteOne({ _id })` ≥100× faster than alpha.6 |
+| beta.3 | Hot-path benchmark no worse than beta.1; `deleteOne({ _id })` ≥100× faster than alpha.6; one-doc-update flush scales with pages touched, not collection size |
 | rc.1 | Zero code changes vs beta.3 in `src/*.js`; docs coverage is 100% on the public surface |
 
 ---
@@ -169,7 +170,8 @@ Additional gates by release:
 **Deferred to 4.1:**
 
 - Vector side-store and quantization
-- Range / B-tree index for `$gt` / `$lt`
+- Range / B-tree index for `$gt` / `$lt` - the "real query for user data" lever: turns range/inequality filters over user collections (subscribers by signup date, per-user prefs by tier) from full scans into indexed lookups, in RAM
+- Lazy collection load - opt-in; `connect()` reads the manifest only and hydrates a collection on first access, with optional idle eviction. Reduces resident memory for the "many collections, one hot path" case without leaving the in-memory model
 - Network adapter
 - Schema DSL helper
 - Tokenizer hook for Memory (extended to also accept a summarizer hook)
@@ -195,6 +197,13 @@ Additional gates by release:
 
 The deferred list is firm. Scope creep into the 4.0 window is the single biggest risk to release readiness.
 
+### Non-goals (written answers to recurring field asks)
+
+Some asks recur because they sound reasonable but sit outside what Skalex is. Writing the boundary down here gives every future request a fixed answer, so the moat is not eroded one "reasonable" exception at a time.
+
+- **Querying data that does not fit in RAM (out-of-core).** Skalex is in-memory by charter: a resident collection is fully in memory and queried there. Where users want this, the underlying need is usually (a) faster per-user filters - addressed in RAM by the range/B-tree index (4.1), (b) lower resident memory for cold collections - addressed by lazy collection load (4.1), or (c) not rewriting the whole file on every write - addressed by dirty-page incremental flush (beta.3 #24). True out-of-core querying requires the async-native disk-backed DataStore, and is v5 at the earliest. The beta.1 DataStore boundary is the seam that keeps it *possible* later without a rewrite; it is not a commitment to build it in v4 or 4.1.
+- **Many parallel writers via transactions.** Transactions provide safe *isolation* (per-collection locking, atomic rollback - beta.2), not parallel write throughput: transactions are serialised. Within one process this is the intended model. Across processes it is a documented non-goal - two Skalex processes on the same directory are unsupported. The `multiProcessGuard` lockfile (beta.3 #15) turns that from silent corruption into a loud error; it is a guard, not multi-process support. Distributed or multi-process concurrency is not on any v4.x roadmap.
+
 ---
 
 ## 7. Cutting order if scope must shrink
@@ -202,11 +211,10 @@ The deferred list is firm. Scope creep into the 4.0 window is the single biggest
 When a release feels too large to land cleanly, remove items in this order (least painful first) rather than rushing or compressing the verification matrix:
 
 1. `db.diagnostics()` → 4.1
-2. FsAdapter lockfile → 4.1
-3. Optional `{ meta: true }` return shape → 4.1
-4. `AbortSignal` in transactions → 4.1
-5. Post-restore audit trail → 4.1
-6. Tokenizer hook stub → 4.1
+2. Optional `{ meta: true }` return shape → 4.1
+3. `AbortSignal` in transactions → 4.1
+4. Post-restore audit trail → 4.1
+5. Tokenizer hook stub → 4.1
 
 Do NOT cut:
 
@@ -221,6 +229,8 @@ Do NOT cut:
 - MCP sanitization (alpha.9) - security hardening
 - Package exports (alpha.10) - users following the `.d.ts` hit runtime errors today
 - Delete-path perf (beta.3) - required to meet the fastest-in-category benchmark target
+- FsAdapter lockfile / `multiProcessGuard` (beta.3 #15) - reliability is the top project priority, and silent cross-process corruption is a correctness defect, not a nicety. The guard turns it into a loud error. Do not cut it to 4.1; ship the safety net in the same release that ships the transaction isolation story
+- Dirty-page incremental flush (beta.3 #24) - the measured guarantee behind "write throughput does not degrade as data grows." Cutting it reintroduces full-collection rewrite on every flush
 
 ---
 
