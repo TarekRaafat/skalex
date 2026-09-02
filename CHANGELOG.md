@@ -18,6 +18,10 @@ Code-quality release. Pure refactors and hygiene ahead of the beta.1 storage-eng
 - **Removed dead `ChangeLog._restoring` flag** - the flag guarded `ChangeLog.log()` from logging a restore's own writes, but the alpha.6 rehydrate path (`_rehydrateOne` / `_rehydrateAll`) bypasses the mutation pipeline entirely, so `log()` is never reached during `restore()` and the guard was unreachable. The flag, its set/reset in `restore()`, and the guard in `log()` are removed.
 - **Documentation consistency sweep** - corrected stale in-code references that misdirect the next reader: the deprecated-accessor `@deprecated` JSDoc in `src/index.js` now says "Removed in alpha.10" (the actual removal release per the plan) instead of "beta.1"; the D1 `writeAll` cross-chunk-atomicity comment is reworded as a standing known-limitation pending the Cloudflare D1 Sessions API GA rather than a reference to a closed internal tracker.
 
+### Fixed
+
+- **`Symbol.asyncDispose` type resolution under `lib: ES2022` and earlier** - `src/index.d.ts` declares `[Symbol.asyncDispose](): Promise<void>` to support `await using db = new Skalex(...)`, but that symbol lives in `lib.esnext.disposable` (TS 5.2+). Consumers whose tsconfig targets `lib: ES2022` or earlier hit `TS2550` when their compiler read the declaration file. A top-of-file `/// <reference lib="esnext.disposable" />` directive now pulls the symbol in regardless of the consumer's `lib` setting. Runtime `await using` already worked on Node 18+; this fixes only the point-of-adoption type error. A zero-dependency guard (`npm run verify:lib-ref`, in the mandatory gate) asserts the directive stays at the top of the file - where a triple-slash reference is effective - so a refactor cannot silently drop or demote it.
+
 ### Tests
 
 - All 935 existing tests pass unchanged (behavior identity is the bar for this release's refactors).

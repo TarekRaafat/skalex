@@ -1,3 +1,10 @@
+/// <reference lib="esnext.disposable" />
+// Pulls in Symbol.asyncDispose / Symbol.dispose regardless of the consumer's
+// own `lib` setting, so `await using db = new Skalex(...)` and the
+// `[Symbol.asyncDispose]()` declaration below type-check even under lib: ES2022
+// or earlier. Guarded by scripts/verify-lib-ref.mjs (npm run verify:lib-ref) so
+// it cannot be dropped in a refactor without failing the gate.
+
 // ─── Skalex v4 TypeScript Definitions ────────────────────────────────────────
 
 // ─── Config ──────────────────────────────────────────────────────────────────
