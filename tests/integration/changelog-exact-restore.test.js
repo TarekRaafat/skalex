@@ -80,13 +80,19 @@ describe("changelog restore - exact rehydrate", () => {
 
     const first = await col.insertOne({ _id: "x", n: 1 });
     const archivedExpiry = first._expiresAt;
+    // Capture a wall-clock instant AFTER the awaited insert. insertOne awaits
+    // its changelog write, so this instant is >= the insert entry's timestamp
+    // and (after the tick) < the update entry's. Restoring to a document's own
+    // `updatedAt` is unreliable because that field is stamped before the async
+    // changelog entry is timestamped - the two can straddle a millisecond.
+    const afterInsert = new Date();
     await tick();
     await col.updateOne({ _id: "x" }, { n: 2 });
     await tick();
     await col.deleteOne({ _id: "x" });
 
     // Restore to the state after insert but before the update.
-    await db.restore("items", first.updatedAt, { _id: "x" });
+    await db.restore("items", afterInsert, { _id: "x" });
     const restored = await col.findOne({ _id: "x" });
     expect(restored).not.toBeNull();
     expect(restored._expiresAt.getTime()).toBe(archivedExpiry.getTime());

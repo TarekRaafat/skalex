@@ -20,6 +20,7 @@ Code-quality release. Pure refactors and hygiene ahead of the beta.1 storage-eng
 ### Tests
 
 - All 935 existing tests pass unchanged (behavior identity is the bar for this release's refactors).
+- **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.
 
 ## [4.0.0-alpha.6] - 2026-04-23
 
