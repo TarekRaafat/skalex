@@ -23,32 +23,17 @@ class MutationPipeline {
   get _ctx() { return this._col._ctx; }
 
   /**
-   * Execute a mutation with the full lifecycle.
+   * Shared pipeline-entry sequence for `execute()` and `executeBatch()`.
    *
-   * Event ordering contract
-   * -----------------------
-   * Watch events are emitted **before** the after-hook runs. This is
-   * intentional: it keeps observers on the synchronous path of the mutation
-   * and preserves strict per-collection delivery order. A consequence is
-   * that observers may see a mutation event whose corresponding after-hook
-   * subsequently throws - the mutation itself is already committed.
+   * Runs, in order: `ensureConnected`, the tx-lock guard, `_txSnapshotIfNeeded`,
+   * transaction-affiliation detection, and the eager abort check. Both callers
+   * begin with a single `_enterPipeline()` call so this sequence has exactly one
+   * definition - any change to lock semantics, snapshotting, or abort detection
+   * lands in one place instead of drifting between the two methods.
    *
-   * Event dispatch is synchronous. A slow watch listener blocks the
-   * mutation pipeline. Listeners should hand work off to a queue if they
-   * need to do anything non-trivial.
-   *
-   * @param {object} opts
-   * @param {string}   opts.op          - One of the `Ops` values from src/engine/constants.js.
-   * @param {string}   opts.beforeHook  - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.BEFORE_INSERT`).
-   * @param {string}   opts.afterHook   - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.AFTER_INSERT`).
-   * @param {object}   opts.hookPayload - Data passed to before hook.
-   * @param {Function} opts.mutate      - async (assertTxAlive) => { docs, prevDocs }
-   * @param {Function} [opts.afterHookPayload] - (docs) => payload for after hook.
-   * @param {boolean|undefined} opts.save
-   * @param {string|undefined}  opts.session
-   * @returns {Promise<{ docs: object[], prevDocs: (object|null)[] }>}
+   * @returns {Promise<{ ctx: CollectionContext, txm: object, isTxWrite: boolean, assertTxAlive: () => void }>}
    */
-  async execute({ op, beforeHook, afterHook, hookPayload, mutate, afterHookPayload, save, session }) {
+  async _enterPipeline() {
     const ctx = this._ctx;
 
     await ctx.ensureConnected();
@@ -79,7 +64,7 @@ class MutationPipeline {
 
     // Detect stale continuations from aborted transactions.
     // Two sources of tx affinity:
-    //   1. entryTxId: the tx active when this execute() call started
+    //   1. entryTxId: the tx active when this call started
     //   2. _createdInTxId: the tx active when this Collection instance was created
     // Either being in the aborted set means this mutation must be rejected.
     const entryTxId = isTxWrite ? txm.context.id : null;
@@ -104,6 +89,38 @@ class MutationPipeline {
 
     // Eager check before any work (only for tx-affiliated writes)
     if (isTxWrite || collTxId !== null) assertTxAlive();
+
+    return { ctx, txm, isTxWrite, assertTxAlive };
+  }
+
+  /**
+   * Execute a mutation with the full lifecycle.
+   *
+   * Event ordering contract
+   * -----------------------
+   * Watch events are emitted **before** the after-hook runs. This is
+   * intentional: it keeps observers on the synchronous path of the mutation
+   * and preserves strict per-collection delivery order. A consequence is
+   * that observers may see a mutation event whose corresponding after-hook
+   * subsequently throws - the mutation itself is already committed.
+   *
+   * Event dispatch is synchronous. A slow watch listener blocks the
+   * mutation pipeline. Listeners should hand work off to a queue if they
+   * need to do anything non-trivial.
+   *
+   * @param {object} opts
+   * @param {string}   opts.op          - One of the `Ops` values from src/engine/constants.js.
+   * @param {string}   opts.beforeHook  - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.BEFORE_INSERT`).
+   * @param {string}   opts.afterHook   - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.AFTER_INSERT`).
+   * @param {object}   opts.hookPayload - Data passed to before hook.
+   * @param {Function} opts.mutate      - async (assertTxAlive) => { docs, prevDocs }
+   * @param {Function} [opts.afterHookPayload] - (docs) => payload for after hook.
+   * @param {boolean|undefined} opts.save
+   * @param {string|undefined}  opts.session
+   * @returns {Promise<{ docs: object[], prevDocs: (object|null)[] }>}
+   */
+  async execute({ op, beforeHook, afterHook, hookPayload, mutate, afterHookPayload, save, session }) {
+    const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();
 
     if (beforeHook) await ctx.plugins.run(beforeHook, hookPayload);
 
@@ -179,41 +196,7 @@ class MutationPipeline {
    * @returns {Promise<{ docs: object[], prevDocs: (object|null)[], ops: string[] }>}
    */
   async executeBatch({ op, mutateBatch, save, session }) {
-    const ctx = this._ctx;
-
-    await ctx.ensureConnected();
-
-    const txm = ctx.txManager;
-    if (!(this._col._txProxyCallDepth > 0) && txm.isCollectionLocked(this._col.name)) {
-      throw new TransactionError(
-        "ERR_SKALEX_TX_COLLECTION_LOCKED",
-        `Collection "${this._col.name}" is locked by an active transaction. ` +
-        `Non-transactional writes are blocked until the transaction commits or rolls back.`
-      );
-    }
-
-    this._col._txSnapshotIfNeeded();
-
-    const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
-    const entryTxId = isTxWrite ? txm.context.id : null;
-    const collTxId = this._col._createdInTxId;
-
-    const assertTxAlive = () => {
-      if (entryTxId !== null && txm._abortedIds.has(entryTxId)) {
-        throw new TransactionError(
-          "ERR_SKALEX_TX_ABORTED",
-          `Transaction ${entryTxId} was aborted. No further mutations allowed.`
-        );
-      }
-      if (collTxId !== null && txm._abortedIds.has(collTxId)) {
-        throw new TransactionError(
-          "ERR_SKALEX_TX_ABORTED",
-          `Transaction ${collTxId} was aborted. Collection obtained inside that transaction cannot be used for further mutations.`
-        );
-      }
-    };
-
-    if (isTxWrite || collTxId !== null) assertTxAlive();
+    const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();
 
     const result = await mutateBatch(assertTxAlive);
     const docs = Array.isArray(result?.docs) ? result.docs : [];

@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [4.0.0-alpha.7] - TBD
+
+Code-quality release. Pure refactors and hygiene ahead of the beta.1 storage-engine work, so the WAL / DataStore changes land on a deduplicated foundation instead of propagating duplication into new code. No new user-facing features, no breaking changes, no on-disk format change.
+
+### Internal
+
+- **`MutationPipeline._enterPipeline()`** - the pipeline-entry sequence shared by `execute()` and `executeBatch()` (connection check, tx-lock guard, `_txSnapshotIfNeeded`, transaction-affiliation detection, and the eager abort check) is extracted into one private helper. Both methods now begin with a single `const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();`, removing ~50 lines of byte-identical duplication so lock, snapshot, and abort semantics have exactly one definition. Pure refactor with no behavior change; `insertOne` throughput measured neutral (no hot-path regression).
+
+### Tests
+
+- All 935 existing tests pass unchanged (behavior identity is the bar for this release's refactors).
+
 ## [4.0.0-alpha.6] - 2026-04-23
 
 Correctness and packaging release. Out-of-band type metadata eliminates a silent BigInt/Date revival collision, changelog restore now faithfully rehydrates archived system fields and keeps emitting watch events for external observers, `upsertMany` runs through a single batched pipeline pass, the serializer walker correctly handles null-prototype containers and `toJSON` objects, and every connector subpath ships its own `.d.ts` entry. No breaking changes for the public API; on-disk persistence format changes but legacy payloads continue to load.
