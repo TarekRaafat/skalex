@@ -122,15 +122,14 @@ class FsAdapter extends StorageAdapter {
   }
 
   /**
-   * Recognize only reserved temporary names written by this adapter.
+   * Recognize reserved temporary names for either supported storage format.
    * The leading dot cannot occur in a valid collection name. Legacy
    * temporary-looking names are ambiguous and must never be deleted here.
    * @param {string} file
    * @returns {boolean}
    */
   _isTempFile(file) {
-    const ext = `.${this.format}`;
-    return file.endsWith(ext) && /^\.skalex-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/.test(file.slice(0, -ext.length));
+    return /^\.skalex-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp\.(?:json|gz)$/.test(file);
   }
 
   /** Utility: join paths. */
@@ -157,7 +156,9 @@ class FsAdapter extends StorageAdapter {
   /**
    * Delete any orphan temp files left by interrupted writes.
    * Temp files are named `.skalex-<uuid>.tmp.<format>` - a partial rename on
-   * the way out of `write()` / `writeAll()` can leave them on disk.
+   * the way out of `write()` / `writeAll()` can leave them on disk. Cleanup
+   * covers json and gz regardless of the current format; listing remains
+   * restricted to the current format.
    * Best-effort: individual unlink failures are ignored.
    * @returns {Promise<number>} The number of temp files removed.
    */

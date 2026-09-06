@@ -21,7 +21,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 ### Fixed
 
 - **Document/index consistency** - batch updates validate all targets and index values before changing state, and insert batches validate index candidates once before committing. Updates release old batch unique values together. Invalid compound-index values cannot leave ghost entries or partially replace stored documents. Hook-deleted update targets reject the batch before other targets change.
-- **Filesystem cleanup preserves collection files** - temporary writes use a reserved leading-dot name. Listing and cleanup recognize only that format for the configured storage extension. Valid collection names containing `.tmp.`, including legacy temporary-looking names, are preserved. Loading rejects payloads whose collection name differs from their storage key, preventing legacy leftovers from replacing another collection.
+- **Filesystem cleanup preserves collection files** - temporary writes use a reserved leading-dot name. Cleanup recognizes reserved json and gz temporary files regardless of the current format; collection listing remains restricted to the configured extension. Valid collection names containing `.tmp.`, including legacy temporary-looking names, are preserved. Loading rejects payloads whose collection name differs from their storage key, preventing legacy leftovers from replacing another collection.
 - **MCP collection authorization** - collection identifiers are validated and normalized before checking scopes, so whitespace cannot bypass a collection-specific denial through the wildcard fallback.
 - **Concurrent primary-ID uniqueness** - inserts check live IDs immediately before committing. An overlapping insert or a delayed batch cannot accept an ID that another operation claimed during preparation.
 
@@ -29,7 +29,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 960 tests pass, including new filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions.
+- All 962 tests pass, including new filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

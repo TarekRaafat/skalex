@@ -186,7 +186,7 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 
 `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, BunSQLiteAdapter, D1Adapter, LibSQLAdapter } from 'skalex/connectors/storage'`
 
-- `FsAdapter` - Node.js / Bun / Deno filesystem (default); atomic per-file writes; gz/json formats. Cleanup only deletes reserved `.skalex-<uuid>.tmp.<format>` files; ambiguous legacy temporary-looking files are preserved.
+- `FsAdapter` - Node.js / Bun / Deno filesystem (default); atomic per-file writes; gz/json formats. Cleanup only deletes reserved `.skalex-<uuid>.tmp.json` and `.skalex-<uuid>.tmp.gz` files, regardless of the active format; ambiguous legacy temporary-looking files are preserved.
 - `LocalStorageAdapter` - browser `localStorage`
 - `EncryptedAdapter` - AES-256-GCM wrapper for any adapter; zero extra dependencies
 - `BunSQLiteAdapter` - Bun-native `bun:sqlite`

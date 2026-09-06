@@ -29,4 +29,26 @@ describe("filesystem temporary-file classification", () => {
     expect(await adapter.cleanOrphans()).toBe(0);
     expect(unlink).not.toHaveBeenCalled();
   });
+  test.each(["json", "gz"])("cleans reserved temporary files across formats while listing only %s collections", async format => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const temps = [`.skalex-${uuid}.tmp.json`, `.skalex-${uuid}.tmp.gz`];
+    const unrelated = [
+      `.skalex-${uuid}.tmp.txt`,
+      `.skalex-${uuid}.tmp.json.backup`,
+      ".skalex-invalid.tmp.json",
+      `orders_${uuid}.tmp.json`,
+      `orders_${uuid}.tmp.gz`,
+    ];
+    const files = ["orders.json", "orders.gz", ...temps, ...unrelated];
+    vi.spyOn(fs.promises, "readdir").mockResolvedValue(files);
+    const unlink = vi.spyOn(fs.promises, "unlink").mockResolvedValue();
+    const adapter = new FsAdapter({ dir: "/virtual", format });
+    const listed = await adapter.list();
+    expect(listed).toContain("orders");
+    expect(listed).toContain(`orders_${uuid}.tmp`);
+    expect(listed).not.toContain(`.skalex-${uuid}.tmp`);
+    expect(await adapter.cleanOrphans()).toBe(2);
+    expect(unlink.mock.calls.map(([path]) => path.split("/").pop()).sort()).toEqual(temps.sort());
+  });
+
 });

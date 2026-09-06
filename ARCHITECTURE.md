@@ -421,7 +421,7 @@ Owns all load/save orchestration, dirty tracking, write-queue coalescing, flush 
 3. Merges persisted config with pre-existing `createCollection` config (in-memory config takes precedence).
 4. Builds the `_id` index and field indexes from loaded data.
 5. Detects incomplete flushes via the flush sentinel.
-6. Cleans reserved `.skalex-<uuid>.tmp.<format>` files left by interrupted writes. The leading dot prevents collisions with collection names; ambiguous legacy temporary-looking filenames are preserved.
+6. Cleans reserved `.skalex-<uuid>.tmp.json` and `.skalex-<uuid>.tmp.gz` files left by interrupted writes, regardless of the active storage format. The leading dot prevents collisions with collection names; ambiguous legacy temporary-looking filenames are preserved.
 
 The `lenientLoad` option allows skipping corrupt collections instead of throwing.
 
