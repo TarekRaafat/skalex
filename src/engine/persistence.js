@@ -38,6 +38,7 @@ class PersistenceManager {
      * coalescing reduces redundant ordinary writes before entering it.
      */
     this._saveLock = Promise.resolve();
+    this._pendingFlush = null;
   }
 
   /**
@@ -219,15 +220,12 @@ class PersistenceManager {
    * Batch save of specific collections via writeAll().
    * Used by transactions to commit all touched collections together.
    *
-   * Strategy: include _meta (with flush sentinel) in the single writeAll()
-   * batch so all data and metadata go through one adapter-level operation.
-   * SQL adapters (BunSQLite, D1, LibSQL) get native atomicity; FsAdapter
-   * gets a narrowed failure window (sequential renames). If the batch
-   * fails, the sentinel survives on disk for crash detection on next load.
-   *
-   * After a successful batch, the sentinel is cleared and _meta is written
-   * once more. If that final write fails, the sentinel remains - which is
-   * the correct "incomplete" signal.
+   * Persist an incomplete marker over previously committed metadata before
+   * writing any batch data. The batch still includes current _meta last, so
+   * pending migration versions are not published by the preflight write.
+   * Clear only this batch's marker on success; retain earlier uncertainty.
+   * A marker or data-write failure rejects. A clear failure logs a warning
+   * and leaves committed data intact. Detection is not automatic recovery.
    *
    * @param {object} collections - Live collections map.
    * @param {string[]} names - Collection names to save.
@@ -237,23 +235,26 @@ class PersistenceManager {
     return this._withSaveLock(async () => {
       if (names.length === 0) return;
 
-      // Set flush sentinel in memory before serializing
+      // Preserve any earlier uncertainty until explicit recovery.
+      const previousFlush = this._pendingFlush;
       this._writeFlushSentinel(collections, names);
+      const flush = this._getOrCreateMeta(collections)[FLUSH_META_KEY];
+      this._pendingFlush = flush;
 
       // Build a single batch including _meta alongside the touched collections
-      const allNames = new Set(names);
+      const allNames = new Set(names.filter(name => name !== "_meta"));
       allNames.add("_meta");
 
-      const entries = [...allNames]
-        .filter(n => collections[n])
-        .map(name => ({ name, data: this._serializeCollection(collections[name]) }));
-
       try {
+        const entries = [...allNames]
+          .filter(n => collections[n])
+          .map(name => ({ name, data: this._serializeCollection(collections[name]) }));
+        await this._persistFlushSentinel();
         await this._adapter.writeAll(entries);
       } catch (error) {
         throw new PersistenceError(
           "ERR_SKALEX_PERSISTENCE_FLUSH_FAILED",
-          `Batch save failed during writeAll: ${error.message}`,
+          `Batch save failed during marker or data write: ${error.message}`,
           { collections: names }
         );
       }
@@ -266,12 +267,16 @@ class PersistenceManager {
       // Clear sentinel and persist _meta one final time.
       // If this fails, the sentinel remains on disk - correct "incomplete" signal.
       try {
-        this._clearFlushSentinel(collections);
+        this._pendingFlush = previousFlush;
+        if (previousFlush) this._getOrCreateMeta(collections)[FLUSH_META_KEY] = previousFlush;
+        else this._clearFlushSentinel(collections);
         await this._adapter.write("_meta", this._serializeCollection(collections["_meta"]));
       } catch (error) {
+        this._pendingFlush = flush;
+        this._getOrCreateMeta(collections)[FLUSH_META_KEY] = flush;
         this._logger(
           `WARNING: Batch data committed but sentinel clear failed: ${error.message}. ` +
-          `Next load will report an incomplete flush (false positive).`,
+          `Next load will report an incomplete flush; inspect storage before recovery.`,
           "error"
         );
       }
@@ -291,6 +296,29 @@ class PersistenceManager {
     }
   }
 
+  /**
+   * Acknowledge only the warning observed at invocation, after caller inspection.
+   * @param {object} collections
+   * @param {Function} isAvailable - Connected and outside a transaction.
+   * @returns {Promise<void>}
+   */
+  acknowledgeIncompleteFlush(collections, isAvailable) {
+    const observed = isAvailable() ? this._pendingFlush : undefined;
+    return this._withSaveLock(async () => {
+      if (!isAvailable() || this._pendingFlush !== observed) {
+        throw new PersistenceError("ERR_SKALEX_PERSISTENCE_ACK_FAILED", "Connect, wait for transactions and inspect the latest warning before acknowledging.", { reason: "state_changed" });
+      }
+      if (!observed) return;
+      try {
+        await this._persistFlushSentinel(null);
+      } catch (cause) {
+        throw new PersistenceError("ERR_SKALEX_PERSISTENCE_ACK_FAILED", "Acknowledgement failed; inspect the storage error before retrying.", { cause });
+      }
+      this._pendingFlush = null;
+      this._getOrCreateMeta(collections)[FLUSH_META_KEY] = null;
+    });
+  }
+
   // ─── Serialization ─────────────────────────────────────────────────────
 
   /**
@@ -299,7 +327,13 @@ class PersistenceManager {
    * @returns {string}
    */
   _serializeCollection(col) {
-    const payload = { collectionName: col.collectionName, data: col.data };
+    let data = col.data;
+    // Rollback may restore older metadata; never erase an unresolved warning.
+    if (col.collectionName === "_meta" && this._pendingFlush) {
+      data = col.data.map(doc => doc._id === META_DOC_ID ? { ...doc, [FLUSH_META_KEY]: this._pendingFlush } : doc);
+      if (!data.some(doc => doc._id === META_DOC_ID)) data.push({ _id: META_DOC_ID, [FLUSH_META_KEY]: this._pendingFlush });
+    }
+    const payload = { collectionName: col.collectionName, data };
     if (col.rawSchema) payload.rawSchema = col.rawSchema;
     if (col.changelog) payload.changelog = col.changelog;
     if (col.softDelete) payload.softDelete = col.softDelete;
@@ -394,17 +428,33 @@ class PersistenceManager {
   }
 
   /**
-   * Write a flush sentinel into the _meta collection before a batch save.
-   * If the process crashes mid-flush, the sentinel survives and is
-   * detected on the next loadAll().
+   * Stage the flush marker in memory, retaining earlier unresolved names.
+   * _persistFlushSentinel makes it durable before the batch starts.
    */
   _writeFlushSentinel(collections, names) {
     const meta = this._getOrCreateMeta(collections);
     meta[FLUSH_META_KEY] = {
-      startedAt: new Date().toISOString(),
-      collections: names,
+      startedAt: this._pendingFlush?.startedAt ?? new Date().toISOString(),
+      collections: [...new Set([...(this._pendingFlush?.collections ?? []), ...names])],
       completedAt: null,
     };
+  }
+
+  /**
+   * Persist the marker over committed metadata, never pending migration state.
+   * @returns {Promise<void>}
+   */
+  async _persistFlushSentinel(flush = this._pendingFlush) {
+    const raw = await this._adapter.read("_meta");
+    const stored = raw ? this._deserializer(raw) : { collectionName: "_meta", data: [] };
+    if (stored?.collectionName !== "_meta" || !Array.isArray(stored.data)) {
+      throw new PersistenceError("ERR_SKALEX_PERSISTENCE_CORRUPT", "Cannot preserve persisted metadata while writing the flush marker.");
+    }
+    const previous = stored.data.find(doc => doc._id === META_DOC_ID);
+    const marker = { ...previous, _id: META_DOC_ID, [FLUSH_META_KEY]: flush };
+    const data = stored.data.filter(doc => doc._id !== META_DOC_ID);
+    data.push(marker);
+    await this._adapter.write("_meta", this._serializer({ ...stored, data }));
   }
 
   /**
@@ -413,7 +463,7 @@ class PersistenceManager {
   _clearFlushSentinel(collections) {
     const meta = this._getOrCreateMeta(collections);
     if (meta[FLUSH_META_KEY]) {
-      meta[FLUSH_META_KEY].completedAt = new Date().toISOString();
+      meta[FLUSH_META_KEY] = { ...meta[FLUSH_META_KEY], completedAt: new Date().toISOString() };
     }
   }
 
@@ -428,6 +478,7 @@ class PersistenceManager {
     const flush = metaDoc[FLUSH_META_KEY];
     if (!flush) return;
     if (flush.startedAt && !flush.completedAt) {
+      this._pendingFlush = flush;
       this._logger(
         `WARNING: Incomplete flush detected (started ${flush.startedAt}, collections: ${flush.collections?.join(", ")}). Data may be inconsistent.`,
         "error"

@@ -137,15 +137,11 @@ describe("saveAtomic memory/disk coherence", () => {
     const adapter = new MemoryAdapter();
     const originalWrite = adapter.write.bind(adapter);
 
-    // Track _meta writes: writeAll handles the batch (including _meta),
-    // then a separate write("_meta", ...) clears the sentinel.
-    // We want to fail only that post-batch sentinel clear.
-    let metaWriteCount = 0;
+    // Fail only the completed marker, regardless of preflight/batch writes.
     adapter.write = async (name, data) => {
       if (name === "_meta") {
-        metaWriteCount++;
-        // Fail the sentinel-clear write (occurs after writeAll succeeds)
-        if (metaWriteCount >= 2) throw new Error("sentinel clear failed");
+        const meta = JSON.parse(data).data.data.find(doc => doc._id === "migrations");
+        if (meta?._flush?.completedAt) throw new Error("sentinel clear failed");
       }
       return originalWrite(name, data);
     };

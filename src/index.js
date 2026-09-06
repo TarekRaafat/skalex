@@ -498,6 +498,22 @@ class Skalex {
   }
 
   /**
+   * Clear an incomplete-flush warning after inspecting or repairing storage.
+   * Does not validate, repair or flush collection data. Connect first and
+   * call outside transactions. No-op when no warning exists.
+   * @returns {Promise<void>}
+   * @throws {PersistenceError} ERR_SKALEX_PERSISTENCE_ACK_FAILED if unavailable,
+   * the warning changes while queued, or metadata cannot be saved.
+   * @example
+   * await db.acknowledgeIncompleteFlush();
+   */
+  acknowledgeIncompleteFlush() {
+    return this._persistence.acknowledgeIncompleteFlush(
+      this.collections, () => this.isConnected && !this._txManager.active
+    );
+  }
+
+  /**
    * Build a Map index from an array of documents.
    * @param {object[]} data
    * @param {string} keyField

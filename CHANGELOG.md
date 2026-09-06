@@ -26,7 +26,13 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 - **Removed dead `ChangeLog._restoring` flag** - the flag guarded `ChangeLog.log()` from logging a restore's own writes, but the alpha.6 rehydrate path (`_rehydrateOne` / `_rehydrateAll`) bypasses the mutation pipeline entirely, so `log()` is never reached during `restore()` and the guard was unreachable. Historical replay now suppresses logging explicitly in the pipeline. The flag, its set/reset in `restore()`, and the guard in `log()` are removed.
 - **Documentation consistency sweep** - corrected stale in-code references that misdirect the next reader: the deprecated-accessor `@deprecated` JSDoc in `src/index.js` now says "Removed in alpha.10" (the actual removal release per the plan) instead of "beta.1"; the D1 `writeAll` cross-chunk-atomicity comment is reworded as a standing known-limitation pending the Cloudflare D1 Sessions API GA rather than a reference to a closed internal tracker.
 
+### Added
+
+- **`acknowledgeIncompleteFlush()`** - explicitly clear an inspected incomplete-flush warning on a connected database outside transactions. Does not repair or save collection data. Queue-state changes and storage failures reject with `ERR_SKALEX_PERSISTENCE_ACK_FAILED`.
+
 ### Fixed
+
+- **Partial-batch detection** - persist the flush marker before transaction data using previously committed metadata, so pending migration versions cannot escape through preflight. Incomplete markers survive rollback, later saves and unrelated commits. Reconnect warns without claiming automatic repair. Each non-empty commit adds a metadata read and marker write.
 
 - **Persistence write ordering** - ordinary saves and transaction batches share the adapter-write queue, including sentinel clearing. Older saves cannot overwrite a later commit. Failed writes release the queue; concurrent same-collection saves remain coalesced, and newer unsaved edits retain dirty state.
 
@@ -44,7 +50,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 1068 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1088 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

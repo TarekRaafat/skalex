@@ -448,9 +448,15 @@ Concurrent saves for the same collection are serialised by the per-collection `i
 
 Ordinary adapter writes and `saveAtomic()` batches share the instance-level `_saveLock` promise chain. Each ordinary write serializes current data when its turn begins. A transaction retains the queue through its batch and sentinel-clear write, so an older ordinary write cannot complete after that commit. Rejection releases the queue for later work. Coalescing remains per collection; even writes to different collections use the shared queue. This orders writes within one instance, without adding snapshot isolation or cross-collection crash recovery.
 
+### Flush acknowledgement
+
+After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
+
 ### Flush sentinel
 
-Before an atomic batch write, a sentinel is written into the `_meta` collection. After a successful batch, the sentinel is cleared. On next load, if the sentinel is still present, the engine knows a previous flush was interrupted.
+Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data; this is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage; repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
+
+The persistence manager retains unresolved flush state independently of transaction snapshots. Metadata serialization overlays that state, preventing rollback or unrelated saves from erasing the durable warning. The shared save queue covers preflight, data writes and marker completion.
 
 ---
 

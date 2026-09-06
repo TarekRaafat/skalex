@@ -37,6 +37,12 @@ Restore events now follow a successful save. A save failure leaves restored data
 
 Ordinary saves and transaction batches now share one adapter-write queue per database instance. Saves of different collections also wait their turn, which can increase latency with slow adapters. Same-collection coalescing remains active. Failed writes release the queue for later work; edits made during an ordinary save remain dirty for retry. This change orders writes without adding transaction read isolation or partial-batch crash recovery.
 
+### Incomplete transaction batches
+
+Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data; this is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage; repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
+
+After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
+
 ### Other reliability changes
 
 

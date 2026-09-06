@@ -197,6 +197,11 @@ async function run() {
 
   // ─── Transactions ──────────────────────────────────────────────────────────
 
+  await section("partial batch detection", async () => {
+    const { default: partialBatch } = await import("./partial-batch.js");
+    await partialBatch(Skalex, assert);
+  });
+
   await section("persistence ordering", async () => {
     const { default: saveOrdering } = await import("./save-ordering.js");
     await saveOrdering(Skalex, assert);

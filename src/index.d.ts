@@ -780,6 +780,8 @@ export declare class Skalex {
   // Persistence
   /** Persist via the shared adapter-write queue; multi-collection saves remain best-effort. */
   saveData(collectionName?: string): Promise<void>;
+  /** Clear an inspected incomplete-flush warning without repairing or saving data. Connect first; unavailable during transactions. */
+  acknowledgeIncompleteFlush(): Promise<void>;
   loadData(): Promise<void>;
   buildIndex<T = Record<string, unknown>>(data: T[], keyField: string): Map<unknown, T>;
 
@@ -797,6 +799,7 @@ export declare class Skalex {
    * the original database for later work. Independent writes keep their effects.
    * Timeout bounds the callback, not persistence or after-commit hooks.
    */
+  /** Incomplete adapter batches retain a warning on reconnect; detection does not repair partial data. */
   transaction<R = unknown>(fn: (db: TransactionHandle) => Promise<R>, options?: TransactionOptions): Promise<R>;
 
   // Seeding

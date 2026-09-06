@@ -246,13 +246,27 @@ Ordinary saves and transaction batches share one adapter-write queue per databas
 
 **Returns:** `Promise<void>`
 
+#### Incomplete transaction batches
+
+Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data; this is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage; repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
+
+Marker-read, marker-write and batch-write failures reject with `ERR_SKALEX_PERSISTENCE_FLUSH_FAILED`. Native adapter transactions retain their own atomicity guarantees; sequential or chunked batches can leave partially committed data.
+
+#### `acknowledgeIncompleteFlush()`
+
+After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
+
+**Returns:** `Promise<void>`.
+
+**Throws:** `PersistenceError` with `ERR_SKALEX_PERSISTENCE_ACK_FAILED` when disconnected, called during a transaction, the observed warning changes, or metadata I/O fails. `details.reason === "state_changed"` identifies an availability/concurrency rejection; `details.cause` contains a storage failure. Inspect the latest warning before retrying. The restricted transaction handle does not expose this method.
+
 #### Persistence Guarantees by Adapter
 
 | Guarantee | FsAdapter | BunSQLite | D1 | LibSQL |
 |---|---|---|---|---|
 | Single-write atomicity | Yes (temp+rename) | Yes (SQLite) | Yes | Yes |
-| Cross-collection atomicity | Best-effort | Yes (transaction) | Yes (batch) | Yes (batch) |
-| Crash detection | Sentinel (warning) | Automatic (WAL) | Automatic | Automatic |
+| Cross-collection atomicity | Best-effort | Yes (transaction) | Per batch chunk | Yes (batch) |
+| Incomplete Skalex batch detection | Persistent marker warning | Persistent marker warning | Persistent marker warning | Persistent marker warning |
 | Power-loss durability | No | Yes | Yes | Yes |
 
 > For primary-database use cases where cross-collection atomicity or power-loss durability is required, use an SQL-backed adapter (`BunSQLiteAdapter`, `D1Adapter`, or `LibSQLAdapter`).

@@ -247,6 +247,10 @@ See what's shipping next: **[Roadmap](https://tarekraafat.github.io/skalex/#/roa
 
 ---
 
+### Incomplete persistence batches
+
+Transaction commits persist a recovery marker before batch data. If a batch is interrupted, reconnect reports an incomplete-flush warning and still loads the stored data. This detects possible inconsistency; it does not automatically repair partial writes. After inspection or repair, call `await db.acknowledgeIncompleteFlush()` outside transactions to clear the warning. See the [persistence documentation](docs/documentation.md#incomplete-transaction-batches) before recovering storage.
+
 ## License
 
 Released under the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).

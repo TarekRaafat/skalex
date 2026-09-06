@@ -56,6 +56,7 @@ const db = new Skalex();
 expectType<Promise<void>>(db.connect());
 expectType<Promise<void>>(db.disconnect());
 expectType<Promise<void>>(db.saveData());
+expectType<Promise<void>>(db.acknowledgeIncompleteFlush());
 expectType<boolean>(db.isConnected);
 
 // SkalexConfig accepts all documented options.
@@ -262,6 +263,7 @@ db.transaction(async tx => {
   expectType<TransactionCollection<{ title: string }>>(notes);
   await sharedCollectionHelper(tx);
   expectError(tx.saveData());
+  expectError(tx.acknowledgeIncompleteFlush());
   expectError(tx.useCollection = db.useCollection);
   expectError(notes.insertOne = users.insertOne);
   expectError(tx.seed({}));

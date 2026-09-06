@@ -92,9 +92,8 @@ describe("ordinary saves and transaction commit ordering", () => {
     const entered = latch(), release = latch();
     const write = adapter.write.bind(adapter);
     const order = [];
-    let metaWrites = 0;
     adapter.write = async (name, data) => {
-      if (name === "_meta" && ++metaWrites === 2) {
+      if (name === "_meta" && JSON.parse(data).data.data.find(doc => doc._id === "migrations")?._flush?.completedAt) {
         entered.release();
         await release.promise;
         order.push("clear:end");
