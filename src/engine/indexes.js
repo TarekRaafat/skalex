@@ -193,19 +193,20 @@ class IndexEngine {
 
   /**
    * Find all documents where field === value. Returns array (may be empty).
-   * Returns null if the field is not indexed.
+   * Returns null if the field is not indexed or the value is undefined (not indexed).
    * @param {string} field
    * @param {*} value
    * @returns {object[]|null}
    */
   /**
    * Find all documents where field === value. Returns array for public API.
-   * Returns null if the field is not indexed.
+   * Returns null if the field is not indexed or the value is undefined (not indexed).
    * @param {string} field
    * @param {*} value
    * @returns {object[]|null}
    */
   lookup(field, value) {
+    if (value === undefined) return null;
     const map = this._fieldIndexes.get(field);
     if (!map) return null;
     const set = map.get(value);
@@ -214,12 +215,13 @@ class IndexEngine {
 
   /**
    * Internal iterable lookup - avoids array materialization for internal scan paths.
-   * Returns null if the field is not indexed.
+   * Returns null if the field is not indexed or the value is undefined (not indexed).
    * @param {string} field
    * @param {*} value
    * @returns {Iterable|null}
    */
   _lookupIterable(field, value) {
+    if (value === undefined) return null;
     const map = this._fieldIndexes.get(field);
     if (!map) return null;
     const set = map.get(value);

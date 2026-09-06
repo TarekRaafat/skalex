@@ -209,6 +209,8 @@ async function run() {
     await strictTimestamps(db, assert);
     const { default: sortProjection } = await import("./sort-projection.js");
     await sortProjection(db, assert);
+    const { default: missingIndexFields } = await import("./missing-index-fields.js");
+    await missingIndexFields(db, assert);
     const { default: memoryCompression } = await import("./memory-compression.js");
     await memoryCompression(Skalex, assert);
   });

@@ -107,6 +107,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `collection.insertMany(docs, opts?)` → `doc[]`; opts: `save`, `ttl`, `embed`, `session`
 - `collection.findOne(filter, opts?)` → `doc | null`; opts: `populate`, `select`, `includeDeleted`
 - `collection.find(filter?, opts?)` → `{ docs, page?, totalDocs?, totalPages? }`; opts: `populate`, `select`, `sort`, `page`, `limit`, `session`, `includeDeleted`. Limit-only fast path (no sort and page 1): early termination; `totalDocs`/`totalPages` omitted. Supply an explicit sort or page greater than 1 to get totals.
+- Missing fields: `{ field: undefined }` matches omitted/undefined fields, not null. Single-field indexes omit undefined and request another index or a scan; compound candidates are filtered normally.
 - Query ordering: find() sorts stored values and paginates before select/populate. Sort keys need not be selected; populated fields sort by their stored foreign keys. Sorted queries populate only returned documents.
 - `collection.updateOne(filter, update, opts?)` → `doc | null`; opts: `save`, `session`
 - `collection.updateMany(filter, update, opts?)` → `doc[]`; opts: `save`, `session`

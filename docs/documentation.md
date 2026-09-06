@@ -219,6 +219,8 @@ const sessions = db.createCollection("sessions", { defaultTtl: "24h" });
 const articles = db.createCollection("articles", { defaultEmbed: "body" });
 ```
 
+Single-field indexes omit `undefined` values. A filter such as `{ optional: undefined }` matches omitted or explicitly undefined fields using another usable index or a scan. It does not match `null`. Compound indexes can provide candidates for missing values, which are checked against the complete filter.
+
 **Compound indexes:** Multi-field indexes for O(1) lookups on equality queries across multiple fields:
 
 ```js

@@ -65,6 +65,10 @@ Compression now embeds its summary before deleting originals, adding one embeddi
 
 `find()` sorts stored fields before pagination, projection and population. Sort keys no longer need to appear in `select`. Sorting a populated field uses the stored foreign key, and sorted queries populate only returned documents.
 
+### Missing indexed fields
+
+Equality queries for `undefined` now match omitted and explicitly undefined fields consistently with scans, including mutations and aggregates. Single-field indexes omit those values, so these queries use another usable index or a scan. Null remains distinct; stored index and uniqueness rules are unchanged.
+
 ### Other reliability changes
 
 
