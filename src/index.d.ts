@@ -357,7 +357,7 @@ export interface CollectionOptions {
   softDelete?: boolean;
   /** Auto-increment _version on every update. Starts at 1 on insert. */
   versioning?: boolean;
-  /** Reject unknown fields not declared in the schema. */
+  /** Reject undeclared fields except timestamps and underscore-prefixed fields. Explicit schema constraints still apply. */
   strict?: boolean;
   /** How to handle schema validation errors. Default: 'throw'. */
   onSchemaError?: 'throw' | 'warn' | 'strip';

@@ -205,6 +205,8 @@ async function run() {
   await section("ID filter consistency", async () => {
     const { default: idFilters } = await import("./id-filters.js");
     await idFilters(db, assert);
+    const { default: strictTimestamps } = await import("./strict-timestamps.js");
+    await strictTimestamps(db, assert);
   });
 
   await section("partial batch detection", async () => {

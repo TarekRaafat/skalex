@@ -62,7 +62,7 @@ function parseSchema(schema) {
  * Returns an array of error strings (empty = valid).
  * @param {object} doc
  * @param {Map<string, object>} fields
- * @param {boolean} [strict=false] - Reject unknown fields not declared in the schema.
+ * @param {boolean} [strict=false] - Reject undeclared fields except timestamps and underscore-prefixed fields.
  * @returns {string[]}
  */
 function validateDoc(doc, fields, strict = false) {
@@ -93,7 +93,7 @@ function validateDoc(doc, fields, strict = false) {
 
   if (strict) {
     for (const key of Object.keys(doc)) {
-      if (!key.startsWith("_") && !fields.has(key)) {
+      if (!key.startsWith("_") && key !== "createdAt" && key !== "updatedAt" && !fields.has(key)) {
         errors.push(`Unknown field "${key}" (strict mode)`);
       }
     }

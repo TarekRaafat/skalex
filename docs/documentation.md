@@ -1105,7 +1105,7 @@ db.createCollection("events", {
 
 ### Strict mode
 
-Enabling `strict: true` treats **unknown fields** (fields not declared in the schema) as validation errors. Combined with `onSchemaError: "strip"`, this produces a tight, self-cleaning collection.
+Enabling `strict: true` treats **unknown fields** (fields not declared in the schema) as validation errors. System timestamps `createdAt` and `updatedAt`, plus underscore-prefixed fields, are exempt from unknown-field checks. Explicit schema definitions for these fields still enforce their declared constraints. Combined with `onSchemaError: "strip"`, this produces a tight, self-cleaning collection.
 
 ```javascript
 db.createCollection("users", {

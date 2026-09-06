@@ -53,6 +53,10 @@ Origin-bearing requests now require an exact `allowedOrigin` or explicit `"*"`; 
 
 The HTTP server loads lazily from the package's existing `src/connectors/mcp/transports/http.js`. Deploy the full package rather than copying a dist file alone when using HTTP transport. `port: 0` selects an available port, exposed in `server.url` after listening.
 
+### Strict-schema timestamps
+
+Strict collections now accept their generated `createdAt` and `updatedAt` fields during updates and upserts. These fields need no schema declaration; explicit definitions still enforce their constraints. Unknown user fields remain subject to strict validation.
+
 ### Other reliability changes
 
 

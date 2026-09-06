@@ -94,7 +94,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
   - `changelog` - enable append-only mutation log
   - `softDelete` - mark documents deleted with `_deletedAt` instead of removing them
   - `versioning` - auto-increment `_version` on every insert and update
-  - `strict` - reject documents with unknown fields
+  - `strict` - reject unknown fields except `createdAt`, `updatedAt` and underscore-prefixed fields; explicit schema constraints still apply
   - `onSchemaError` - `"throw"` (default) | `"warn"` | `"strip"`
   - `defaultTtl` - TTL applied to every inserted document (e.g. `"24h"`)
   - `defaultEmbed` - field name auto-embedded as `_vector` on every insert
