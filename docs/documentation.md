@@ -142,6 +142,14 @@ try {
 | `AdapterError` | Missing or misconfigured adapter |
 | `QueryError` | Invalid filter operator or vector mismatch |
 
+**Batch-finalization error code:**
+
+| Code | Error class | Thrown when | Details |
+|---|---|---|---|
+| `ERR_SKALEX_MUTATION_FINALIZE` | `SkalexError` | An `upsertMany()` item fails, then finalizing earlier completed items also fails | `collection`, `mutationError`, `finalizationError` |
+
+Catch this code to inspect both failures. Earlier writes or effects may already have completed; the error does not imply rollback, and remaining finalization steps may not have run.
+
 #### `disconnect()`
 
 Flushes all unsaved data to the storage adapter, clears in-memory state. Stops the TTL sweep timer if one is running.
@@ -695,9 +703,15 @@ Updates the first match, or inserts `{ ...filter, ...doc }` if no match is found
 
 Batch upsert. For each doc in `docs`, matches on `matchKey` and updates if found, inserts otherwise. Runs through a single pipeline pass: one connection check, one lock check, one snapshot, one dirty mark, one save, one session-stats increment. Per-document `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` plugin hooks, watch events, and changelog entries still fire with op-correct payloads.
 
+**Failure behavior:** Items are processed in order. If an item fails after earlier items completed, those earlier changes remain applied. Their capacity enforcement, saving (according to `save` / `autoSave`), changelog, events, session stats, and after-hooks finish before the original item error is rethrown. Later items are not attempted. A first-item rejection has no completed-item effects. This is partial-success behavior, not batch rollback; a rejection alone does not mean nothing changed. External before-hook effects are not undone.
+
+An uncaught batch error inside `transaction()` rolls back the enclosing transaction. If the transaction callback catches the error and returns successfully, the completed prefix can commit with its deferred effects. A timed-out transaction continuation cannot finalize rolled-back data.
+
+If a second error interrupts prefix finalization (for example, a save or after-hook failure), the call rejects with `SkalexError`, code `ERR_SKALEX_MUTATION_FINALIZE`. Its `details` contain `collection`, `mutationError`, and `finalizationError`. Earlier changes and effects may already have occurred, and remaining finalization steps may not run. This does not provide recovery from arbitrary mid-commit index failures.
+
 | Option | Type | Description |
 |--------|------|-------------|
-| `save` | `boolean` | Immediately persist after all upserts |
+| `save` | `boolean` | Persist completed upserts, including the successful prefix of a failed batch |
 | `ttl` | `number \| string` | Set expiry on inserted documents |
 | `embed` | `string \| Function` | Field name (or selector fn) to embed on inserted documents |
 | `session` | `string` | Session ID for audit trail |

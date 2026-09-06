@@ -2,7 +2,7 @@ import { matchesFilter, presortFilter, compileRegexFilter } from "./query.js";
 import { validateDoc, stripInvalidFields } from "./validator.js";
 import { stripVector } from "./vector.js";
 import { count as aggCount, sum as aggSum, avg as aggAvg, groupBy as aggGroupBy } from "../features/aggregation.js";
-import { ValidationError, UniqueConstraintError, PersistenceError, QueryError } from "./errors.js";
+import { SkalexError, ValidationError, UniqueConstraintError, PersistenceError, QueryError } from "./errors.js";
 import MutationPipeline from "./pipeline.js";
 import { Ops, Hooks } from "./constants.js";
 import { buildDoc } from "./document-builder.js";
@@ -550,16 +550,6 @@ class Collection {
     }
   }
 
-  /**
-   * Validate unique constraints for a batch of prepared updates before any live
-   * document or index state is mutated.
-   * @param {object[]} oldDocs
-   * @param {object[]} nextDocs
-   */
-  _assertUniqueCandidates(oldDocs, nextDocs) {
-    this._fieldIndex?.assertUniqueCandidates(oldDocs, nextDocs);
-  }
-
   // ─── Upsert ──────────────────────────────────────────────────────────────
 
   /**
@@ -582,11 +572,17 @@ class Collection {
 
   /**
    * Batch upsert: for each doc in `docs`, match on `matchKey` and update or insert.
-   * A single save is issued at the end (honouring autoSave).
+   * Completed items remain applied if a later item fails. Their normal pipeline
+   * effects and a single save (honouring autoSave/save) finish before rejection.
+   * An uncaught error inside transaction() triggers the enclosing rollback.
    * @param {object[]} docs
    * @param {string} matchKey
    * @param {{ save?: boolean, ttl?: number|string, embed?: string|Function, session?: string }} [options]
-   * @returns {Promise<object[]>}
+   * @returns {Promise<object[]>} Applied documents when every item succeeds.
+   * @throws {ValidationError|UniqueConstraintError} Invalid arguments or item constraints.
+   * @throws {SkalexError} ERR_SKALEX_MUTATION_FINALIZE if an item and finalization both fail.
+   * @example
+   * await products.upsertMany([{ sku: "A", qty: 2 }], "sku", { save: true });
    */
   async upsertMany(docs, matchKey, options = {}) {
     if (!Array.isArray(docs)) {
@@ -613,95 +609,115 @@ class Collection {
     // session-stats increment all run once instead of once per document.
     // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure;
     // afterInsert/afterUpdate outside) preserve the contract consumers rely on.
-    const result = await this._pipeline.executeBatch({
-      op: Ops.UPDATE,
-      save,
-      session,
-      mutateBatch: async (assertTxAlive) => {
-        const outDocs = [];
-        const prevDocs = [];
-        const ops = [];
-        const newInserts = [];
-        const batchIds = new Set();
+    let failure;
+    let finalizing = false;
+    let result;
+    try {
+      result = await this._pipeline.executeBatch({
+        op: Ops.UPDATE,
+        save,
+        session,
+        mutateBatch: async (assertTxAlive) => {
+          const outDocs = [];
+          const prevDocs = [];
+          const ops = [];
+          let inserted = false;
+          const batchIds = new Set();
 
-        for (const raw of docs) {
-          const filter = { [matchKey]: raw[matchKey] };
-          const existing = this._findRaw(filter);
+          try {
+            for (const raw of docs) {
+              const filter = { [matchKey]: raw[matchKey] };
+              const existing = this._findRaw(filter);
 
-          if (existing) {
-            // Update path. Shares the prepare preamble and commit primitive with
-            // _updateCore; the per-doc BEFORE_UPDATE hook and single-element
-            // unique assertion are upsertMany's interleaved semantics.
-            await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
-              collection: this.name,
-              filter,
-              update: raw,
-            });
-            const { next, prev } = this._prepareUpdateInBatch(existing, raw);
-            this._assertUniqueCandidates([existing], [next]);
+              if (existing) {
+                // Update path. Shares the prepare preamble and commit primitive with
+                // _updateCore; the per-doc hook and validating index commit
+                // preserve upsertMany's interleaved semantics.
+                await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
+                  collection: this.name,
+                  filter,
+                  update: raw,
+                });
+                const { next, prev } = this._prepareUpdateInBatch(existing, raw);
 
-            assertTxAlive();
-            this._commitUpdatedDoc(existing, next);
+                assertTxAlive();
+                this._commitUpdatedDoc(existing, next);
 
-            outDocs.push(next);
-            prevDocs.push(prev);
-            ops.push(Ops.UPDATE);
-          } else {
-            // Insert path. Shares the prepare preamble with _insertCore; the
-            // per-doc unique assertion, index insertion, and push stay here so
-            // upsertMany keeps committing each insert as it interleaves them
-            // with updates (rather than the batch-at-once path _insertCore uses).
-            const body = { ...resolveFilterToValues(filter), ...raw };
-            const newDoc = await this._prepareInsertInBatch(body, { ttl, embed, batchIds });
-            newInserts.push(newDoc);
+                outDocs.push(next);
+                prevDocs.push(prev);
+                ops.push(Ops.UPDATE);
+              } else {
+                // Insert path. Shares the prepare preamble with _insertCore; the
+                // validating index insertion and push stay here so
+                // upsertMany keeps committing each insert as it interleaves them
+                // with updates (rather than the batch-at-once path _insertCore uses).
+                const body = { ...resolveFilterToValues(filter), ...raw };
+                const newDoc = await this._prepareInsertInBatch(body, { ttl, embed, batchIds });
 
-            assertTxAlive();
-            this._assertInsertIdAvailable(newDoc._id);
-            if (this._fieldIndex) this._fieldIndex.assertUniqueBatch([newDoc]);
-            this._addToIndex(newDoc);
-            this._ds.push(newDoc);
+                assertTxAlive();
+                this._assertInsertIdAvailable(newDoc._id);
+                this._addToIndex(newDoc);
+                this._ds.push(newDoc);
+                inserted = true;
 
-            outDocs.push(newDoc);
-            prevDocs.push(null);
-            ops.push(Ops.INSERT);
+                outDocs.push(newDoc);
+                prevDocs.push(null);
+                ops.push(Ops.INSERT);
+              }
+            }
+          } catch (error) {
+            // Preserve completed items and finish their normal pipeline lifecycle.
+            failure = { error };
           }
-        }
 
-        // Apply FIFO capacity enforcement once after all inserts land.
-        if (newInserts.length > 0) {
-          const evicted = this._enforceCapAfterInsert();
-          for (const doc of evicted) {
-            this._ctx.emitEvent(this.name, {
-              op: Ops.DELETE,
-              collection: this.name,
-              doc: stripVector(doc),
-            });
+          // A timed-out transaction may have rolled back while a hook awaited.
+          assertTxAlive();
+          finalizing = outDocs.length > 0;
+
+          // Apply FIFO capacity enforcement once after all inserts land.
+          if (inserted) {
+            const evicted = this._enforceCapAfterInsert();
+            for (const doc of evicted) {
+              this._ctx.emitEvent(this.name, {
+                op: Ops.DELETE,
+                collection: this.name,
+                doc: stripVector(doc),
+              });
+            }
           }
+
+          return { docs: outDocs, prevDocs, ops };
+        },
+      });
+
+      // Fire per-doc after hooks outside the mutate closure so they see the
+      // committed state, matching updateOne/insertOne behavior.
+      for (let i = 0; i < result.docs.length; i++) {
+        const doc = stripVector(result.docs[i]);
+        if (result.ops[i] === Ops.INSERT) {
+          await this._ctx.runAfterHook(Hooks.AFTER_INSERT, {
+            collection: this.name,
+            doc,
+          });
+        } else {
+          await this._ctx.runAfterHook(Hooks.AFTER_UPDATE, {
+            collection: this.name,
+            filter: { [matchKey]: docs[i][matchKey] },
+            update: docs[i],
+            result: doc,
+          });
         }
-
-        return { docs: outDocs, prevDocs, ops };
-      },
-    });
-
-    // Fire per-doc after hooks outside the mutate closure so they see the
-    // committed state, matching updateOne/insertOne behavior.
-    for (let i = 0; i < result.docs.length; i++) {
-      const doc = stripVector(result.docs[i]);
-      if (result.ops[i] === Ops.INSERT) {
-        await this._ctx.runAfterHook(Hooks.AFTER_INSERT, {
-          collection: this.name,
-          doc,
-        });
-      } else {
-        await this._ctx.runAfterHook(Hooks.AFTER_UPDATE, {
-          collection: this.name,
-          filter: { [matchKey]: docs[i][matchKey] },
-          update: docs[i],
-          result: doc,
-        });
       }
+    } catch (error) {
+      if (!failure || !finalizing) throw error;
+      throw new SkalexError(
+        "ERR_SKALEX_MUTATION_FINALIZE",
+        "upsertMany() failed and its completed items could not be fully finalized.",
+        { collection: this.name, mutationError: failure.error, finalizationError: error }
+      );
     }
 
+    if (failure) throw failure.error;
     return result.docs.map(stripVector);
   }
 

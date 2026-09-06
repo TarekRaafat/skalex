@@ -104,7 +104,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `collection.deleteOne(filter, opts?)` → `doc | null`; soft-deletes when `softDelete: true`
 - `collection.deleteMany(filter, opts?)` → `doc[]`; soft-deletes when `softDelete: true`
 - `collection.upsert(filter, update, opts?)` → `doc`
-- `collection.upsertMany(docs, matchKey, opts?)` → `doc[]`; batch upsert keyed on `matchKey`, runs in a single pipeline pass (one save, one session-stats increment; per-doc `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` hooks, watch events, and changelog entries preserved with op-correct payloads)
+- `collection.upsertMany(docs, matchKey, opts?)` → `doc[]`; batch upsert keyed on `matchKey`, runs in a single pipeline pass (one save, one session-stats increment; per-doc `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` hooks, watch events, and changelog entries preserved with op-correct payloads). On an item failure, completed earlier items remain applied and finish normal effects before the original error is rethrown; later items are not attempted. Saving honors `save` / `autoSave`. An uncaught error rolls back an enclosing transaction; catching it inside the transaction permits the completed prefix to commit. A second failure during finalization rejects with `ERR_SKALEX_MUTATION_FINALIZE`, whose details include `mutationError` and `finalizationError`; remaining effects may be incomplete.
 - `collection.restore(filter, opts?)` → `doc | null`; undo a soft delete (requires `softDelete: true`)
 
 ### Update Operators
@@ -166,6 +166,12 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `db.slowQueries()` - slow query log with configurable threshold and ring buffer
 - `db.sessionStats()` - reads/writes/lastActive keyed by session ID
 - `db.inspect(name?)` - collection metadata including `softDelete`, `versioning`, `strict`, `maxDocs`
+
+## Errors
+
+Engine errors expose a stable `code` and structured `details`; typed error classes are available as named imports from `skalex`. See the API documentation's Error Types section for the hierarchy.
+
+- `ERR_SKALEX_MUTATION_FINALIZE` (`SkalexError`): an `upsertMany()` item failed and a second error interrupted finalization of earlier completed items. `details` contains `collection`, `mutationError`, and `finalizationError`. Earlier writes/effects may already have completed; remaining effects may be incomplete. This is not a rollback guarantee.
 
 ## Document System Fields
 

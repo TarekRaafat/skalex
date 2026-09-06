@@ -265,6 +265,8 @@ All mutation and query methods return plain objects. No raw documents are return
 | `upsertMany` | `doc[]` | - (always inserts or updates) |
 | `restore` | `doc` | `null` |
 
+For `upsertMany`, an item failure retains completed earlier items. The caller returns that prefix to `MutationPipeline.executeBatch()` for the existing dirty/save/changelog/stats/event lifecycle, runs its after-hooks, then rethrows the original error. No duplicate bookkeeping chain is introduced. A second finalization failure uses `ERR_SKALEX_MUTATION_FINALIZE` and preserves both errors in details. Transaction timeout guards run before finalization so rolled-back prefixes cannot emit or persist later.
+
 ---
 
 ## 7. Storage Adapter Interface

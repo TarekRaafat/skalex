@@ -1,10 +1,11 @@
 # Skalex Migration Guide
 
-## Unreleased reliability fixes
+## 4.0.0-alpha.7 reliability fixes
 
-Release assignment is pending. Public signatures and persisted collection payloads are unchanged.
+Public signatures and persisted collection payloads are unchanged.
 
 - Filesystem temporary writes now use `.skalex-<uuid>.tmp.<format>`. These names cannot collide with valid collection names. Cleanup recognizes both supported json and gz temporary extensions regardless of the current format; listing still selects only the configured collection format. Files in the old temporary-name shape are preserved because their names alone cannot distinguish an abandoned write from a real collection. A payload whose collection name differs from its storage key is rejected as corrupt under the default strict loader. If a legacy partial or mismatched file prevents loading, preserve a backup and inspect its contents before removing it; do not bulk-delete files containing `.tmp.`.
+- Failed `upsertMany()` calls retain the already-applied prefix, as in alpha.6, but now finalize its normal effects before rethrowing the original item error. Earlier items can therefore be persisted, logged, and observed even when the call rejects. Saving honors `save` / `autoSave`; later items are not attempted. An uncaught error still triggers enclosing transaction rollback. If finalization also fails, `ERR_SKALEX_MUTATION_FINALIZE` exposes both errors in `details.mutationError` and `details.finalizationError`; remaining effects may be incomplete. Review retry logic rather than assuming rejection means no changes were applied.
 - MCP validates and trims collection names before authorization. Configure scopes using canonical collection names. A collection-specific denial applies equally to padded names.
 - Concurrent inserts claiming an existing ID reject with `ERR_SKALEX_UNIQUE_DUPLICATE_ID`. Before-insert hooks can run before the final live-ID check; a rejected insert does not undo external hook effects. This fix does not repair duplicate IDs already stored by an older version.
 

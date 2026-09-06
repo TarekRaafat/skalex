@@ -605,7 +605,14 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
 
   // Upsert
   upsert(filter: Filter<T>, doc: Partial<T>, options?: UpdateOptions): Promise<DocOf<T>>;
-  /** Batch upsert: match each doc on matchKey, update if found, insert otherwise. */
+  /**
+   * Batch upsert: match each doc on matchKey, update if found, insert otherwise.
+   * Earlier completed items remain applied if a later item fails; their normal
+   * pipeline effects finish before the original error is rethrown.
+   * An uncaught error inside transaction() rolls back the enclosing transaction.
+   * If finalization also fails, throws SkalexError with code ERR_SKALEX_MUTATION_FINALIZE
+   * and details containing collection, mutationError, and finalizationError.
+   */
   upsertMany(docs: Partial<T>[], matchKey: keyof T & string, options?: UpsertManyOptions): Promise<DocOf<T>[]>;
 
   /**
