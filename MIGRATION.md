@@ -2,7 +2,33 @@
 
 ## 4.0.0-alpha.7 reliability fixes
 
-Public signatures and persisted collection payloads are unchanged.
+Persisted collection payloads are unchanged. Transaction and migration callback types now describe a restricted capability surface.
+
+### Transaction capability migration
+
+The callback receives `TransactionHandle`, not a full `Skalex` instance. Only `useCollection()` and `createCollection()` are exposed. Returned `TransactionCollection` handles retain insert, update, upsert, delete, soft-delete restore, query, vector search and aggregation methods. They are readonly capability objects, not instances of the original database or Collection classes.
+
+- Remove `tx.saveData()`: successful transaction completion performs the commit.
+- Replace `tx.seed()` with `await tx.useCollection(name).insertMany(docs)` so writes participate in rollback.
+- Lifecycle, import, historical restore, memory/changelog factories, database inspection and subscriptions are unavailable on the transaction handle. Collection export, watch, `applyUpdate()` and private members are also blocked. Unsupported access throws `ERR_SKALEX_TX_DIRECT_ACCESS` before dispatch.
+- Use ordinary database handles for independent inspection or subscriptions. Keep persistence and lifecycle operations outside the active transaction; switching `tx.saveData()` to `db.saveData()` inside the callback is not a safe migration.
+- Migration `up()` callbacks receive this same restricted handle. Update explicit `Skalex` callback annotations to `TransactionHandle`.
+
+Helpers can retain reuse with a minimal shared type:
+
+```ts
+import type { TransactionHandle } from "skalex";
+
+async function addNote(handle: Pick<TransactionHandle, "useCollection">) {
+  await handle.useCollection("notes").insertOne({ text: "hello" });
+}
+
+await addNote(db);
+await db.transaction(addNote);
+```
+
+### Other reliability changes
+
 
 - Transaction handles belong only to their callback. Await all operations before returning; using a captured handle, method, or collection factory afterward throws `ERR_SKALEX_TX_STALE_PROXY` (or `ERR_SKALEX_TX_ABORTED` after rollback). Reacquire handles from the original database for later work, including after-hook cascades. Bare writes to locked collections reject even while an owned hook awaits. Collections created through the transaction are locked immediately; independently created collections and their writes survive rollback. Define existing collection schemas before the transaction: replacing a definition with `tx.createCollection()` now rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`. The timeout bounds the callback, not persistence or after-commit hooks.
 

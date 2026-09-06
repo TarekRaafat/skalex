@@ -144,8 +144,9 @@ async function run() {
   // ─── Transaction ───────────────────────────────────────────────────────────
 
   await section("transaction ownership", async () => {
-    const { default: checkOwnership } = await import("./transaction-ownership.js");
+    const { default: checkOwnership, transactionSurface } = await import("./transaction-ownership.js");
     await checkOwnership(db, assert);
+    await transactionSurface(db, assert);
   });
 
   await section("transaction", async () => {

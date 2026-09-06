@@ -626,10 +626,7 @@ File: `src/engine/transaction.js`
 
 1. **Lock**: transactions are serialised via `_txLock` (promise chain). No concurrent transactions.
 2. **Context creation**: allocates a `TransactionContext` with a unique `id`, `snapshots` Map, `touchedCollections` Set, `deferredEffects` array, and `aborted` flag. Tracks explicitly owned collection creations in a Map.
-3. **Proxy**: `fn` receives a `Proxy` around the `db` instance, not the raw `db`. The proxy:
-   - Returns scoped Collection handles with explicit ownership and call-time lifetime guards.
-   - Blocks direct `db.collections` access (throws `ERR_SKALEX_TX_DIRECT_ACCESS`).
-   - Detects stale proxy usage after the transaction ends (throws `ERR_SKALEX_TX_STALE_PROXY`).
+3. **Capabilities**: transactions and migrations receive a readonly `TransactionHandle` with only `useCollection` and `createCollection`. Returned `TransactionCollection` handles expose an explicit document/query allowlist. Null-prototype facade targets contain no backing database or Collection instance. Method wrappers are created lazily and retain call-time lifetime guards, including functions obtained through property descriptors. Unknown access and handle mutation throw `ERR_SKALEX_TX_DIRECT_ACCESS`; there is no catch-all forwarding to the database.
 4. **Lazy snapshots**: only collections that receive a write are snapshotted, on first mutation (via `_txSnapshotIfNeeded()` in the pipeline). Uses `structuredClone` for deep copy of the data array. Snapshot includes the `_dirty` flag state.
 5. **Timeout**: if `timeout > 0`, a `setTimeout` races against `fn`. On timeout, `ctx.aborted = true` and the transaction is rolled back.
 6. **Commit**: persists only touched collections via `PersistenceManager.saveAtomic()`. Callback ownership closes before persistence; locks release after successful persistence, before flushing deferred side effects (events, after-hooks, changelog entries).

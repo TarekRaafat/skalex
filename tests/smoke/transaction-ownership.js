@@ -40,3 +40,25 @@ export default async function transactionOwnership(db, assert) {
     (await db.useCollection("rollback_outside").findOne({ _id: "keep" }))?._id === "keep");
   assert("rollback removes owned creation", !Object.hasOwn(db.collections, "rollback_owned"));
 }
+
+
+/** Shared capability checks, using each runtime's built database instance. */
+export async function transactionSurface(db, assert) {
+  for (const [name, operation] of [
+    ["saveData", tx => tx.saveData("surface_items")],
+    ["seed", tx => tx.seed({ surface_escape: [{ _id: "escape" }] })],
+    ["restore", tx => tx.restore("surface_items", new Date())],
+    ["collection export", tx => tx.useCollection("surface_items").export()],
+  ]) {
+    let denied;
+    try {
+      await db.transaction(async tx => {
+        await tx.useCollection("surface_items").insertOne({ _id: name });
+        await operation(tx);
+      });
+    } catch (error) { denied = error; }
+    assert("transaction denies " + name, denied?.code === "ERR_SKALEX_TX_DIRECT_ACCESS");
+    assert("rejected capability rolls back " + name, !Object.hasOwn(db.collections, "surface_items"));
+  }
+  assert("blocked seed creates no collection", !Object.hasOwn(db.collections, "surface_escape"));
+}

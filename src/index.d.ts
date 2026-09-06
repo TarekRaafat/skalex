@@ -525,10 +525,10 @@ export interface Migration {
   version: number;
   description?: string;
   /**
-   * Migration logic. Receives the Skalex instance (transaction proxy);
+   * Migration logic. Receives the restricted transaction handle;
    * use `db.useCollection(name)` to obtain collections.
    */
-  up: (db: Skalex) => Promise<void>;
+  up: (db: TransactionHandle) => Promise<void>;
 }
 
 export interface MigrationStatus {
@@ -538,6 +538,48 @@ export interface MigrationStatus {
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
+
+/**
+ * Document/query capabilities available during a transaction callback.
+ * Export, subscriptions, applyUpdate and internal state are unavailable.
+ * Handles and captured methods expire when the owning callback ends.
+ */
+export type TransactionCollection<T extends Record<string, unknown> = Record<string, unknown>> = Readonly<Pick<Collection<T>,
+  "name" | typeof Symbol.toStringTag |
+  "insertOne" | "insertMany" | "updateOne" | "updateMany" | "upsert" | "upsertMany" |
+  "deleteOne" | "deleteMany" | "restore" | "findOne" | "find" | "search" | "similar" |
+  "count" | "sum" | "avg" | "groupBy"
+>>;
+
+/** Restricted callback capabilities, shared by transactions and migrations. */
+export interface TransactionHandle {
+  readonly [Symbol.toStringTag]: string;
+  /**
+   * Get an owned collection handle. Await operations inside the callback.
+   * @param name - Collection name.
+   * @returns The scoped document/query handle.
+   * @throws ValidationError for invalid names; TransactionError after expiry.
+   * @example
+   * await db.transaction(async tx => {
+   *   await tx.useCollection("notes").insertOne({ text: "hello" });
+   * });
+   */
+  readonly useCollection: <T extends Record<string, unknown> = Record<string, unknown>>(name: string) => TransactionCollection<T>;
+  /**
+   * Create a new collection definition inside the transaction.
+   * @param name - New collection name.
+   * @param options - Schema, indexes and collection behavior.
+   * @returns The scoped document/query handle.
+   * @throws ValidationError for invalid definitions; TransactionError for an
+   * existing definition or expired callback.
+   * @example
+   * await db.transaction(async tx => {
+   *   await tx.createCollection("notes", { schema: { text: "string" } })
+   *     .insertOne({ text: "hello" });
+   * });
+   */
+  readonly createCollection: <T extends Record<string, unknown> = Record<string, unknown>>(name: string, options?: CollectionOptions) => TransactionCollection<T>;
+}
 
 export interface TransactionOptions {
   /** Max ms before the transaction aborts. 0 or omitted = no timeout. */
@@ -747,7 +789,7 @@ export declare class Skalex {
    * the original database for later work. Independent writes keep their effects.
    * Timeout bounds the callback, not persistence or after-commit hooks.
    */
-  transaction<R = unknown>(fn: (db: Skalex) => Promise<R>, options?: TransactionOptions): Promise<R>;
+  transaction<R = unknown>(fn: (db: TransactionHandle) => Promise<R>, options?: TransactionOptions): Promise<R>;
 
   // Seeding
   seed(fixtures: Record<string, Record<string, unknown>[]>, options?: { reset?: boolean }): Promise<void>;

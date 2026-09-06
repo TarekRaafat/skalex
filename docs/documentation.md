@@ -137,7 +137,7 @@ try {
 | `SkalexError` | Base class for all Skalex errors |
 | `ValidationError` | Schema validation failure, invalid arguments |
 | `UniqueConstraintError` | Duplicate value on a unique-indexed field |
-| `TransactionError` | Timeout, abort, stale proxy, or direct collection access |
+| `TransactionError` | Timeout, abort, expired handle, or unsupported transaction capability |
 | `PersistenceError` | Load/save failure, corrupt file, flush failure |
 | `AdapterError` | Missing or misconfigured adapter |
 | `QueryError` | Invalid filter operator or vector mismatch |
@@ -315,6 +315,10 @@ await db.transaction(async (tx) => { /* ... */ }, { timeout: 5000 });
 await db.transaction(async (tx) => { /* ... */ }, { deferredEffectErrors: "throw" });
 ```
 
+**Supported capabilities:** Transaction and migration callbacks receive a `TransactionHandle` with only `useCollection()` and `createCollection()`. Returned `TransactionCollection` handles expose `insertOne`, `insertMany`, `updateOne`, `updateMany`, `upsert`, `upsertMany`, `deleteOne`, `deleteMany`, `restore` (soft-delete), `findOne`, `find`, `search`, `similar`, `count`, `sum`, `avg`, `groupBy`, and readonly `name`. These are capability objects rather than full database/Collection instances.
+
+Other access throws `ERR_SKALEX_TX_DIRECT_ACCESS`. In particular, `tx.saveData()`, `tx.seed()`, historical restore, import, lifecycle, inspection and memory/changelog factories are unavailable. Collection export, watch, `applyUpdate()`, and private members are unavailable. Commit owns saving; seed through owned `insertMany()` calls. Do not replace a forbidden persistence call with a bare database call inside the transaction.
+
 **Ownership and lifetime:** Use `tx.useCollection()` and await every operation inside the callback. Handles and captured methods expire when the callback finishes or aborts; later calls throw `ERR_SKALEX_TX_STALE_PROXY` or `ERR_SKALEX_TX_ABORTED`. Reacquire ordinary handles from the original database for later work. `tx.createCollection()` can create a new definition, but replacing an existing definition rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`.
 
 **Visibility:** Snapshots support rollback, not isolated reads. Reads observe live in-memory data, including uncommitted transactional writes and independent writes to unlocked collections.
@@ -323,7 +327,7 @@ await db.transaction(async (tx) => { /* ... */ }, { deferredEffectErrors: "throw
 
 **Effects and timeout:** Only owned events, after-hooks, changelog entries and write statistics are deferred until commit. Independent writes execute their own effects immediately. Locks release before deferred hooks run, so hooks can write through ordinary database handles. The timeout bounds the callback, not persistence or after-commit hooks. External effects performed by before-hooks are not rolled back.
 
-**Nested transactions** are rejected at runtime with `TransactionError` `ERR_SKALEX_TX_NESTED`.
+Calling the original database's `transaction()` during an active transaction rejects with `ERR_SKALEX_TX_NESTED`. The restricted handle does not expose `tx.transaction()`; accessing it throws `ERR_SKALEX_TX_DIRECT_ACCESS`.
 
 ---
 

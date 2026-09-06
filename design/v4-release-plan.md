@@ -62,12 +62,12 @@ alpha.7 → alpha.8 → alpha.9 → alpha.10   │   beta.1 → beta.2 → beta.
 
 | Release | Theme | Breaking? | Effort |
 |---|---|---|---|
-| alpha.7 | DRY cleanup | No | Small |
+| alpha.7 | Correctness and reliability fixes, restricted transaction/migration handles, DRY cleanup | Yes (callback capabilities) | Medium |
 | alpha.8 | Persistence foundation: split collection store, versioned format, extract serializer | Internal only | Medium |
 | alpha.9 | Correctness and security: MCP sanitization, `applyUpdate` strictness, AI move, query cache migration, error catalogue, MCP recall tools | Yes (narrow) | Medium |
 | alpha.10 | Final API surface: type-precision audit, `UpdateDescriptor<T>` fix, `findOne` types, deprecated removal, uniform return meta, MCP write contract freeze, MCP extraction to `skalex/mcp` + core/AI bundle split, `createCollection` + `db.ask` strictness, by-ID helpers, `hasCollection`, inline migrations, `MemoryAdapter` export, `db.config()` readback, package hygiene | Yes (last window) | Medium-Large |
 | beta.1 | Storage engine: hybrid `DataStore` + `PersistenceBoundary`, WAL, unified save strategy, opt-in `durable: true` fsync, capability-getter migration | On-disk format v3 | Large |
-| beta.2 | Transactions: per-tx `Collection` wrappers, isolation rename, atomic rollback, `AbortSignal` | Tx callback signature | Medium |
+| beta.2 | Transactions: remaining isolation semantics, atomic rollback, `AbortSignal` | Within the alpha.10 API freeze | Medium |
 | beta.3 | Performance and polish: delete-path index usage, filter cache, operator-only update fast path, dirty-page incremental flush, events-async, changelog retention, feature-context refactor, stream iterator, `exists`/`has` shortcuts | No | Medium |
 | rc.1 | Documentation, ADRs, migration guide, verification scripts | No | Small (no `src/*.js` changes) |
 | 4.0.0 | Stable release | No | - |

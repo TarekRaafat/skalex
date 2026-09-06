@@ -14,6 +14,8 @@ import Skalex, {
   Migration,
   MigrationStatus,
   TransactionOptions,
+  TransactionHandle,
+  TransactionCollection,
   SkalexConfig,
   Plugin,
   PluginInsertContext,
@@ -136,8 +138,8 @@ const migration: Migration = {
   version: 1,
   description: "seed admin",
   up: async (arg) => {
-    // Receives the Skalex tx proxy.
-    expectAssignable<Skalex>(arg);
+    // Receives the same restricted handle as transaction callbacks.
+    expectAssignable<TransactionHandle>(arg);
   },
 };
 db.addMigration(migration);
@@ -248,3 +250,41 @@ expectAssignable<CollectionInfo | null>(db.inspect("users"));
 expectError<TransactionOptions>({ deferredEffectErrors: "whoops" as const });
 // SkalexConfig.deferredEffectErrors rejects invalid strings.
 expectError<SkalexConfig>({ deferredEffectErrors: "loud" as const });
+
+
+// Transaction and migration capabilities preserve collection generics.
+const sharedCollectionHelper = (handle: Pick<TransactionHandle, "useCollection">) =>
+  handle.useCollection<{ title: string }>("notes").insertOne({ title: "note" });
+sharedCollectionHelper(db);
+db.transaction(async tx => {
+  expectType<TransactionHandle>(tx);
+  const notes = tx.useCollection<{ title: string }>("notes");
+  expectType<TransactionCollection<{ title: string }>>(notes);
+  await sharedCollectionHelper(tx);
+  expectError(tx.saveData());
+  expectError(tx.useCollection = db.useCollection);
+  expectError(notes.insertOne = users.insertOne);
+  expectError(tx.seed({}));
+  expectError(tx.restore("notes", new Date()));
+  expectError(tx.useMemory("session"));
+  expectError(tx.changelog());
+  expectError(tx.dump());
+  expectError(tx.collections);
+  expectError(notes.export());
+  expectError(notes.watch(() => {}));
+  expectError(notes.applyUpdate({}, {}));
+  expectError(notes.insertOne({ title: 42 }));
+  expectType<TransactionCollection<{ value: number }>>(
+    tx.createCollection<{ value: number }>("values")
+  );
+});
+const restrictedMigration: Migration = {
+  version: 10,
+  up: async tx => {
+    expectType<TransactionHandle>(tx);
+    await sharedCollectionHelper(tx);
+    expectError(tx.saveData());
+  },
+};
+db.addMigration(restrictedMigration);
+expectType<Promise<number>>(db.transaction(async () => 42));

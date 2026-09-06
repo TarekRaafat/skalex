@@ -9,9 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [4.0.0-alpha.7] - TBD
 
-Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, primary-ID races, and document/index consistency alongside the shared mutation-pipeline refactors. No new public APIs or serialized payload format changes. Temporary files use a reserved naming scheme; ambiguous legacy files are preserved for inspection.
+Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, primary-ID races, and document/index consistency alongside the shared mutation-pipeline refactors. No new database methods or serialized payload format changes. Temporary files use a reserved naming scheme; ambiguous legacy files are preserved for inspection.
 
 ### Breaking Changes
+
+- **Restricted transaction and migration callbacks** - callbacks receive `TransactionHandle`, exposing only `useCollection()` and `createCollection()`. Returned `TransactionCollection` handles expose document mutations and queries; export, subscriptions, `applyUpdate()`, and internal state are unavailable. Unsupported access throws `ERR_SKALEX_TX_DIRECT_ACCESS`. Replace `tx.seed()` with owned collection inserts; transaction commit owns persistence, so remove `tx.saveData()`. Type reusable helpers against the required capability subset instead of the full `Skalex` or `Collection` class.
 
 - **Transaction handle lifetime** - transaction collection handles and captured methods expire when the callback finishes or aborts. Await owned operations inside the callback and reacquire ordinary handles through the original database afterward. Transaction-created collections are locked immediately. Replacing an existing collection definition through the transaction proxy rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`; define collections before starting the transaction.
 
@@ -36,7 +38,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 986 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1026 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

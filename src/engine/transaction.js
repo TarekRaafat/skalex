@@ -34,6 +34,60 @@ export function validateDeferredEffectErrors(value, source) {
   }
 }
 
+// Explicit capabilities: future Collection methods are not admitted implicitly.
+const _COLLECTION_METHODS = [
+  "insertOne", "insertMany", "updateOne", "updateMany", "upsert", "upsertMany",
+  "deleteOne", "deleteMany", "restore", "findOne", "find", "search", "similar",
+  "count", "sum", "avg", "groupBy",
+];
+
+/** Build a readonly capability handle without exposing the backing object. */
+function _createHandle(target, methods, assertAlive, kind, name) {
+  const surface = Object.create(null);
+  if (name !== undefined) surface.name = name;
+  surface[Symbol.toStringTag] = kind;
+  const deny = (_target, property) => {
+    throw new TransactionError(
+      "ERR_SKALEX_TX_DIRECT_ACCESS",
+      `Direct access to ${kind === "TransactionHandle" ? "db" : "collection"}.${String(property)} inside transaction() is not supported. Use the documented transaction capabilities.`,
+      { handle: kind, property: String(property) }
+    );
+  };
+  // Resolve only used methods; each captured function still checks lifetime.
+  const resolve = property => {
+    if (Object.hasOwn(surface, property)) return surface[property];
+    if (!methods.includes(property)) return undefined;
+    return surface[property] = (...args) => {
+      assertAlive();
+      return target[property](...args);
+    };
+  };
+  return new Proxy(surface, {
+    get: (object, property) => {
+      // Promise assimilation and inspection must not expose extra capabilities.
+      if (property === "then") return undefined;
+      assertAlive();
+      const value = resolve(property);
+      if (value !== undefined) return value;
+      if (typeof property === "symbol") return undefined;
+      return deny(object, property);
+    },
+    has: (_object, property) => Object.hasOwn(surface, property) || methods.includes(property),
+    ownKeys: () => [...methods, ...(name === undefined ? [] : ["name"]), Symbol.toStringTag],
+    getOwnPropertyDescriptor: (_object, property) => {
+      const value = resolve(property);
+      return value === undefined ? undefined : {
+        value, writable: false, enumerable: true, configurable: true,
+      };
+    },
+    preventExtensions: () => deny(surface, "preventExtensions"),
+    set: deny,
+    defineProperty: deny,
+    deleteProperty: deny,
+    setPrototypeOf: () => deny(surface, "__proto__"),
+  });
+}
+
 class TransactionManager {
   /**
    * @param {object} [opts]
@@ -71,7 +125,7 @@ class TransactionManager {
    * Lazy snapshots: only collections touched by a write are snapshotted,
    * on first mutation - not all collections upfront.
    *
-   * @param {Function} fn            - (proxy) => Promise<any>
+   * @param {Function} fn            - (handle) => Promise<any>
    * @param {object}   db            - The Skalex instance.
    * @param {object}   opts
    * @param {number}   [opts.timeout] - Max ms before abort. 0 = no timeout.
@@ -140,36 +194,17 @@ class TransactionManager {
         if (!existing) ctx.createdCollections.set(name, col._store);
         if (!handles.has(name)) {
           const owned = new db._registry._CollectionClass(col._store, scoped);
-          handles.set(name, new Proxy(owned, {
-            get: (target, prop) => {
-              this._assertOwner(ctx);
-              const value = Reflect.get(target, prop);
-              return typeof value === "function" ? (...args) => {
-                this._assertOwner(ctx);
-                return value.apply(target, args);
-              } : value;
-            },
-          }));
+          handles.set(name, _createHandle(
+            owned, _COLLECTION_METHODS, () => this._assertOwner(ctx),
+            "TransactionCollection", name
+          ));
         }
         return handles.get(name);
       };
-      const proxy = new Proxy(db, {
-        get: (target, prop) => {
-          this._assertOwner(ctx);
-          if (prop === "_txId") return ctx.id;
-          if (prop === "collections") throw new TransactionError(
-            "ERR_SKALEX_TX_DIRECT_ACCESS",
-            "Direct access to db.collections inside transaction() is not covered by rollback. Use the collection API (db.useCollection) instead."
-          );
-          if (prop === "useCollection") return name => getCollection(name);
-          if (prop === "createCollection") return (name, options) => getCollection(name, options, true);
-          const value = Reflect.get(target, prop);
-          return typeof value === "function" ? (...args) => {
-            this._assertOwner(ctx);
-            return value.apply(target, args);
-          } : value;
-        },
-      });
+      const handle = _createHandle({
+        useCollection: name => getCollection(name),
+        createCollection: (name, options) => getCollection(name, options, true),
+      }, ["useCollection", "createCollection"], () => this._assertOwner(ctx), "TransactionHandle");
 
       /** Set after saveAtomic() succeeds. Errors after this point must NOT trigger rollback. */
       let committed = false;
@@ -178,7 +213,7 @@ class TransactionManager {
       /** Populated by the post-commit deferred-effect flush. */
       const deferredErrors = [];
       try {
-        const fnPromise = fn(proxy);
+        const fnPromise = fn(handle);
         result = timeoutPromise
           ? await Promise.race([fnPromise, timeoutPromise])
           : await fnPromise;

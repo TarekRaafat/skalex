@@ -42,7 +42,7 @@
 - Strict mode: `createCollection(name, { strict: true })` rejects unknown fields; `onSchemaError: "warn" | "strip"` for softer handling
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
 - TTL documents: `insertOne(doc, { ttl: "30m" })`, swept on connect; `defaultTtl` per collection; `ttlSweepInterval` for live processes
-- Transactions: lazy copy-on-first-write snapshots, configurable timeout, serialised execution, stale proxy detection, collection locking (non-tx writes to tx-touched collections throw `ERR_SKALEX_TX_COLLECTION_LOCKED`), configurable deferred-effect error strategy
+- Transactions: explicit collection/query handles, lazy copy-on-first-write snapshots, configurable timeout, serialised execution, stale proxy detection, collection locking (non-tx writes to tx-touched collections throw `ERR_SKALEX_TX_COLLECTION_LOCKED`), configurable deferred-effect error strategy
 - Change log: `createCollection(name, { changelog: true })`, point-in-time restore
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: `createCollection(name, { versioning: true })`, auto-increments `_version`

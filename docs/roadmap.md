@@ -4,6 +4,11 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 ---
 
+#### Implemented for 4.0.0-alpha.7 (unreleased)
+
+- [x] Restricted transaction and migration handles: explicit collection/query capabilities, no forwarding of database persistence or lifecycle methods; narrow TypeScript interfaces and runtime regression coverage.
+- [x] Transaction ownership and captured-handle lifetime checks across Node, Bun, Deno and browsers.
+
 #### Todo
 
 **Sync & multi-device**

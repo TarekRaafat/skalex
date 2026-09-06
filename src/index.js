@@ -677,6 +677,9 @@ class Skalex {
   /**
    * Run a callback inside a transaction.
    *
+   * The callback receives TransactionHandle: useCollection and createCollection
+   * only. Returned handles expose document/query capabilities; persistence,
+   * lifecycle, export, subscriptions and internal state are unavailable.
    * Ownership: use the callback's collection handles and await each operation
    * inside it. Handles and captured methods expire when the callback ends.
    * Writes lock collections and take lazy rollback snapshots; ordinary reads
@@ -697,7 +700,7 @@ class Skalex {
    * from owned writes are deferred during fn() and flushed after successful
    * commit. Independent writes execute their effects immediately.
    *
-   * @param {(db: Skalex) => Promise<any>} fn
+   * @param {(db: TransactionHandle) => Promise<any>} fn
    * @param {object} [opts]
    * @param {number} [opts.timeout] - Max ms before abort. 0 = no timeout.
    * @param {"throw"|"warn"|"ignore"} [opts.deferredEffectErrors]
