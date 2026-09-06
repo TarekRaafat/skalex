@@ -1011,6 +1011,8 @@ for await (const event of iter) {
 
 ## Query Filters
 
+ID filters use the same operators as other fields, including `{ _id: { $in: ["a", "b"] } }` and `{ _id: /^prefix/ }`, across reads, aggregates and mutations. Direct primary-index lookup applies to literal string IDs; remaining conditions still apply.
+
 Filters can be a plain object, a function, or an empty object (matches all).
 
 ```javascript

@@ -26,7 +26,8 @@ function findRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted 
     }
     return null;
   }
-  if (filter._id) {
+  // Only literal string IDs use the direct lookup; operators use the matcher.
+  if (typeof filter._id === "string") {
     const item = idIndex.get(filter._id) || null;
     if (!item) return null;
     if (!isVisible(item, includeDeleted)) return null;
@@ -73,7 +74,7 @@ function findRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted 
  * @returns {object[]}
  */
 function findAllRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted = false } = {}) {
-  if (filter && typeof filter !== "function" && filter._id) {
+  if (filter && typeof filter !== "function" && typeof filter._id === "string") {
     const item = idIndex.get(filter._id);
     if (!item) return [];
     if (!isVisible(item, includeDeleted)) return [];

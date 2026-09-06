@@ -21,6 +21,8 @@ Ordinary saves and transaction batches share one adapter-write queue per databas
 
 Incomplete transaction batches: persist a marker over committed metadata before data writes, preserving pending migration versions until the batch. Reconnect logs an error-level warning and still loads data; no automatic repair. Unresolved markers survive later saves/transactions. Marker-read/write or batch failures reject with `ERR_SKALEX_PERSISTENCE_FLUSH_FAILED`; a failed final clear retains a conservative warning. Non-empty commits add a metadata read and marker write. Inspect storage and repair inconsistent data before calling `await db.acknowledgeIncompleteFlush()`. Requires a connected database outside transactions; clears only the observed warning, never repairs or saves collection data. No warning is an I/O-free no-op. Queued state changes and I/O failures reject with `ERR_SKALEX_PERSISTENCE_ACK_FAILED`; inspect before retrying.
 
+ID filters: `{ _id: { $in: ["a", "b"] } }` and regular expressions use the normal matcher across reads, aggregates and mutations. Literal string IDs retain direct lookup, including checks for additional conditions.
+
 ## Architecture & Constraints
 
 - **In-memory first**: `db.connect()` loads the entire dataset into the process heap. All reads and writes operate on in-memory state. Persistence is a flush to the configured storage adapter, not a primary I/O path.

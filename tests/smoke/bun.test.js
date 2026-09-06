@@ -111,6 +111,11 @@ async function run() {
 
   // ─── Transaction ───────────────────────────────────────────────────────────
 
+  await section("ID filter consistency", async () => {
+    const { default: idFilters } = await import("./id-filters.js");
+    await idFilters(db, assert);
+  });
+
   await section("partial batch detection", async () => {
     const { default: partialBatch } = await import("./partial-batch.js");
     await partialBatch(Skalex, assert);

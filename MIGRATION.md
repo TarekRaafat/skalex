@@ -43,6 +43,10 @@ Before a transaction batch writes data, Skalex persists an incomplete-flush mark
 
 After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
 
+### ID filter consistency
+
+`_id` operator objects and regular expressions now match consistently across reads, aggregates and mutations. Previously some paths treated these filters as literal index keys and returned no match. Literal string ID lookup and additional filter conditions are preserved.
+
 ### Other reliability changes
 
 

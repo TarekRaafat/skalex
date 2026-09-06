@@ -32,6 +32,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Fixed
 
+- **ID filter consistency** - ID operators and regular expressions use the normal matcher across single-document reads, aggregates and mutations. Literal string IDs retain direct lookup and additional filter conditions.
+
 - **Partial-batch detection** - persist the flush marker before transaction data using previously committed metadata, so pending migration versions cannot escape through preflight. Incomplete markers survive rollback, later saves and unrelated commits. Reconnect warns without claiming automatic repair. Each non-empty commit adds a metadata read and marker write.
 
 - **Persistence write ordering** - ordinary saves and transaction batches share the adapter-write queue, including sentinel clearing. Older saves cannot overwrite a later commit. Failed writes release the queue; concurrent same-collection saves remain coalesced, and newer unsaved edits retain dirty state.
@@ -50,7 +52,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 1088 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1123 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.
