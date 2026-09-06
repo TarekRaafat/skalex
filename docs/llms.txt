@@ -145,7 +145,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `memory.history(opts?)` → `Promise<doc[]>` - chronological listing; opts: `since`, `limit`
 - `memory.forget(id)` → `Promise<doc | null>` - delete a memory entry
 - `memory.context(opts?)` → `Promise<string>` - LLM-ready context string capped to a token budget; opts: `tokens`. **Async**.
-- `memory.compress(opts?)` → `Promise<void>` - summarise old episodes via LLM; opts: `threshold`, `keepRecent`
+- `memory.compress(opts?)` → `Promise<void>` - summarise old episodes via LLM and embed the summary before deleting originals. Honors autoSave; failed cleanup can leave redundant entries. Adds one summary embedding request; opts: `threshold`, `keepRecent`
 - `memory.tokenCount()` → `Promise<{ tokens, count }>` - **async**.
 
 ### MCP Server

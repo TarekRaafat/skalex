@@ -704,6 +704,7 @@ export declare class Memory {
   forget(id: string): Promise<Document | null>;
   tokenCount(): Promise<{ tokens: number; count: number }>;
   context(options?: { tokens?: number }): Promise<string>;
+  /** Embed and insert a summary before deleting originals. Not atomic; failed cleanup can leave redundant entries. Honors autoSave. */
   compress(options?: { threshold?: number; keepRecent?: number }): Promise<void>;
 }
 

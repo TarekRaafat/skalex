@@ -57,6 +57,10 @@ The HTTP server loads lazily from the package's existing `src/connectors/mcp/tra
 
 Strict collections now accept their generated `createdAt` and `updatedAt` fields during updates and upserts. These fields need no schema declaration; explicit definitions still enforce their constraints. Unknown user fields remain subject to strict validation.
 
+### Memory compression
+
+Compression now embeds its summary before deleting originals, adding one embedding request per successful compression. Insert watch events and hooks now precede delete events and hooks. The operation honors autoSave and remains non-atomic: failed cleanup can leave originals alongside the summary, and save failures can leave dirty memory. Inspect history before retrying.
+
 ### Other reliability changes
 
 

@@ -207,6 +207,8 @@ async function run() {
     await idFilters(db, assert);
     const { default: strictTimestamps } = await import("./strict-timestamps.js");
     await strictTimestamps(db, assert);
+    const { default: memoryCompression } = await import("./memory-compression.js");
+    await memoryCompression(Skalex, assert);
   });
 
   await section("partial batch detection", async () => {

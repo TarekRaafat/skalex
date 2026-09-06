@@ -140,9 +140,15 @@ class Memory {
   /**
    * Summarise and compact old memories when total tokens exceed a threshold.
    * Keeps the most recent `keepRecent` entries intact; summarises the rest
-   * into one entry via the configured language model adapter.
+   * into one embedded entry via the configured language model adapter.
+   * Insert the summary before deleting originals. Failures may leave redundant
+   * entries; replacement is not atomic and preserves the normal autoSave policy.
    * @param {{ threshold?: number, keepRecent?: number }} [opts]
    * @returns {Promise<void>}
+   * @throws {AdapterError} If a required model adapter is unavailable.
+   * @throws {Error} If model generation or a collection mutation fails.
+   * @example
+   * await memory.compress({ threshold: 8000, keepRecent: 10 });
    */
   async compress({ threshold = this._db._memoryConfig?.compressionThreshold ?? 8000, keepRecent = this._db._memoryConfig?.keepRecent ?? 10 } = {}) {
     const { tokens } = await this.tokenCount();
@@ -164,13 +170,14 @@ class Memory {
     const texts = toCompress.map(d => d.text).join("\n");
     const summary = await this._db._aiAdapter.summarize(texts);
 
-    await this._col.deleteMany({ _id: { $in: toCompress.map(d => d._id) } });
-
+    // Complete summary insertion (including embedding and saving) before cleanup.
     await this._col.insertOne({
       text: summary,
       sessionId: this.sessionId,
       compressed: true,
-    });
+    }, { embed: "text" });
+
+    await this._col.deleteMany({ _id: { $in: toCompress.map(d => d._id) } });
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────

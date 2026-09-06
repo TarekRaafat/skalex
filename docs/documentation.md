@@ -1503,7 +1503,9 @@ Returns a newline-joined string of the most recent memories within a token budge
 
 ### `compress(options?)`
 
-Summarises old memories using the language model adapter and replaces them with a single compressed entry. Recent entries are kept intact.
+Summarises old memories using the language model adapter and embeds the summary for semantic recall. Recent entries are kept intact. Summary insertion completes before the selected originals are deleted, using the normal `autoSave` policy. Summarization, embedding or insertion failure does not delete the originals. Replacement is not atomic: failed cleanup or concurrent compression can leave redundant entries. A failed save can leave dirty in-memory changes; inspect history before retrying. With `autoSave: true`, insertion is saved before cleanup, so an interrupted cleanup can leave both versions in storage.
+
+Each successful compression makes one additional embedding request for the summary. Provider latency and charges apply. This does not add snapshot isolation for concurrent edits to the backing collection.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
