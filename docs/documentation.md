@@ -140,7 +140,9 @@ try {
 | `TransactionError` | Timeout, abort, expired handle, or unsupported transaction capability |
 | `PersistenceError` | Load/save failure, corrupt file, flush failure |
 | `AdapterError` | Missing or misconfigured adapter |
-| `QueryError` | Invalid filter operator or vector mismatch |
+| `QueryError` | Invalid filter operator, vector mismatch or requested read cloning failure |
+
+**Read-cloning error code:** `ERR_SKALEX_QUERY_CLONE` (`QueryError`) means `clone: true` could not clone returned data. Details contain `collection` and the original `cause`.
 
 **Batch-finalization error code:**
 
@@ -756,6 +758,24 @@ await products.upsertMany(
 
 ### Find
 
+### Read ownership
+
+Document reads return shallow copies by default: nested objects, arrays and Dates can share stored state. `groupBy()` returns live document references by default. Treat those values as read-only and use collection mutations for persisted changes.
+
+**Shared-reference warning:** Mutating shared nested values changes in-memory data without running validation, versioning, dirty tracking or transaction checks. Persistence may therefore diverge from memory. Use collection mutation methods to change stored data, or request `clone: true` before editing a read result.
+
+Pass `{ clone: true }` to `findOne`, `find`, `search`, `similar`, memory `history`/`recall`, or `groupBy(field, filter, options)` for a structured-clone copy of returned data. For find queries, cloning occurs after projection, population and read hooks, so excluded fields do not need to be cloneable. Nested populated values are copied too.
+
+```javascript
+const user = await users.findOne({ _id: id }, { clone: true });
+user.preferences.theme = "dark"; // edits only the returned copy
+const groups = await users.groupBy("role", {}, { clone: true });
+```
+
+Cloning is opt-in and costs time and memory proportional to the result. Functions and other uncloneable values throw `QueryError` with code `ERR_SKALEX_QUERY_CLONE` and `details: { collection, cause }`. Select cloneable fields or omit the option if a shallow result is intended. Hooks may already have run before cloning fails.
+
+This is a returned-data copying option, not transaction snapshot isolation or a sandbox for plugins. Input documents, mutation returns, hooks and event payloads retain their existing ownership behavior. Platform structured-clone semantics apply: shared-memory buffers still share backing memory, and custom prototypes/accessor descriptors are not preserved.
+
 #### `findOne(filter, options?)`
 
 | Option | Type | Description |
@@ -763,6 +783,7 @@ await products.upsertMany(
 | `populate` | `string[]` | Collection names to join on the matching field |
 | `select` | `string[]` | Fields to include in the returned document |
 | `includeDeleted` | `boolean` | Include soft-deleted documents (requires `softDelete: true`). Default: `false`. |
+| `clone` | `boolean` | Default `false`. Structured-clone returned data after projection/population; see [read ownership](#read-ownership). |
 
 **Returns:** `Promise<Document | null>`
 
@@ -779,6 +800,7 @@ Sort and paginate matching stored documents before applying `select` and `popula
 | `limit` | `number` | Documents per page |
 | `session` | `string` | Tag this read for session stats tracking |
 | `includeDeleted` | `boolean` | Include soft-deleted documents (requires `softDelete: true`). Default: `false`. |
+| `clone` | `boolean` | Default `false`. Structured-clone returned data after projection/population; see [read ownership](#read-ownership). |
 
 **Returns:** `Promise<{ docs, page?, totalDocs?, totalPages? }>`
 
@@ -892,6 +914,7 @@ Embeds `query` using the configured AI adapter and ranks all documents that have
 | `limit` | `number` | `10` | Maximum number of results |
 | `minScore` | `number` | `0` | Minimum cosine similarity score; range [-1, 1] |
 | `session` | `string` | | Tag this read for session stats tracking |
+| `clone` | `boolean` | `false` | Structured-clone returned data; see [read ownership](#read-ownership). |
 
 **Returns:** `Promise<{ docs: Document[], scores: number[] }>`
 
@@ -911,6 +934,7 @@ Finds the nearest neighbours to an existing document by its `_vector`. The sourc
 |--------|------|---------|-------------|
 | `limit` | `number` | `10` | Maximum number of results |
 | `minScore` | `number` | `0` | Minimum cosine similarity score |
+| `clone` | `boolean` | `false` | Structured-clone returned data; see [read ownership](#read-ownership). |
 
 **Returns:** `Promise<{ docs: Document[], scores: number[] }>`
 
@@ -954,7 +978,9 @@ Returns the average of a numeric field, or `null` if there are no numeric values
 const avg = await scores.avg("value");
 ```
 
-#### `groupBy(field, filter?)`
+#### `groupBy(field, filter?, options?)`
+
+Set `options.clone: true` to structured-clone the grouped result. The default retains live document references.
 
 Groups documents by field value. `null` and `undefined` values are grouped under `"__null__"`. Supports dot-notation.
 
@@ -1469,6 +1495,7 @@ Retrieves the most semantically relevant memories.
 |--------|------|---------|
 | `limit` | `number` | `10` |
 | `minScore` | `number` | `0` |
+| `clone` | `boolean` | `false` |
 
 **Returns:** `Promise<{ docs: Document[], scores: number[] }>`
 
@@ -1480,6 +1507,7 @@ Returns all memories in chronological order.
 |--------|------|-------------|
 | `since` | `string \| Date` | Only entries after this time |
 | `limit` | `number` | Maximum entries |
+| `clone` | `boolean` | Default `false`. Structured-clone returned entries; see [read ownership](#read-ownership). |
 
 **Returns:** `Promise<Document[]>`
 

@@ -209,9 +209,9 @@ check("F15", "Missing indexed fields agree with a predicate scan", async () => {
   assert.equal((await col.find({ optional: undefined })).docs.length, (await col.find(d => d.optional === undefined)).docs.length);
 });
 
-check("F16", "Query results do not expose mutable stored nested values", async () => {
+check("F16", "Explicit cloned query results detach stored nested values", async () => {
   const db = await make(); const col = db.useCollection("items"); await col.insertOne({ _id: "a", nested: { n: 1 } });
-  const result = await col.findOne({ _id: "a" }); result.nested.n = 99;
+  const result = await col.findOne({ _id: "a" }, { clone: true }); result.nested.n = 99;
   assert.equal((await col.findOne({ _id: "a" })).nested.n, 1);
 });
 

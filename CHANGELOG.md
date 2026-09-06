@@ -30,6 +30,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Added
 
+- **Opt-in cloned reads** - `clone: true` uses structured cloning for findOne/find/search/similar, grouped results and memory history/recall. Existing shallow/live defaults remain. Uncloneable results throw `QueryError` with `ERR_SKALEX_QUERY_CLONE`.
+
 - **`acknowledgeIncompleteFlush()`** - explicitly clear an inspected incomplete-flush warning on a connected database outside transactions. Does not repair or save collection data. Queue-state changes and storage failures reject with `ERR_SKALEX_PERSISTENCE_ACK_FAILED`.
 
 ### Fixed
@@ -64,7 +66,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 1217 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1236 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

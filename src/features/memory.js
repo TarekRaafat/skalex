@@ -76,21 +76,21 @@ class Memory {
   /**
    * Recall the most semantically relevant memories for a query.
    * @param {string} query
-   * @param {{ limit?: number, minScore?: number }} [opts]
+   * @param {{ limit?: number, minScore?: number, clone?: boolean }} [opts]
    * @returns {Promise<{ docs: object[], scores: number[] }>}
    */
-  recall(query, { limit = 10, minScore = 0 } = {}) {
-    return this._col.search(query, { limit, minScore });
+  recall(query, { limit = 10, minScore = 0, clone = false } = {}) {
+    return this._col.search(query, { limit, minScore, clone });
   }
 
   /**
    * Return memories in chronological order (oldest first).
-   * @param {{ since?: string|Date, limit?: number }} [opts]
+   * @param {{ since?: string|Date, limit?: number, clone?: boolean }} [opts]
    * @returns {Promise<object[]>}
    */
-  async history({ since, limit } = {}) {
+  async history({ since, limit, clone = false } = {}) {
     const filter = since ? { createdAt: { $gte: new Date(since) } } : {};
-    const opts = { sort: { createdAt: 1 } };
+    const opts = { sort: { createdAt: 1 }, clone };
     if (limit) opts.limit = limit;
     const { docs } = await this._col.find(filter, opts);
     return docs;

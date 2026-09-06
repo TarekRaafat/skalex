@@ -108,6 +108,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `collection.findOne(filter, opts?)` → `doc | null`; opts: `populate`, `select`, `includeDeleted`
 - `collection.find(filter?, opts?)` → `{ docs, page?, totalDocs?, totalPages? }`; opts: `populate`, `select`, `sort`, `page`, `limit`, `session`, `includeDeleted`. Limit-only fast path (no sort and page 1): early termination; `totalDocs`/`totalPages` omitted. Supply an explicit sort or page greater than 1 to get totals.
 - Missing fields: `{ field: undefined }` matches omitted/undefined fields, not null. Single-field indexes omit undefined and request another index or a scan; compound candidates are filtered normally.
+- Read ownership: default document reads are shallow; groupBy retains live documents. Mutating shared values bypasses validation, versioning, dirty tracking and transaction checks, so memory and persistence may diverge. Pass `clone: true` to findOne/find/search/similar, memory history/recall, or groupBy(field, filter, options) for structured-clone results. Clone occurs after projection/population and read hooks. Costs scale with result size; SharedArrayBuffer backing memory remains shared. Inputs, mutation results and hooks retain existing ownership. This is not snapshot isolation.
 - Query ordering: find() sorts stored values and paginates before select/populate. Sort keys need not be selected; populated fields sort by their stored foreign keys. Sorted queries populate only returned documents.
 - `collection.updateOne(filter, update, opts?)` → `doc | null`; opts: `save`, `session`
 - `collection.updateMany(filter, update, opts?)` → `doc[]`; opts: `save`, `session`
@@ -186,6 +187,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 Engine errors expose a stable `code` and structured `details`; typed error classes are available as named imports from `skalex`. See the API documentation's Error Types section for the hierarchy.
 
+- `ERR_SKALEX_QUERY_CLONE` (`QueryError`): requested result cloning failed; `details` contains `collection` and `cause`. Select cloneable fields or omit clone for shallow reads. Functions cannot be cloned.
 - `ERR_SKALEX_MUTATION_FINALIZE` (`SkalexError`): an `upsertMany()` item failed and a second error interrupted finalization of earlier completed items. `details` contains `collection`, `mutationError`, and `finalizationError`. Earlier writes/effects may already have completed; remaining effects may be incomplete. This is not a rollback guarantee.
 
 ## Document System Fields

@@ -28,6 +28,14 @@ These hold for every release on the path to 4.0.0.
 
 ---
 
+## 1.4 Document ownership decision
+
+Alpha.7 preserves existing shallow document reads and live `groupBy()` references. Detachment is explicit through `clone: true`, with structured-clone costs and compatibility limits documented at the read APIs.
+
+This resolves F16 as an opt-in detachment contract, not safe-by-default reads. Mutating shared values can bypass validation, versioning, dirty tracking and transaction checks; callers must use collection mutations for stored changes. Inputs, mutation results, hooks and event payloads retain their existing ownership behavior.
+
+Default detachment and development-time freezing are not part of this change. Freezing requires separate compatibility and performance evaluation. Passing the revised F16 diagnostic does not close F04's remaining commit-stage recovery work or establish release readiness.
+
 ## 1.5 Critical-issue lane
 
 P0 findings preempt the release train. They do not wait for the next planned release. A P0 is one of:

@@ -865,14 +865,19 @@ class Collection {
 
   /**
    * Group matching documents by a field value.
-   * Returns `{ [value]: docs[] }`.
+   * Returns `{ [value]: docs[] }`. Pass clone: true to detach the result.
    * @param {string} field
    * @param {object} [filter={}]
+   * @param {{ clone?: boolean }} [options]
+   * @throws {QueryError} ERR_SKALEX_QUERY_CLONE if requested cloning fails.
+   * @example
+   * await collection.groupBy("role", {}, { clone: true });
    * @returns {Promise<Record<string, object[]>>}
    */
-  async groupBy(field, filter = {}) {
+  async groupBy(field, filter = {}, { clone = false } = {}) {
     await this._ctx.ensureConnected();
-    return aggGroupBy(this._findAllRaw(filter), field);
+    const result = aggGroupBy(this._findAllRaw(filter), field);
+    return clone ? this._cloneReadResult(result) : result;
   }
 
   // ─── Find ─────────────────────────────────────────────────────────────────
@@ -880,19 +885,20 @@ class Collection {
   /**
    * Find the first matching document (returns a shallow copy with projection).
    * @param {object} filter
-   * @param {{ populate?: string[], select?: string[], includeDeleted?: boolean }} [options]
+   * @param {{ populate?: string[], select?: string[], includeDeleted?: boolean, clone?: boolean }} [options]
    * @returns {Promise<object|null>}
+   * @throws {QueryError} ERR_SKALEX_QUERY_CLONE if requested cloning fails.
    */
   async findOne(filter, options = {}) {
     _assertFilter("findOne", filter);
     await this._ctx.ensureConnected();
-    const { populate, select, includeDeleted = false } = options;
+    const { populate, select, includeDeleted = false, clone = false } = options;
     const item = this._findRaw(filter, { includeDeleted });
     if (!item) return null;
 
     const newItem = this._projectDoc(item, select);
     if (populate) await this._populateDoc(newItem, item, populate);
-    return newItem;
+    return clone ? this._cloneReadResult(newItem) : newItem;
   }
 
   /**
@@ -906,14 +912,15 @@ class Collection {
    * should pass an explicit `sort` or `page` to disable the fast path.
    *
    * @param {object} filter
-   * @param {{ populate?: string[], select?: string[], sort?: object, page?: number, limit?: number, includeDeleted?: boolean }} [options]
+   * @param {{ populate?: string[], select?: string[], sort?: object, page?: number, limit?: number, includeDeleted?: boolean, clone?: boolean }} [options]
    * @returns {Promise<{ docs: object[], page?: number, totalDocs?: number, totalPages?: number }>}
+   * @throws {QueryError} ERR_SKALEX_QUERY_CLONE if requested cloning fails.
    */
   async find(filter, options = {}) {
     _assertFilter("find", filter);
     await this._ctx.ensureConnected();
     const _t0 = Date.now();
-    const { populate, select, sort, page = 1, limit, session, includeDeleted = false } = options;
+    const { populate, select, sort, page = 1, limit, session, includeDeleted = false, clone = false } = options;
 
     await this._ctx.plugins.run(Hooks.BEFORE_FIND, { collection: this.name, filter, options });
 
@@ -974,6 +981,7 @@ class Collection {
     this._ctx.queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });
     this._ctx.sessionStats.recordRead(session);
     await this._ctx.plugins.run(Hooks.AFTER_FIND, { collection: this.name, filter, options, docs: results });
+    if (clone) results = this._cloneReadResult(results);
     return extra ? { docs: results, ...extra } : { docs: results };
   }
 
@@ -984,10 +992,11 @@ class Collection {
    * with a `_vector` field by cosine similarity.
    *
    * @param {string} query
-   * @param {{ filter?: object, limit?: number, minScore?: number }} [options]
+   * @param {{ filter?: object, limit?: number, minScore?: number, clone?: boolean }} [options]
    * @returns {Promise<{ docs: object[], scores: number[] }>}
+   * @throws {QueryError} ERR_SKALEX_QUERY_CLONE if requested cloning fails.
    */
-  async search(query, { filter, limit = 10, minScore = 0, session } = {}) {
+  async search(query, { filter, limit = 10, minScore = 0, session, clone = false } = {}) {
     if (typeof query !== "string") {
       throw new ValidationError(
         "ERR_SKALEX_VALIDATION_ARG",
@@ -1007,21 +1016,23 @@ class Collection {
     this._ctx.sessionStats.recordRead(session);
     await this._ctx.plugins.run(Hooks.AFTER_SEARCH, { collection: this.name, query, options: { filter, limit, minScore }, docs: result.docs, scores: result.scores });
 
-    return result;
+    return clone ? this._cloneReadResult(result) : result;
   }
 
   /**
    * Find the nearest neighbours to an existing document by `_id`.
    *
    * @param {string} id
-   * @param {{ limit?: number, minScore?: number }} [options]
+   * @param {{ limit?: number, minScore?: number, clone?: boolean }} [options]
    * @returns {Promise<{ docs: object[], scores: number[] }>}
+   * @throws {QueryError} ERR_SKALEX_QUERY_CLONE if requested cloning fails.
    */
-  async similar(id, { limit = 10, minScore = 0 } = {}) {
+  async similar(id, { limit = 10, minScore = 0, clone = false } = {}) {
     await this._ctx.ensureConnected();
     const source = this._ds.getById(id);
     if (!source || !source._vector) return { docs: [], scores: [] };
-    return similarByVector(source._vector, id, this._ds.data, { limit, minScore });
+    const result = similarByVector(source._vector, id, this._ds.data, { limit, minScore });
+    return clone ? this._cloneReadResult(result) : result;
   }
 
   // ─── Delete ──────────────────────────────────────────────────────────────
@@ -1393,6 +1404,14 @@ class Collection {
       idGenerator: this._ctx.idGenerator,
       embedFn: (text) => this._ctx.embed(text),
     });
+  }
+
+  /** Clone an explicitly detached read result, preserving the typed error surface. */
+  _cloneReadResult(value) {
+    try { return structuredClone(value); }
+    catch (cause) {
+      throw new QueryError("ERR_SKALEX_QUERY_CLONE", "Cannot clone query result. Select cloneable fields or omit clone.", { collection: this.name, cause });
+    }
   }
 
   // ─── Private projection / population helpers ──────────────────────────────

@@ -886,3 +886,7 @@ This is **hybrid search** when `filter` is provided; the structured filter narro
 ## 26. MCP HTTP Boundary
 
 Validate Origin and Host before route dispatch, SSE subscription or preflight. Explicit browser-origin permission is separate from trusted backend authority and does not authenticate native clients. HTTP transport loads dynamically from the source module shipped alongside dist; browser clients connect to a Node/Bun/Deno HTTP server. Origin and rebinding regressions include real Chromium requests.
+
+## 27. Read Ownership
+
+Document reads preserve shallow-copy defaults; groupBy retains live document references. Explicit clone: true applies structuredClone to returned data after projection/population and read hooks. Collection owns clone-error translation to ERR_SKALEX_QUERY_CLONE. Memory history/recall forward the option. This does not isolate inputs, mutation returns, hooks or shared-memory buffers, and it does not provide transaction snapshot isolation.

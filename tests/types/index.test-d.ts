@@ -290,3 +290,14 @@ const restrictedMigration: Migration = {
 };
 db.addMigration(restrictedMigration);
 expectType<Promise<number>>(db.transaction(async () => 42));
+
+const detached = db.useCollection<{ n: number }>("detached");
+detached.findOne({}, { clone: true });
+detached.find({}, { clone: true });
+detached.search("query", { clone: true });
+detached.similar("id", { clone: true });
+detached.groupBy("n", {}, { clone: true });
+db.useMemory("typed").history({ clone: true });
+db.useMemory("typed").recall("query", { clone: true });
+expectError(detached.find({}, { clone: "yes" }));
+expectError(detached.groupBy("n", {}, { clone: "yes" }));

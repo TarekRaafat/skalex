@@ -69,6 +69,12 @@ Compression now embeds its summary before deleting originals, adding one embeddi
 
 Equality queries for `undefined` now match omitted and explicitly undefined fields consistently with scans, including mutations and aggregates. Single-field indexes omit those values, so these queries use another usable index or a scan. Null remains distinct; stored index and uniqueness rules are unchanged.
 
+### Document ownership and cloned reads
+
+Read defaults remain unchanged. Use `{ clone: true }` with `findOne`, `find`, `search`, `similar`, memory `history`/`recall`, or the third argument to `groupBy(field, filter, options)` when you need a structured-clone copy of returned data. Cloning runs after projection/population and read hooks, and costs time proportional to returned data. Uncloneable values throw `ERR_SKALEX_QUERY_CLONE`; selecting only cloneable fields can avoid the error.
+
+Default document reads return shallow copies, while groupBy retains live document references. Mutating shared nested values changes in-memory data without running validation, versioning, dirty tracking or transaction checks. Persistence may therefore diverge from memory. Use collection mutation methods to change stored data, or request `clone: true` before editing a read result. Nested input values, mutation results, hooks and event payloads may still share stored data. This option does not provide transaction snapshot isolation. Structured-clone semantics apply: SharedArrayBuffer backing memory remains shared, and custom prototypes/accessor descriptors are not preserved.
+
 ### Other reliability changes
 
 

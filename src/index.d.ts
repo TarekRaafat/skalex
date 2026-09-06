@@ -458,6 +458,8 @@ export interface DeleteOptions {
 }
 
 export interface FindOptions {
+  /** Structured-clone returned data. Default false; throws ERR_SKALEX_QUERY_CLONE for uncloneable values. */
+  clone?: boolean;
   populate?: string[];
   select?: string[];
   /** Sort stored values before projection and population: 1 = ascending, -1 = descending. */
@@ -496,6 +498,8 @@ export interface FindResult<T = Document> {
 }
 
 export interface SearchOptions<T = Record<string, unknown>> {
+  /** Structured-clone returned data. Default false; throws ERR_SKALEX_QUERY_CLONE for uncloneable values. */
+  clone?: boolean;
   /** Structured pre-filter applied before cosine scoring (hybrid search). */
   filter?: Filter<T>;
   /** Maximum number of results. Default: 10. */
@@ -674,13 +678,13 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
 
   // Vector search
   search(query: string, options?: SearchOptions<T>): Promise<SearchResult<DocOf<T>>>;
-  similar(id: string, options?: { limit?: number; minScore?: number }): Promise<SearchResult<DocOf<T>>>;
+  similar(id: string, options?: { limit?: number; minScore?: number; clone?: boolean }): Promise<SearchResult<DocOf<T>>>;
 
   // Aggregation
   count(filter?: Filter<T>): Promise<number>;
   sum(field: string, filter?: Filter<T>): Promise<number>;
   avg(field: string, filter?: Filter<T>): Promise<number | null>;
-  groupBy(field: string, filter?: Filter<T>): Promise<Record<string, DocOf<T>[]>>;
+  groupBy(field: string, filter?: Filter<T>, options?: { clone?: boolean }): Promise<Record<string, DocOf<T>[]>>;
 
   // Watch - callback form
   watch(callback: (event: MutationEvent<DocOf<T>>) => void): () => void;
@@ -699,8 +703,8 @@ export declare class Memory {
   private constructor(sessionId: string, db: Skalex);
 
   remember(text: string): Promise<Document>;
-  recall(query: string, options?: { limit?: number; minScore?: number }): Promise<SearchResult<Document>>;
-  history(options?: { since?: string | Date; limit?: number }): Promise<Document[]>;
+  recall(query: string, options?: { limit?: number; minScore?: number; clone?: boolean }): Promise<SearchResult<Document>>;
+  history(options?: { since?: string | Date; limit?: number; clone?: boolean }): Promise<Document[]>;
   forget(id: string): Promise<Document | null>;
   tokenCount(): Promise<{ tokens: number; count: number }>;
   context(options?: { tokens?: number }): Promise<string>;
