@@ -155,6 +155,7 @@ class IndexEngine {
    * @param {object} newDoc
    */
   update(oldDoc, newDoc) {
+    this._validateDoc(newDoc);
     this._checkUnique(newDoc, oldDoc);
     this.remove(oldDoc);
     try {
@@ -165,6 +166,18 @@ class IndexEngine {
       try { this._indexDoc(oldDoc); } catch { /* preserve original error */ }
       throw indexError;
     }
+  }
+
+  /**
+   * Apply a validated batch without testing new values against old batch values.
+   * No asynchronous work may occur between validation and index replacement.
+   * @param {object[]} oldDocs
+   * @param {object[]} newDocs
+   */
+  _replaceBatch(oldDocs, newDocs) {
+    this.assertUniqueCandidates(oldDocs, newDocs);
+    for (const doc of oldDocs) this.remove(doc);
+    for (const doc of newDocs) this._indexDoc(doc);
   }
 
   /**
@@ -241,6 +254,7 @@ class IndexEngine {
    * @param {object[]} newDocs
    */
   assertUniqueCandidates(oldDocs, newDocs) {
+    for (const doc of newDocs) this._validateDoc(doc);
     if (this._uniqueFields.size === 0) return;
 
     const batchOldIds = new Set(oldDocs.map(doc => doc._id));
@@ -277,6 +291,7 @@ class IndexEngine {
    * @param {object[]} newDocs
    */
   assertUniqueBatch(newDocs) {
+    for (const doc of newDocs) this._validateDoc(doc);
     if (this._uniqueFields.size === 0) return;
 
     for (const field of this._uniqueFields) {
@@ -324,7 +339,23 @@ class IndexEngine {
 
   // ─── private ─────────────────────────────────────────────────────────────
 
+  _validateDoc(doc) {
+    for (const [, ci] of this._compoundIndexes) {
+      for (const f of ci.fields) {
+        const val = doc[f];
+        if (val !== undefined && val !== null && typeof val === "object") {
+          throw new ValidationError(
+            "ERR_SKALEX_VALIDATION_COMPOUND_INDEX",
+            `Compound index field "${f}" must be a scalar value (string, number, or boolean), got ${Array.isArray(val) ? "array" : typeof val}`,
+            { field: f }
+          );
+        }
+      }
+    }
+  }
+
   _indexDoc(doc) {
+    this._validateDoc(doc);
     for (const [field, map] of this._fieldIndexes) {
       const val = doc[field];
       if (val !== undefined) {
@@ -337,16 +368,6 @@ class IndexEngine {
       if (val !== undefined) map.set(val, doc);
     }
     for (const [, ci] of this._compoundIndexes) {
-      for (const f of ci.fields) {
-        const val = doc[f];
-        if (val !== undefined && val !== null && typeof val === "object") {
-          throw new ValidationError(
-            "ERR_SKALEX_VALIDATION_COMPOUND_INDEX",
-            `Compound index field "${f}" must be a scalar value (string, number, or boolean), got ${Array.isArray(val) ? "array" : typeof val}`,
-            { field: f }
-          );
-        }
-      }
       const tupleKey = encodeTuple(ci.fields.map(f => doc[f]));
       if (!ci.map.has(tupleKey)) ci.map.set(tupleKey, new Set());
       ci.map.get(tupleKey).add(doc);

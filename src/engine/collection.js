@@ -368,7 +368,7 @@ class Collection {
    * update descriptor via `_prepareUpdatedDoc`. Returns `{ next, prev }` WITHOUT
    * touching live state: the caller owns the unique-candidate assertion and the
    * store commit, which differ by path - `_updateCore` asserts once across the
-   * batch and commits through a pre-computed positions map, while `upsertMany`
+   * batch and replaces indexes before committing through a positions map, while `upsertMany`
    * asserts and commits per document via `_commitUpdatedDoc`. `_prepareUpdatedDoc`
    * does not mutate `oldDoc`, so snapshotting `prev` here is order-safe.
    * @param {object} oldDoc
@@ -403,17 +403,21 @@ class Collection {
           prevDocs.push(prev);
         }
 
-        this._assertUniqueCandidates(oldDocs, nextDocs);
-
         assertTxAlive(); // guard before first in-memory state change
-        // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
-        const targets = new Set(oldDocs);
-        const positions = new Map();
-        for (let i = 0; i < this._ds.data.length; i++) {
-          if (targets.has(this._ds.data[i])) positions.set(this._ds.data[i], i);
-        }
-        for (let i = 0; i < oldDocs.length; i++) {
-          this._commitUpdatedDoc(oldDocs[i], nextDocs[i], positions);
+        if (oldDocs.length === 1) {
+          this._commitUpdatedDoc(oldDocs[0], nextDocs[0]);
+        } else {
+          // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
+          const targets = new Set(oldDocs);
+          const positions = new Map();
+          for (let i = 0; i < this._ds.data.length; i++) {
+            if (targets.has(this._ds.data[i])) positions.set(this._ds.data[i], i);
+          }
+          for (const doc of oldDocs) this._assertUpdatePosition(doc, positions.get(doc));
+          this._fieldIndex?._replaceBatch(oldDocs, nextDocs);
+          for (let i = 0; i < oldDocs.length; i++) {
+            this._ds.replaceAt(positions.get(oldDocs[i]), nextDocs[i]);
+          }
         }
 
         return { docs: nextDocs, prevDocs };
@@ -532,16 +536,19 @@ class Collection {
    * Replace a live document with a prepared document and update all indexes.
    * @param {object} oldDoc
    * @param {object} newDoc
-   * @param {Map<object, number>} [positions] - Pre-computed _data index positions
-   *   to avoid O(n) indexOf per call. When omitted, falls back to indexOf.
    */
-  _commitUpdatedDoc(oldDoc, newDoc, positions) {
-    const idx = positions ? positions.get(oldDoc) : this._ds.indexOf(oldDoc);
+  _commitUpdatedDoc(oldDoc, newDoc) {
+    const idx = this._ds.indexOf(oldDoc);
+    this._assertUpdatePosition(oldDoc, idx);
+    this._updateInIndex(oldDoc, newDoc);
+    this._ds.replaceAt(idx, newDoc);
+  }
+
+  /** Reject stale targets before any document or index in the batch changes. */
+  _assertUpdatePosition(oldDoc, idx) {
     if (idx === undefined || idx === -1) {
       throw new PersistenceError("ERR_SKALEX_PERSISTENCE_DOC_MISSING", `Document "${oldDoc._id}" no longer exists in collection "${this.name}"`, { id: oldDoc._id, collection: this.name });
     }
-    this._ds.replaceAt(idx, newDoc);
-    this._updateInIndex(oldDoc, newDoc);
   }
 
   /**
