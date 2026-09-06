@@ -487,6 +487,8 @@ class Skalex {
    * Best-effort: each collection is written independently. If one fails,
    * others may already be committed. For atomic multi-collection writes,
    * use transaction() which calls saveAtomic() on commit.
+   * Ordinary writes and transaction batches share one adapter-write queue.
+   * Snapshots are serialized when their queued write begins.
    *
    * @param {string} [collectionName] - If omitted, saves all collections.
    * @returns {Promise<void>}

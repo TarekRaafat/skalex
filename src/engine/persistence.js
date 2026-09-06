@@ -33,9 +33,9 @@ class PersistenceManager {
     this._registry = registry;
 
     /**
-     * Promise-chain lock to serialize concurrent saveAtomic() calls.
-     * Regular saves (save/saveDirty) do not acquire this lock - they
-     * rely on per-collection coalescing in _saveOne() instead.
+     * One adapter-write queue for ordinary saves and transaction batches.
+     * Batches retain the queue through sentinel clearing. Per-collection
+     * coalescing reduces redundant ordinary writes before entering it.
      */
     this._saveLock = Promise.resolve();
   }
@@ -182,7 +182,7 @@ class PersistenceManager {
    * Persist one or all collections via the storage adapter.
    *
    * Best-effort semantics: each collection is written independently via
-   * Promise.all. If one collection write fails, others may have already
+   * the shared write queue. If one collection write fails, others may have already
    * committed. For atomic multi-collection writes, use saveAtomic()
    * (called automatically by transaction commit).
    *
@@ -360,14 +360,18 @@ class PersistenceManager {
    * @param {object} col
    * @returns {Promise<void>}
    */
-  async _writeCollection(name, col) {
-    try {
-      await this._adapter.write(name, this._serializeCollection(col));
+  _writeCollection(name, col) {
+    return this._withSaveLock(async () => {
+      // Clear before capturing the snapshot so edits during I/O stay dirty.
       col._dirty = false;
-    } catch (error) {
-      this._logger(`Error saving "${name}": ${error.message}`, "error");
-      throw error;
-    }
+      try {
+        await this._adapter.write(name, this._serializeCollection(col));
+      } catch (error) {
+        col._dirty = true;
+        this._logger(`Error saving "${name}": ${error.message}`, "error");
+        throw error;
+      }
+    });
   }
 
   /**

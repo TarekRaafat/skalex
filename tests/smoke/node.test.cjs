@@ -197,6 +197,11 @@ async function run() {
 
   // ─── Transactions ──────────────────────────────────────────────────────────
 
+  await section("persistence ordering", async () => {
+    const { default: saveOrdering } = await import("./save-ordering.js");
+    await saveOrdering(Skalex, assert);
+  });
+
   await section("historical restore coordination", async () => {
     const { default: checkRestore } = await import("./restore-coordination.js");
     await checkRestore(db, assert);

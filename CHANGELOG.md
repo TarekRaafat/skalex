@@ -28,6 +28,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Fixed
 
+- **Persistence write ordering** - ordinary saves and transaction batches share the adapter-write queue, including sentinel clearing. Older saves cannot overwrite a later commit. Failed writes release the queue; concurrent same-collection saves remain coalesced, and newer unsaved edits retain dirty state.
+
 - **Protected historical restore** - replay uses the mutation pipeline for locks, dirty tracking and saving, including a lock check after reading history. Archived timestamps, version, expiry and vector remain exact; replay skips mutation hooks and recursive changelog entries. Restored nested values are detached from archived records. Both database and changelog restore entry points share the protected path.
 
 - **Transaction ownership** - scoped collection contexts replace shared transaction stamps and call-depth flags. Bare writes cannot borrow ownership while a transaction hook awaits, and locks are rechecked after asynchronous preparation. Rollback preserves independently created collections and their effects, while owned effects run after persistence succeeds. Locks release before after-hook cascades.
@@ -42,7 +44,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 1057 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1068 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

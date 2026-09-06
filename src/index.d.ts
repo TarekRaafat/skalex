@@ -778,6 +778,7 @@ export declare class Skalex {
   renameCollection(from: string, to: string): Promise<void>;
 
   // Persistence
+  /** Persist via the shared adapter-write queue; multi-collection saves remain best-effort. */
   saveData(collectionName?: string): Promise<void>;
   loadData(): Promise<void>;
   buildIndex<T = Record<string, unknown>>(data: T[], keyField: string): Map<unknown, T>;

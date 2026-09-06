@@ -438,7 +438,7 @@ Three save strategies:
 
 ### Dirty tracking
 
-`markDirty(collections, name)` sets `_dirty = true` on the store. After a successful write, the flag is cleared. This ensures no mutation is silently lost.
+`markDirty(collections, name)` sets `_dirty = true` on the store. Ordinary saves clear the flag immediately before serialization; edits during the adapter await mark it dirty again. A failed write restores the dirty flag so a dirty-only retry includes the collection.
 
 ### Write coalescing
 
@@ -446,7 +446,7 @@ Concurrent saves for the same collection are serialised by the per-collection `i
 
 ### Save mutex (`_saveLock`)
 
-`saveAtomic()` acquires the instance-level `_saveLock` (a promise chain) to serialize concurrent atomic saves. Regular `save()`/`saveDirty()` do not acquire this lock - they rely on per-collection coalescing.
+Ordinary adapter writes and `saveAtomic()` batches share the instance-level `_saveLock` promise chain. Each ordinary write serializes current data when its turn begins. A transaction retains the queue through its batch and sentinel-clear write, so an older ordinary write cannot complete after that commit. Rejection releases the queue for later work. Coalescing remains per collection; even writes to different collections use the shared queue. This orders writes within one instance, without adding snapshot isolation or cross-collection crash recovery.
 
 ### Flush sentinel
 

@@ -15,6 +15,10 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 - **TypeScript** - full generics and type declarations ship in the box
 - **Secure** - AES-256-GCM at-rest encryption via `EncryptedAdapter`
 
+## Persistence ordering
+
+Ordinary saves and transaction batches share one adapter-write queue per database instance. A batch retains the queue through sentinel clearing. Snapshots are serialized when execution begins; same-collection saves remain coalesced. Failures release the queue, and edits during an ordinary write remain dirty. This does not add read isolation, cross-instance coordination or crash recovery.
+
 ## Architecture & Constraints
 
 - **In-memory first**: `db.connect()` loads the entire dataset into the process heap. All reads and writes operate on in-memory state. Persistence is a flush to the configured storage adapter, not a primary I/O path.

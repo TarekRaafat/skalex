@@ -242,6 +242,8 @@ Skalex keeps all data **in memory** between operations. Writes are flushed to th
 
 Persists one collection (or all, if no name given) via the storage adapter. Best-effort semantics: each collection is written independently. If one write fails, others may have already committed. For atomic multi-collection writes, use `transaction()`.
 
+Ordinary saves and transaction batches share one adapter-write queue per database instance, including the batch sentinel-clear write. Queued writes capture current data when execution begins. Writes to different collections also wait their turn; concurrent saves of one collection remain coalesced. A failed write does not stop later queued work, and edits made during an ordinary write remain dirty for a later flush. Multi-collection ordinary saves remain best-effort, with other writes potentially finishing after a rejection. This ordering does not add read isolation or crash recovery.
+
 **Returns:** `Promise<void>`
 
 #### Persistence Guarantees by Adapter
