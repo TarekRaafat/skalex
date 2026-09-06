@@ -105,6 +105,7 @@ class IndexEngine {
     for (const [, ci] of this._compoundIndexes) ci.map.clear();
 
     for (const doc of data) {
+      this._validateDoc(doc);
       this._indexDoc(doc);
     }
   }
@@ -115,8 +116,18 @@ class IndexEngine {
    * @param {object} doc
    */
   add(doc) {
+    this._validateDoc(doc);
     this._checkUnique(doc, null);
     this._indexDoc(doc);
+  }
+
+  /**
+   * Validate an insert batch once, before writing any index entries.
+   * @param {object[]} docs
+   */
+  _addBatch(docs) {
+    this.assertUniqueBatch(docs);
+    for (const doc of docs) this._indexDoc(doc);
   }
 
   /**
@@ -354,8 +365,8 @@ class IndexEngine {
     }
   }
 
+  // Callers validate candidates before beginning an index commit.
   _indexDoc(doc) {
-    this._validateDoc(doc);
     for (const [field, map] of this._fieldIndexes) {
       const val = doc[field];
       if (val !== undefined) {

@@ -302,8 +302,7 @@ class Collection {
 
         assertTxAlive(); // guard before first in-memory state change
         for (const item of newItems) this._assertInsertIdAvailable(item._id);
-        if (this._fieldIndex) this._fieldIndex.assertUniqueBatch(newItems);
-        for (const newItem of newItems) this._addToIndex(newItem);
+        this._fieldIndex?._addBatch(newItems);
         this._ds.push(...newItems);
         const evicted = this._enforceCapAfterInsert();
         // Emit delete events for FIFO-evicted documents so watch listeners
