@@ -197,6 +197,11 @@ async function run() {
 
   // ─── Transactions ──────────────────────────────────────────────────────────
 
+  await section("historical restore coordination", async () => {
+    const { default: checkRestore } = await import("./restore-coordination.js");
+    await checkRestore(db, assert);
+  });
+
   await section("transaction ownership", async () => {
     const { default: checkOwnership, transactionSurface } = await import("./transaction-ownership.js");
     await checkOwnership(db, assert);

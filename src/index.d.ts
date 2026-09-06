@@ -730,6 +730,13 @@ export declare class ChangeLog {
   private constructor(db: Skalex);
   log(op: 'insert' | 'update' | 'delete', collection: string, doc: Document, prev?: Document | null, session?: string | null): Promise<void>;
   query(collection: string, options?: ChangeLogQueryOptions): Promise<ChangeLogEntry[]>;
+  /**
+   * Replay archived state, preserving system fields. Rejects transaction-locked
+   * targets and saves before emitting restore transitions. Does not record
+   * replay in the changelog or invoke mutation hooks.
+   * @throws TransactionError for a locked target; index errors for conflicts.
+   * Save failures leave restored memory dirty and emit no restore events.
+   */
   restore(collection: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
 }
 
@@ -816,6 +823,13 @@ export declare class Skalex {
 
   // ChangeLog
   changelog(): ChangeLog;
+  /**
+   * Replay archived state, preserving system fields. Rejects transaction-locked
+   * targets and saves before emitting restore transitions. Does not record
+   * replay in the changelog or invoke mutation hooks.
+   * @throws TransactionError for a locked target; index errors for conflicts.
+   * Save failures leave restored memory dirty and emit no restore events.
+   */
   restore(collectionName: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
 
   // Stats

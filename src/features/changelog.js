@@ -67,6 +67,9 @@ class ChangeLog {
    * @param {string|Date} timestamp
    * @param {{ _id?: string }} [opts]
    * @returns {Promise<void>}
+   * @throws {TransactionError} When the target is transaction-locked.
+   * @example
+   * await db.changelog().restore("orders", "2025-01-01T00:00:00Z");
    */
   async restore(collection, timestamp, { _id } = {}) {
     const ts = new Date(timestamp);
@@ -77,7 +80,7 @@ class ChangeLog {
 
     if (_id) {
       // Restore a single document. The archived snapshot is rehydrated
-      // directly via the collection's internal `_rehydrateOne` path so
+      // via the collection's guarded `_rehydrateOne` path so
       // timestamps, version, expiry, and vector are preserved exactly.
       const docEntries = relevant.filter(e => e.docId === _id);
       if (docEntries.length === 0) return;
@@ -85,13 +88,12 @@ class ChangeLog {
       const last = docEntries[docEntries.length - 1];
 
       const archived = last.op === Ops.DELETE ? null : last.doc;
-      col._rehydrateOne(_id, archived);
-      await this._db.saveData(collection);
+      await col._rehydrateOne(_id, archived);
       return;
     }
 
     // Restore entire collection - replay all entries in order, then rehydrate
-    // the resulting state in a single atomic swap.
+    // the resulting state through the guarded replay path.
     const state = new Map(); // docId → { doc, deleted }
 
     for (const entry of relevant) {
@@ -107,8 +109,7 @@ class ChangeLog {
       if (!deleted && doc) restored.push(doc);
     }
 
-    col._rehydrateAll(restored);
-    await this._db.saveData(collection);
+    await col._rehydrateAll(restored);
   }
 }
 

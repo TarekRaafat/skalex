@@ -27,6 +27,12 @@ await addNote(db);
 await db.transaction(addNote);
 ```
 
+### Historical restore coordination
+
+Both `db.restore()` and `db.changelog().restore()` now reject replay into transaction-locked collections, including when a transaction acquires the lock while history is being read. Retry after that transaction completes. Historical restore remains unavailable on the restricted transaction handle; `collection.restore()` continues to undo soft deletion.
+
+Restore events now follow a successful save. A save failure leaves restored data in memory, marked dirty, and emits no restore events; handle the error and retry saving rather than assuming memory was rolled back. Replay preserves archived fields, skips mutation hooks/schema transformations/caps/changelog recording, and rejects conflicts with current unique or compound indexes before changing data.
+
 ### Other reliability changes
 
 

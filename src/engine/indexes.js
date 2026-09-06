@@ -299,9 +299,11 @@ class IndexEngine {
    * Preflight unique constraints for an insert batch before any index
    * mutation. Checks both against the existing index and within the batch
    * itself for intra-batch duplicates.
+   * Full replacement ignores the discarded index and checks candidates only.
    * @param {object[]} newDocs
+   * @param {{ replacing?: boolean }} [options] - Whether candidates replace all indexed documents.
    */
-  assertUniqueBatch(newDocs) {
+  assertUniqueBatch(newDocs, { replacing = false } = {}) {
     for (const doc of newDocs) this._validateDoc(doc);
     if (this._uniqueFields.size === 0) return;
 
@@ -313,7 +315,7 @@ class IndexEngine {
         const val = doc[field];
         if (val === undefined) continue;
 
-        if (uniqueMap && uniqueMap.has(val)) {
+        if (!replacing && uniqueMap && uniqueMap.has(val)) {
           throw new UniqueConstraintError(
             "ERR_SKALEX_UNIQUE_VIOLATION",
             `Unique constraint violation: field "${field}" value "${val}" already exists`,

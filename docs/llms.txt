@@ -163,7 +163,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `collection.watch(filter?, callback?, opts?)` - reactive collection observer; callback or `AsyncIterableIterator`. `opts`: `{ maxBufferSize }` caps the event queue for the async iterator form (oldest events dropped; `iter.dropped` counter tracks discards)
 - `db.watch(callback)` - cross-collection global observer; fires for every mutation across all collections
 - `db.changelog()` - append-only mutation log
-- `db.restore(collection, timestamp)` - point-in-time restore from changelog. Archived documents are rehydrated exactly: `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp.
+- `db.restore(collection, timestamp, opts?)` / `db.changelog().restore(collection, timestamp, opts?)` - historical replay; opts: `{ _id?: string }`. Preserves archived fields exactly. Uses pipeline lock checks and saving; skips mutation hooks, schema transformations, caps and changelog recording. Current index constraints are checked before mutation. Locked targets reject with `ERR_SKALEX_TX_COLLECTION_LOCKED`. Save runs regardless of autoSave; restore events follow successful saving. Save failure leaves dirty restored memory and emits no restore events; disk rollback is not guaranteed.
 - `db.stats()` - count, estimated size, average doc size per collection
 - `db.slowQueries()` - slow query log with configurable threshold and ring buffer
 - `db.sessionStats()` - reads/writes/lastActive keyed by session ID

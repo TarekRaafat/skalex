@@ -79,18 +79,19 @@ class MutationPipeline {
    * @param {string}   opts.beforeHook  - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.BEFORE_INSERT`).
    * @param {string}   opts.afterHook   - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.AFTER_INSERT`).
    * @param {object}   opts.hookPayload - Data passed to before hook.
-   * @param {Function} opts.mutate      - async (assertTxAlive) => { docs, prevDocs }
+   * @param {Function} opts.mutate      - (assertTxAlive) => { docs, prevDocs?, emitEvents? }; emitEvents overrides default watch events after saving.
+   * @param {boolean} [opts.replay=false] - Suppress changelog recording for historical replay.
    * @param {Function} [opts.afterHookPayload] - (docs) => payload for after hook.
    * @param {boolean|undefined} opts.save
    * @param {string|undefined}  opts.session
    * @returns {Promise<{ docs: object[], prevDocs: (object|null)[] }>}
    */
-  async execute({ op, beforeHook, afterHook, hookPayload, mutate, afterHookPayload, save, session }) {
+  async execute({ op, beforeHook, afterHook, hookPayload, mutate, afterHookPayload, save, session, replay = false }) {
     const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();
 
     if (beforeHook) await ctx.plugins.run(beforeHook, hookPayload);
 
-    const { docs, prevDocs = [] } = await mutate(assertTxAlive);
+    const { docs, prevDocs = [], emitEvents } = await mutate(assertTxAlive);
     if (isTxWrite) assertTxAlive();
 
     // Mark collection dirty so saveDirty() knows it needs persistence
@@ -98,8 +99,8 @@ class MutationPipeline {
 
     await this._col._saveIfNeeded(save);
 
-    // Changelog
-    if (this._col._changelogEnabled) {
+    // Historical replay must not append its own changes to the archive.
+    if (this._col._changelogEnabled && !replay) {
       for (let i = 0; i < docs.length; i++) {
         await ctx.logChange(op, this._col.name, docs[i], prevDocs[i] ?? null, session || null);
       }
@@ -111,8 +112,9 @@ class MutationPipeline {
       ctx.sessionStats.recordWrite(session);
     }
 
-    // Events
-    for (const doc of docs) {
+    // Replay supplies its historical transition events after saving.
+    if (emitEvents) emitEvents();
+    else for (const doc of docs) {
       ctx.emitEvent(this._col.name, { op, collection: this._col.name, doc: stripVector(doc) });
     }
 

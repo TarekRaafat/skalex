@@ -457,7 +457,7 @@ Returns the shared `ChangeLog` instance. Only available when at least one collec
 
 #### `restore(collectionName, timestamp, options?)`
 
-Replays the changelog to rebuild a collection's state at a point in time. Archived documents are rehydrated exactly - `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp, bypassing the mutation pipeline so no timestamps or versions are regenerated.
+Replays the changelog to rebuild a collection's state at a point in time. Archived documents are rehydrated exactly - `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp, using the mutation pipeline for locks, dirty tracking and saving without regenerating timestamps or versions.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -1522,9 +1522,14 @@ Each entry: `{ _id, op, collection, docId, doc, prev?, timestamp, session? }`
 
 Replays log entries to rebuild the collection's state at the given point in time. With `{ _id }`, restores only a single document.
 
-Archived documents are rehydrated exactly: `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp. The restore path bypasses the mutation pipeline (plugins, events, validation, FIFO cap, changelog-of-restore) because archived state was already valid when captured.
+Archived documents are rehydrated exactly: `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp. Historical replay uses the mutation pipeline for transaction locks, dirty tracking and saving. It skips mutation hooks, schema transformations, FIFO cap enforcement and changelog recording. Current unique and compound-index constraints are checked before changing data; restoring historical values can reject if they conflict with current indexes.
 
-Restored state is automatically persisted to disk after both single-document and full-collection restore paths.
+Both entry points, `db.restore()` and `db.changelog().restore()`, reject replay into a transaction-locked collection with `ERR_SKALEX_TX_COLLECTION_LOCKED`. The lock is checked after reading history and before changing data. Restoring an unlocked collection remains an independent operation even while another collection has an active transaction.
+
+Restored state is saved regardless of `autoSave`. Watch events follow a successful save: single-document replay emits its delete/update/insert transition; whole-collection replay emits deletes followed by inserts. A save failure rejects without restore events; the restored state remains in memory and dirty for a later save retry. This is not a promise of disk rollback or crash recovery.
+
+`collection.restore()` is a different operation: it undoes soft deletion through the normal mutation pipeline.
+
 
 **Returns:** `Promise<void>`
 

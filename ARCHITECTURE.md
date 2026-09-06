@@ -397,6 +397,10 @@ ensureConnected
   -> afterPlugin hook
 ```
 
+### Historical replay
+
+Historical rehydration calls `MutationPipeline.execute()` with `replay: true`, explicit saving and transition-event emission. It preserves archived fields and skips mutation hooks, schema transformations, caps and changelog recording. Replay validates current index candidates before synchronous mutation, and checks transaction locks after asynchronous history reads. Transition events run after saving; a save failure leaves restored memory dirty without emitting those events. This does not resolve cross-path persistence ordering or partial-write recovery.
+
 ### Transaction awareness
 
 Transaction-scoped Collection instances share the registry's store but carry their own `_transaction` context. Ordinary cached instances never inherit ownership. The pipeline checks explicit owner liveness and rechecks bare-write locks immediately before mutation, including after asynchronous preparation.

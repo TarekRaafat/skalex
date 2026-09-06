@@ -1266,100 +1266,85 @@ class Collection {
   // ─── Rehydrate (changelog restore) ───────────────────────────────────────
 
   /**
-   * Replace the entire collection state with the given archived documents.
-   * Used by `ChangeLog.restore()` to replay historical state faithfully:
-   * `_id`, `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector`
-   * are preserved exactly as archived. Plugins, changelog logging,
-   * validation, schema checks, and FIFO cap enforcement are bypassed
-   * because the archived state was already valid when it was captured.
-   *
-   * Watch events ARE emitted so external observers (search indexes, caches,
-   * reactive UIs) stay in sync with the collection's new state. The set of
-   * events mirrors what a naive `deleteMany({})` + per-doc `insertOne`
-   * implementation would emit: one `delete` per pre-restore document, then
-   * one `insert` per restored document. Plugin hooks are intentionally NOT
-   * fired - their contract assumes fresh user-initiated writes, not
-   * historical replay.
-   *
-   * Not public API - invoked only from `ChangeLog.restore()`.
-   *
-   * @param {object[]} docs - Archived documents in their final-state form.
+   * Restore archived documents through the mutation pipeline. Preserve system
+   * fields without schema coercion, embedding, hooks or capacity enforcement.
+   * Index candidates are checked before mutation; dirty tracking, transaction
+   * locks and saving remain active. Emit deletes then inserts after saving.
+   * @param {object[]} docs - Archived final-state documents.
+   * @returns {Promise<void>}
    */
-  _rehydrateAll(docs) {
-    // Snapshot old docs for event emission before state is replaced.
-    const previous = this._ds.data.slice();
-    const replacement = docs.map(d => ({ ...d }));
-    // `replaceAll` swaps the data array and rebuilds the primary _id index.
-    this._ds.replaceAll(replacement);
-    if (this._fieldIndex) this._fieldIndex.buildFromData(this._ds.data);
-    this._ctx.persistence.markDirty(this._ctx.collections, this.name);
-
-    // Emit per-doc events so watch listeners observe the replacement.
-    for (const doc of previous) {
-      this._ctx.emitEvent(this.name, {
-        op: Ops.DELETE,
-        collection: this.name,
-        doc: stripVector(doc),
-      });
-    }
-    for (const doc of replacement) {
-      this._ctx.emitEvent(this.name, {
-        op: Ops.INSERT,
-        collection: this.name,
-        doc: stripVector(doc),
-      });
-    }
+  async _rehydrateAll(docs) {
+    await this._pipeline.execute({
+      op: Ops.RESTORE,
+      save: true,
+      replay: true,
+      mutate: assertTxAlive => {
+        const previous = this._ds.data.slice();
+        const replacement = structuredClone(docs);
+        if (this._fieldIndex) {
+          this._fieldIndex.assertUniqueBatch(replacement, { replacing: true });
+        }
+        assertTxAlive();
+        this._ds.replaceAll(replacement);
+        if (this._fieldIndex) this._fieldIndex.buildFromData(replacement);
+        return {
+          docs: replacement,
+          emitEvents: () => {
+            for (const doc of previous) {
+              this._ctx.emitEvent(this.name, { op: Ops.DELETE, collection: this.name, doc: stripVector(doc) });
+            }
+            for (const doc of replacement) {
+              this._ctx.emitEvent(this.name, { op: Ops.INSERT, collection: this.name, doc: stripVector(doc) });
+            }
+          },
+        };
+      },
+    });
   }
 
   /**
-   * Replace (or remove) a single document with an archived state. Used for
-   * per-document `ChangeLog.restore()` so timestamps and other system
-   * fields come back exactly as they were archived.
-   *
-   * Emits a watch event for the observed transition (delete / update /
-   * insert depending on whether the document existed before and after).
-   * Plugin hooks are intentionally NOT fired - see `_rehydrateAll`.
-   *
-   * @param {string} id - Document _id to restore.
-   * @param {object|null} archived - Archived doc snapshot, or null when the
-   *   document should not exist at the restored timestamp.
+   * Restore one archived document through the same guarded save lifecycle.
+   * Preserve archived fields exactly; emit the observed delete/update/insert
+   * transition after saving. Do not record replay in the changelog.
+   * @param {string} id - Document ID.
+   * @param {object|null} archived - Historical document, or null for deletion.
+   * @returns {Promise<void>}
    */
-  _rehydrateOne(id, archived) {
-    const existing = this._ds.getById(id);
-    if (archived == null) {
-      if (!existing) return;
-      const removedSnapshot = stripVector(existing);
-      const idx = this._ds.indexOf(existing);
-      if (idx !== -1) {
-        this._removeFromIndex(existing);
-        this._ds.spliceAt(idx);
-      }
-      this._ctx.persistence.markDirty(this._ctx.collections, this.name);
-      this._ctx.emitEvent(this.name, {
-        op: Ops.DELETE,
-        collection: this.name,
-        doc: removedSnapshot,
-      });
-      return;
-    }
-    const clone = { ...archived };
-    let op;
-    if (existing) {
-      const idx = this._ds.indexOf(existing);
-      if (idx === -1) return;
-      this._ds.replaceAt(idx, clone);
-      this._updateInIndex(existing, clone);
-      op = Ops.UPDATE;
-    } else {
-      this._ds.push(clone);
-      this._addToIndex(clone);
-      op = Ops.INSERT;
-    }
-    this._ctx.persistence.markDirty(this._ctx.collections, this.name);
-    this._ctx.emitEvent(this.name, {
-      op,
-      collection: this.name,
-      doc: stripVector(clone),
+  async _rehydrateOne(id, archived) {
+    await this._pipeline.execute({
+      op: Ops.RESTORE,
+      save: true,
+      replay: true,
+      mutate: assertTxAlive => {
+        const existing = this._ds.getById(id);
+        let doc, op;
+        assertTxAlive();
+        if (archived == null) {
+          if (!existing) return { docs: [] };
+          const idx = this._ds.indexOf(existing);
+          if (idx === -1) return { docs: [] };
+          this._removeFromIndex(existing);
+          this._ds.spliceAt(idx);
+          doc = existing;
+          op = Ops.DELETE;
+        } else {
+          doc = structuredClone(archived);
+          if (existing) {
+            this._commitUpdatedDoc(existing, doc);
+            op = Ops.UPDATE;
+          } else {
+            this._addToIndex(doc);
+            this._ds.push(doc);
+            op = Ops.INSERT;
+          }
+        }
+        return {
+          docs: [doc],
+          emitEvents: () => {
+            this._ctx.emitEvent(this.name, { op, collection: this.name, doc: stripVector(doc) });
+          },
+        };
+      },
     });
   }
 
