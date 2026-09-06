@@ -197,6 +197,11 @@ async function run() {
 
   // ─── Transactions ──────────────────────────────────────────────────────────
 
+  await section("transaction ownership", async () => {
+    const { default: checkOwnership } = await import("./transaction-ownership.js");
+    await checkOwnership(db, assert);
+  });
+
   await section("transaction - commit and rollback", async () => {
     const col = db.useCollection("accounts");
     await col.insertMany([

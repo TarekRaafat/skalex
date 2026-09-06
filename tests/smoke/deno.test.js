@@ -143,6 +143,11 @@ async function run() {
 
   // ─── Transaction ───────────────────────────────────────────────────────────
 
+  await section("transaction ownership", async () => {
+    const { default: checkOwnership } = await import("./transaction-ownership.js");
+    await checkOwnership(db, assert);
+  });
+
   await section("transaction", async () => {
     const col = db.useCollection("balances");
     await col.insertMany([{ name: "A", bal: 100 }, { name: "B", bal: 50 }]);

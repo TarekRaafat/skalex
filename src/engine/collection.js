@@ -144,12 +144,6 @@ class Collection {
 
     this._setStore(collectionData);
     this._pipeline = new MutationPipeline(this);
-
-    /** @type {number|null} If created inside a transaction, the tx ID. */
-    this._createdInTxId = this._ctx.txManager.context?.id ?? null;
-
-    /** @type {number|null} Set by the tx proxy when obtained via tx.useCollection(). */
-    this._activeTxId = null;
   }
 
   /** Update the backing store and re-wrap the DataStore. Called by loadData sync. */
@@ -1137,28 +1131,29 @@ class Collection {
 
   /**
    * Lazy snapshot for transactions: snapshot this collection on first write.
-   * Only participates if the Collection was obtained through the transaction
-   * proxy (_activeTxId matches the active context). Non-transactional writes
-   * (Collection obtained via real db) skip the snapshot path entirely.
+   * Only participates for a Collection carrying explicit transaction ownership.
+   * Ordinary Collection handles skip the snapshot path entirely.
    */
   _txSnapshotIfNeeded() {
     const txm = this._ctx.txManager;
-    if (!txm.active) return;
-    if (this._activeTxId !== txm.context?.id) return;
+    if (!this._ctx._transaction) return;
+    txm._assertOwner(this._ctx._transaction);
     txm.snapshotIfNeeded(this.name, this._store, (col) => this._ctx.snapshotCollection(col));
   }
 
   /**
    * Save if `save` is explicitly true, or if database-level autoSave is on.
    * Pass `save: false` to opt out even when autoSave is enabled.
-   * Suppressed for transactional writes (_activeTxId matches active tx) -
+   * Suppressed for writes carrying an explicit transaction context -
    * the transaction is responsible for the single flush after fn() resolves.
    * Non-transactional writes save immediately even during an active transaction.
    * @param {boolean|undefined} save
    */
   async _saveIfNeeded(save) {
-    const txm = this._ctx.txManager;
-    if (txm.active && this._activeTxId === txm.context?.id) return;
+    if (this._ctx._transaction) {
+      this._ctx.txManager._assertOwner(this._ctx._transaction);
+      return;
+    }
     if (save ?? this._ctx.autoSave) await this._ctx.saveCollection(this.name);
   }
 

@@ -288,7 +288,7 @@ Even with automatic rollback, author migrations idempotently (`upsert`, check-be
 
 #### `transaction(fn, options?)`
 
-Runs `fn` inside a transaction. On success, all changes are flushed to storage. On error, all in-memory state is rolled back to the pre-transaction snapshot - including deletion of any collections that were created inside `fn`.
+Runs `fn` with transaction-scoped collection handles. On success, owned writes are flushed to storage. On error before commit, owned writes roll back and collections created through the transaction are removed. Independently created collections and their writes are preserved.
 
 **Returns:** `Promise<any>`, the return value of `fn`
 
@@ -315,9 +315,13 @@ await db.transaction(async (tx) => { /* ... */ }, { timeout: 5000 });
 await db.transaction(async (tx) => { /* ... */ }, { deferredEffectErrors: "throw" });
 ```
 
-**Isolation:** Skalex provides read-committed isolation, not snapshot isolation. Snapshots are lazy (copy-on-first-write): only collections that receive a write inside the transaction are snapshotted. Reads on un-written collections see the latest committed state, including mutations from outside the transaction. To get a stable view of a collection, write to it first to trigger a snapshot.
+**Ownership and lifetime:** Use `tx.useCollection()` and await every operation inside the callback. Handles and captured methods expire when the callback finishes or aborts; later calls throw `ERR_SKALEX_TX_STALE_PROXY` or `ERR_SKALEX_TX_ABORTED`. Reacquire ordinary handles from the original database for later work. `tx.createCollection()` can create a new definition, but replacing an existing definition rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`.
 
-**Collection locking:** Collections that receive a write inside a transaction are locked for the duration of that transaction. Any non-transactional write to a locked collection throws `TransactionError` with `ERR_SKALEX_TX_COLLECTION_LOCKED`. This prevents outside writes from being silently clobbered by a rollback.
+**Visibility:** Snapshots support rollback, not isolated reads. Reads observe live in-memory data, including uncommitted transactional writes and independent writes to unlocked collections.
+
+**Collection locking:** The first owned write locks an existing collection until persistence succeeds or rollback completes. Collections created through the transaction are locked immediately. Bare writes reject with `ERR_SKALEX_TX_COLLECTION_LOCKED`, including writes that resume after an asynchronous hook. Reads remain available.
+
+**Effects and timeout:** Only owned events, after-hooks, changelog entries and write statistics are deferred until commit. Independent writes execute their own effects immediately. Locks release before deferred hooks run, so hooks can write through ordinary database handles. The timeout bounds the callback, not persistence or after-commit hooks. External effects performed by before-hooks are not rolled back.
 
 **Nested transactions** are rejected at runtime with `TransactionError` `ERR_SKALEX_TX_NESTED`.
 

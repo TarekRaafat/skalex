@@ -596,29 +596,25 @@ class Skalex {
   // ─── Transaction helpers ─────────────────────────────────────────────────
 
   /**
-   * Emit a collection event, or defer for after-commit if inside a transaction.
+   * Emit a collection event. Owned writes defer through their scoped context.
    * @param {string} collectionName
    * @param {object} data
    */
   _emitEvent(collectionName, data) {
-    if (!this._txManager.defer(() => this._eventBus.emit(collectionName, data))) {
-      this._eventBus.emit(collectionName, data);
-    }
+    this._eventBus.emit(collectionName, data);
   }
 
   /**
-   * Run an after-* plugin hook, or defer for after-commit if inside a transaction.
+   * Run an after-* plugin hook. Owned writes defer through their scoped context.
    * @param {string} hook
    * @param {object} data
    */
   async _runAfterHook(hook, data) {
-    if (!this._txManager.defer(() => this._plugins.run(hook, data))) {
-      await this._plugins.run(hook, data);
-    }
+    await this._plugins.run(hook, data);
   }
 
   /**
-   * Append a changelog entry, or defer for after-commit if inside a transaction.
+   * Append a changelog entry. Owned writes defer through their scoped context.
    * @param {string} op
    * @param {string} collectionName
    * @param {object} doc
@@ -626,9 +622,7 @@ class Skalex {
    * @param {string|null} session
    */
   async _logChange(op, collectionName, doc, prev, session) {
-    if (!this._txManager.defer(() => this._changeLog.log(op, collectionName, doc, prev, session))) {
-      await this._changeLog.log(op, collectionName, doc, prev, session);
-    }
+    await this._changeLog.log(op, collectionName, doc, prev, session);
   }
 
   /**
@@ -663,6 +657,7 @@ class Skalex {
     // canonical construction path.
     if (!this.collections["_meta"]) {
       this._registry.createStore("_meta");
+      this._txManager.context.createdCollections.set("_meta", this.collections["_meta"]);
     }
     const metaStore = this.collections["_meta"];
     // Snapshot _meta into the active transaction. This adds `_meta` to
@@ -682,12 +677,11 @@ class Skalex {
   /**
    * Run a callback inside a transaction.
    *
-   * Isolation: Skalex provides **read-committed** isolation, not snapshot
-   * isolation. Only collections that receive a write are snapshotted
-   * (lazily, on first mutation). Reads on untouched collections see the
-   * latest committed state, including mutations from outside the transaction.
-   * To guarantee a stable view of a collection, perform a write on it first
-   * (or a read-then-write) to trigger a snapshot.
+   * Ownership: use the callback's collection handles and await each operation
+   * inside it. Handles and captured methods expire when the callback ends.
+   * Writes lock collections and take lazy rollback snapshots; ordinary reads
+   * still observe live data, including uncommitted transactional changes.
+   * Independently created collections and writes remain outside rollback.
    *
    * Nested transactions: transactions are serialised via a promise-chain lock.
    * Calling `transaction()` inside another transaction's callback will throw
@@ -696,10 +690,12 @@ class Skalex {
    * Timeout: the timeout is cooperative, not preemptive. When it fires the
    * outer promise rejects, but any in-flight mutation continues until it
    * next reaches an `assertTxAlive()` check. Deferred side effects for the
-   * aborted transaction are discarded.
+   * aborted transaction are discarded. Timeout bounds fn(), not persistence
+   * or after-commit hooks.
    *
    * Side effects (watch() callbacks, after-* plugin hooks, changelog entries)
-   * are deferred during fn() and flushed after successful commit.
+   * from owned writes are deferred during fn() and flushed after successful
+   * commit. Independent writes execute their effects immediately.
    *
    * @param {(db: Skalex) => Promise<any>} fn
    * @param {object} [opts]

@@ -6,21 +6,8 @@
  */
 import { TransactionError, ValidationError } from "./errors.js";
 
-/** Default window of aborted transaction IDs retained for stale-continuation detection. */
+/** Default window of aborted transaction IDs retained for diagnostics. */
 const DEFAULT_ABORTED_ID_WINDOW = 1000;
-
-/**
- * Matches Collection mutation method names by convention. Any public method
- * whose name starts with `insert`, `update`, `upsert`, `delete`, or equals
- * `restore` is treated as a mutation by the transaction proxy and wrapped
- * with the depth counter. Adding a new mutation method (e.g. `patchMany`,
- * `deleteBy`, `upsertWhere`) only requires following the convention - no
- * hand-maintained list to keep in sync.
- *
- * Private methods (prefixed with `_`) and reads (find, findOne, count,
- * etc.) are excluded.
- */
-export const _MUTATION_METHOD_PATTERN = /^(insert|update|upsert|delete)($|[A-Z])|^restore$/;
 
 /**
  * Valid values for the `deferredEffectErrors` option. Exported so the
@@ -51,15 +38,14 @@ class TransactionManager {
   /**
    * @param {object} [opts]
    * @param {number} [opts.abortedIdWindow=1000] - Max number of aborted transaction
-   *   IDs retained for stale-continuation detection. Because transactions are
-   *   serialised via a promise-chain lock, no live transaction can reference an
-   *   ID more than this many steps behind the counter, so older IDs are pruned.
+   *   IDs retained for diagnostics. Handle liveness uses the retained context,
+   *   so pruning this bounded history cannot admit a stale continuation.
    */
   constructor({ abortedIdWindow = DEFAULT_ABORTED_ID_WINDOW } = {}) {
     this._txLock = Promise.resolve();
     /** @type {TransactionContext|null} Current active transaction context. */
     this._ctx = null;
-    /** @type {Set<number>} IDs of aborted transactions - stale continuations checked against this. */
+    /** @type {Set<number>} Recent aborted transaction IDs, retained for diagnostics. */
     this._abortedIds = new Set();
     /** @type {number} Monotonic per-instance transaction ID counter. */
     this._idCounter = 0;
@@ -101,14 +87,13 @@ class TransactionManager {
     const execute = async () => {
       await db._ensureConnected();
 
-      // Track which collections existed before the transaction
-      const preExisting = new Set(Object.keys(db.collections));
-
       const ctx = {
         id: ++this._idCounter,
         startedAt: Date.now(),
         aborted: false,
-        preExisting,
+        closed: false,
+        committed: false,
+        createdCollections: new Map(),
         touchedCollections: new Set(),
         snapshots: new Map(),
         deferredEffects: [],
@@ -131,67 +116,58 @@ class TransactionManager {
         })
         : null;
 
-      // Proxy to intercept direct collections access and brand with txId.
-      // useCollection calls through the proxy stamp the returned Collection
-      // with _activeTxId so pipeline/collection can distinguish transactional
-      // from non-transactional writes. Liveness check prevents stale proxy use.
-      const self = this;
+      // Transaction handles share stores, but never share ownership with the
+      // ordinary cached Collection. Context travels with every owned operation.
+      const handles = new Map();
+      const base = db._collectionContext;
+      const scoped = Object.assign(Object.create(base), {
+        _transaction: ctx,
+        getCollection: name => getCollection(name),
+      });
+      for (const method of ["emitEvent", "runAfterHook", "logChange"]) {
+        scoped[method] = (...args) => { this.defer(() => base[method](...args), ctx); };
+      }
+      const getCollection = (name, options, create = false) => {
+        this._assertOwner(ctx);
+        const existing = db.collections[name];
+        if (create && existing) {
+          throw new TransactionError(
+            "ERR_SKALEX_TX_DIRECT_ACCESS",
+            "Replacing a collection definition inside transaction() is not supported. Use useCollection() to mutate its documents."
+          );
+        }
+        const col = create ? db.createCollection(name, options) : db.useCollection(name);
+        if (!existing) ctx.createdCollections.set(name, col._store);
+        if (!handles.has(name)) {
+          const owned = new db._registry._CollectionClass(col._store, scoped);
+          handles.set(name, new Proxy(owned, {
+            get: (target, prop) => {
+              this._assertOwner(ctx);
+              const value = Reflect.get(target, prop);
+              return typeof value === "function" ? (...args) => {
+                this._assertOwner(ctx);
+                return value.apply(target, args);
+              } : value;
+            },
+          }));
+        }
+        return handles.get(name);
+      };
       const proxy = new Proxy(db, {
-        get(target, prop) {
+        get: (target, prop) => {
+          this._assertOwner(ctx);
           if (prop === "_txId") return ctx.id;
-          if (ctx !== self._ctx) {
-            throw new TransactionError(
-              "ERR_SKALEX_TX_STALE_PROXY",
-              `Transaction ${ctx.id} has ended. This proxy is no longer usable.`
-            );
-          }
           if (prop === "collections") throw new TransactionError(
             "ERR_SKALEX_TX_DIRECT_ACCESS",
             "Direct access to db.collections inside transaction() is not covered by rollback. Use the collection API (db.useCollection) instead."
           );
-          if (prop === "useCollection") {
-            return (name) => {
-              const col = target.useCollection(name);
-              col._activeTxId = ctx.id;
-              // Return a Proxy of the Collection that marks each method
-              // call as originating from the tx proxy. This lets the
-              // pipeline distinguish tx writes from non-tx writes on the
-              // same shared Collection instance.
-              // Wrap the Collection in a Proxy that increments a depth
-              // counter on mutation methods only. The pipeline checks this
-              // counter to distinguish tx-proxy writes from non-tx writes
-              // on the same shared Collection singleton.
-              //
-              // Only mutation methods are wrapped because reads (find,
-              // findOne, count, etc.) do not go through the pipeline and
-              // should not elevate the counter. If reads were wrapped, a
-              // plugin-triggered non-tx write during a tx-proxy find()
-              // would bypass the collection lock.
-              return new Proxy(col, {
-                get(colTarget, colProp) {
-                  const v = Reflect.get(colTarget, colProp);
-                  if (typeof v !== "function") return v;
-                  if (typeof colProp !== "string" || !_MUTATION_METHOD_PATTERN.test(colProp)) return v.bind(colTarget);
-                  return function (...args) {
-                    colTarget._txProxyCallDepth = (colTarget._txProxyCallDepth || 0) + 1;
-                    try {
-                      const result = v.apply(colTarget, args);
-                      if (result && typeof result.then === "function") {
-                        return result.finally(() => { colTarget._txProxyCallDepth--; });
-                      }
-                      colTarget._txProxyCallDepth--;
-                      return result;
-                    } catch (e) {
-                      colTarget._txProxyCallDepth--;
-                      throw e;
-                    }
-                  };
-                },
-              });
-            };
-          }
+          if (prop === "useCollection") return name => getCollection(name);
+          if (prop === "createCollection") return (name, options) => getCollection(name, options, true);
           const value = Reflect.get(target, prop);
-          return typeof value === "function" ? value.bind(target) : value;
+          return typeof value === "function" ? (...args) => {
+            this._assertOwner(ctx);
+            return value.apply(target, args);
+          } : value;
         },
       });
 
@@ -211,12 +187,18 @@ class TransactionManager {
           throw new TransactionError("ERR_SKALEX_TX_ABORTED", `Transaction ${ctx.id} was aborted`);
         }
 
+        // End callback ownership before persistence begins. Late continuations
+        // cannot add mutations to a commit already in progress.
+        ctx.closed = true;
+        if (timer) clearTimeout(timer);
+
         // Commit: persist only touched collections
         const touched = [...ctx.touchedCollections];
         if (touched.length > 0) {
           await db._persistence.saveAtomic(db.collections, touched);
         }
         committed = true;
+        ctx.committed = true;
 
         // Flush deferred side effects after successful commit. All effects
         // run regardless of individual failures; the configured error
@@ -234,17 +216,18 @@ class TransactionManager {
           // Shouldn't happen - all post-commit work is outside this try.
           throw error;
         }
-        // Rollback: restore snapshotted pre-existing collections
-        for (const [name, snap] of ctx.snapshots) {
-          if (ctx.preExisting.has(name)) {
+        ctx.aborted = true;
+        // Restore only owned writes, in reverse first-touch order.
+        for (const [name, snap] of [...ctx.snapshots].reverse()) {
+          if (!ctx.createdCollections.has(name)) {
             db._applySnapshot(name, snap);
             // Restore the dirty flag to its pre-transaction state
             if (db.collections[name]) db.collections[name]._dirty = snap._dirty;
           }
         }
-        // Remove ALL collections that didn't exist before the transaction
-        for (const name in db.collections) {
-          if (!ctx.preExisting.has(name)) {
+        // Independent creation belongs to its caller, even during a rollback.
+        for (const [name, store] of ctx.createdCollections) {
+          if (db.collections[name] === store) {
             delete db.collections[name];
             delete db._collectionInstances[name];
             if (db._registry?._statsCache) db._registry._statsCache.delete(name);
@@ -259,19 +242,11 @@ class TransactionManager {
         throw error;
       } finally {
         if (timer) clearTimeout(timer);
-        // Always clear context. Stale async continuations are caught by
-        // assertNotAborted() via _abortedIds, not by leaving _ctx set.
+        // Handles retain their ended context even after diagnostic IDs expire.
+        ctx.closed = true;
         if (ctx.aborted) this._abortedIds.add(ctx.id);
         this._ctx = null;
         this._pruneAbortedIds();
-
-        // Clear tx stamps on any cached Collection instances so they are
-        // not permanently poisoned after the transaction ends.
-        for (const name in db._collectionInstances) {
-          const inst = db._collectionInstances[name];
-          if (inst._createdInTxId === ctx.id) inst._createdInTxId = null;
-          if (inst._activeTxId === ctx.id) inst._activeTxId = null;
-        }
       }
 
       // Post-commit: handle deferred effect errors according to strategy.
@@ -334,7 +309,8 @@ class TransactionManager {
    */
   isCollectionLocked(name) {
     const ctx = this._ctx;
-    return ctx !== null && !ctx.aborted && ctx.touchedCollections.has(name);
+    return ctx !== null && !ctx.aborted && !ctx.committed &&
+      (ctx.touchedCollections.has(name) || ctx.createdCollections.has(name));
   }
 
   /**
@@ -357,15 +333,24 @@ class TransactionManager {
     if (ctx.aborted) {
       throw new TransactionError(
         "ERR_SKALEX_TX_ABORTED",
-        `Transaction ${ctx.id} was aborted. No further mutations allowed.`
+        `Transaction ${ctx.id} has ended because it was aborted. No further mutations allowed.`
+      );
+    }
+  }
+
+  /** Reject operations whose explicit transaction owner has ended. */
+  _assertOwner(ctx) {
+    this._assertCtxNotAborted(ctx);
+    if (ctx !== this._ctx || ctx.closed) {
+      throw new TransactionError(
+        "ERR_SKALEX_TX_STALE_PROXY",
+        `Transaction ${ctx.id} has ended. This handle is no longer usable.`
       );
     }
   }
 
   /**
-   * Prune aborted transaction IDs that can no longer produce stale continuations.
-   * Transactions are serialised, so any ID below `counter - abortedIdWindow`
-   * is unreachable from the currently live transaction.
+   * Bound diagnostic history independently of handle lifetime checks.
    */
   _pruneAbortedIds() {
     if (this._abortedIds.size === 0) return;
@@ -378,13 +363,15 @@ class TransactionManager {
 
   /**
    * Queue a side effect for after-commit execution.
-   * If not in a transaction, executes immediately.
+   * Returns false without an owner; the caller then executes immediately.
    * @param {Function} effect - async () => void
-   * @returns {boolean} true if deferred, false if executed immediately
+   * @param {object} [ctx] - Explicit transaction owner.
+   * @returns {boolean} true if deferred, false if the caller should execute
    */
-  defer(effect) {
-    if (this._ctx) {
-      this._ctx.deferredEffects.push(effect);
+  defer(effect, ctx) {
+    if (ctx) {
+      this._assertOwner(ctx);
+      ctx.deferredEffects.push(effect);
       return true;
     }
     return false;

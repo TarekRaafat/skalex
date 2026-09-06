@@ -11,6 +11,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, primary-ID races, and document/index consistency alongside the shared mutation-pipeline refactors. No new public APIs or serialized payload format changes. Temporary files use a reserved naming scheme; ambiguous legacy files are preserved for inspection.
 
+### Breaking Changes
+
+- **Transaction handle lifetime** - transaction collection handles and captured methods expire when the callback finishes or aborts. Await owned operations inside the callback and reacquire ordinary handles through the original database afterward. Transaction-created collections are locked immediately. Replacing an existing collection definition through the transaction proxy rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`; define collections before starting the transaction.
+
 ### Internal
 
 - **`MutationPipeline._enterPipeline()`** - the pipeline-entry sequence shared by `execute()` and `executeBatch()` (connection check, tx-lock guard, `_txSnapshotIfNeeded`, transaction-affiliation detection, and the eager abort check) is extracted into one private helper. Both methods now begin with a single `const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();`, removing ~50 lines of byte-identical duplication so lock, snapshot, and abort semantics have exactly one definition. Pure refactor with no behavior change; `insertOne` throughput measured neutral (no hot-path regression).
@@ -19,6 +23,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 - **Documentation consistency sweep** - corrected stale in-code references that misdirect the next reader: the deprecated-accessor `@deprecated` JSDoc in `src/index.js` now says "Removed in alpha.10" (the actual removal release per the plan) instead of "beta.1"; the D1 `writeAll` cross-chunk-atomicity comment is reworded as a standing known-limitation pending the Cloudflare D1 Sessions API GA rather than a reference to a closed internal tracker.
 
 ### Fixed
+
+- **Transaction ownership** - scoped collection contexts replace shared transaction stamps and call-depth flags. Bare writes cannot borrow ownership while a transaction hook awaits, and locks are rechecked after asynchronous preparation. Rollback preserves independently created collections and their effects, while owned effects run after persistence succeeds. Locks release before after-hook cascades.
 
 - **Failed upsert batch bookkeeping** - `upsertMany()` preserves earlier completed items and finishes their normal pipeline effects before rethrowing a later item error. Saving honors `save` / `autoSave`, after-hooks and per-document changelog/events describe completed items, and capacity and session accounting remain active. Uncaught transaction errors still roll back; catching a batch error inside the callback permits the prefix to commit. A second finalization error reports both failures through `ERR_SKALEX_MUTATION_FINALIZE`.
 - **Document/index consistency** - batch updates validate all targets and index values before changing state, and insert batches validate index candidates once before committing. Updates release old batch unique values together. Invalid compound-index values cannot leave ghost entries or partially replace stored documents. Hook-deleted update targets reject the batch before other targets change.
@@ -30,7 +36,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 979 tests pass, including new filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions.
+- All 986 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

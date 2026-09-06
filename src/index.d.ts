@@ -740,7 +740,13 @@ export declare class Skalex {
   // Namespace
   namespace(id: string): Skalex;
 
-  // Transaction
+  /**
+   * Run owned collection writes with lazy snapshots and rollback.
+   * Use the callback's collection handles and await every operation inside it.
+   * Handles and captured methods expire when the callback ends; reacquire from
+   * the original database for later work. Independent writes keep their effects.
+   * Timeout bounds the callback, not persistence or after-commit hooks.
+   */
   transaction<R = unknown>(fn: (db: Skalex) => Promise<R>, options?: TransactionOptions): Promise<R>;
 
   // Seeding

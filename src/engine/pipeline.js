@@ -38,57 +38,23 @@ class MutationPipeline {
 
     await ctx.ensureConnected();
 
-    // Block non-transactional writes to collections locked by an active tx.
-    // Must run BEFORE _txSnapshotIfNeeded() because the snapshot would add
-    // this collection to touchedCollections even for a non-tx write (since
-    // _activeTxId is set on the shared Collection singleton).
-    // The tx proxy wraps each method call to increment _txProxyCallDepth for
-    // the duration of the call (depth counter, not boolean, to handle
-    // concurrent unawaited calls on the same Collection instance). Reads are
-    // unaffected (they don't go through the pipeline).
     const txm = ctx.txManager;
-    if (!(this._col._txProxyCallDepth > 0) && txm.isCollectionLocked(this._col.name)) {
-      throw new TransactionError(
-        "ERR_SKALEX_TX_COLLECTION_LOCKED",
-        `Collection "${this._col.name}" is locked by an active transaction. ` +
-        `Non-transactional writes are blocked until the transaction commits or rolls back.`
-      );
-    }
-
-    this._col._txSnapshotIfNeeded();
-
-    // Determine if this mutation is part of the active transaction.
-    // Collections obtained through the tx proxy have _activeTxId stamped.
-    // Only those writes participate in snapshot/rollback.
-    const isTxWrite = txm.active && this._col._activeTxId === txm.context?.id;
-
-    // Detect stale continuations from aborted transactions.
-    // Two sources of tx affinity:
-    //   1. entryTxId: the tx active when this call started
-    //   2. _createdInTxId: the tx active when this Collection instance was created
-    // Either being in the aborted set means this mutation must be rejected.
-    const entryTxId = isTxWrite ? txm.context.id : null;
-    const collTxId = this._col._createdInTxId;
-
-    /** Guard callable passed into mutate() - must be called immediately
-     *  before the first in-memory state change (push to _data, index.set, etc.). */
+    const owner = ctx._transaction;
+    const isTxWrite = !!owner;
+    // Recheck after async preparation as well as on entry: a bare write can
+    // begin before a transaction acquires the collection lock.
     const assertTxAlive = () => {
-      if (entryTxId !== null && txm._abortedIds.has(entryTxId)) {
+      if (owner) txm._assertOwner(owner);
+      else if (txm.isCollectionLocked(this._col.name)) {
         throw new TransactionError(
-          "ERR_SKALEX_TX_ABORTED",
-          `Transaction ${entryTxId} was aborted. No further mutations allowed.`
-        );
-      }
-      if (collTxId !== null && txm._abortedIds.has(collTxId)) {
-        throw new TransactionError(
-          "ERR_SKALEX_TX_ABORTED",
-          `Transaction ${collTxId} was aborted. Collection obtained inside that transaction cannot be used for further mutations.`
+          "ERR_SKALEX_TX_COLLECTION_LOCKED",
+          `Collection "${this._col.name}" is locked by an active transaction. ` +
+          "Non-transactional writes are blocked until the transaction commits or rolls back."
         );
       }
     };
-
-    // Eager check before any work (only for tx-affiliated writes)
-    if (isTxWrite || collTxId !== null) assertTxAlive();
+    assertTxAlive();
+    this._col._txSnapshotIfNeeded();
 
     return { ctx, txm, isTxWrite, assertTxAlive };
   }
@@ -125,6 +91,7 @@ class MutationPipeline {
     if (beforeHook) await ctx.plugins.run(beforeHook, hookPayload);
 
     const { docs, prevDocs = [] } = await mutate(assertTxAlive);
+    if (isTxWrite) assertTxAlive();
 
     // Mark collection dirty so saveDirty() knows it needs persistence
     ctx.persistence.markDirty(ctx.collections, this._col.name);
@@ -140,7 +107,7 @@ class MutationPipeline {
 
     // Session stats - deferred for tx writes so rolled-back writes don't count.
     // Non-tx writes record immediately even during an active transaction.
-    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session))) {
+    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session), ctx._transaction)) {
       ctx.sessionStats.recordWrite(session);
     }
 
@@ -199,6 +166,7 @@ class MutationPipeline {
     const { ctx, txm, isTxWrite, assertTxAlive } = await this._enterPipeline();
 
     const result = await mutateBatch(assertTxAlive);
+    if (isTxWrite) assertTxAlive();
     const docs = Array.isArray(result?.docs) ? result.docs : [];
     const prevDocs = Array.isArray(result?.prevDocs) ? result.prevDocs : [];
     const ops = Array.isArray(result?.ops) ? result.ops : [];
@@ -216,7 +184,7 @@ class MutationPipeline {
       }
     }
 
-    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session))) {
+    if (!isTxWrite || !txm.defer(() => ctx.sessionStats.recordWrite(session), ctx._transaction)) {
       ctx.sessionStats.recordWrite(session);
     }
 

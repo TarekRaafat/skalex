@@ -399,14 +399,9 @@ ensureConnected
 
 ### Transaction awareness
 
-The pipeline checks `_activeTxId` on the Collection instance to determine whether a write is part of the active transaction. Two guards prevent stale mutations:
+Transaction-scoped Collection instances share the registry's store but carry their own `_transaction` context. Ordinary cached instances never inherit ownership. The pipeline checks explicit owner liveness and rechecks bare-write locks immediately before mutation, including after asynchronous preparation.
 
-1. **`entryTxId`**: the transaction ID active when `execute()` was called.
-2. **`_createdInTxId`**: the transaction ID active when the Collection instance was created via the proxy.
-
-If either ID appears in `TransactionManager._abortedIds`, the mutation throws `ERR_SKALEX_TX_ABORTED`.
-
-Side effects (events, after-hooks, changelog) during a transaction are deferred via `txManager.defer()` and flushed only after successful commit.
+Owned effects use `txManager.defer(effect, owner)`; ordinary effects execute immediately. A context remains attached to captured handles after it closes, so lifetime enforcement does not depend on bounded diagnostic ID history.
 
 ---
 
@@ -630,23 +625,23 @@ File: `src/engine/transaction.js`
 ### Lifecycle
 
 1. **Lock**: transactions are serialised via `_txLock` (promise chain). No concurrent transactions.
-2. **Context creation**: allocates a `TransactionContext` with a unique `id`, `snapshots` Map, `touchedCollections` Set, `deferredEffects` array, and `aborted` flag. Records `preExisting` collection names.
+2. **Context creation**: allocates a `TransactionContext` with a unique `id`, `snapshots` Map, `touchedCollections` Set, `deferredEffects` array, and `aborted` flag. Tracks explicitly owned collection creations in a Map.
 3. **Proxy**: `fn` receives a `Proxy` around the `db` instance, not the raw `db`. The proxy:
-   - Stamps `_activeTxId` on every Collection obtained via `useCollection()`.
+   - Returns scoped Collection handles with explicit ownership and call-time lifetime guards.
    - Blocks direct `db.collections` access (throws `ERR_SKALEX_TX_DIRECT_ACCESS`).
    - Detects stale proxy usage after the transaction ends (throws `ERR_SKALEX_TX_STALE_PROXY`).
 4. **Lazy snapshots**: only collections that receive a write are snapshotted, on first mutation (via `_txSnapshotIfNeeded()` in the pipeline). Uses `structuredClone` for deep copy of the data array. Snapshot includes the `_dirty` flag state.
 5. **Timeout**: if `timeout > 0`, a `setTimeout` races against `fn`. On timeout, `ctx.aborted = true` and the transaction is rolled back.
-6. **Commit**: persists only touched collections via `PersistenceManager.saveAtomic()`. After successful persistence, flushes all deferred side effects (events, after-hooks, changelog entries).
-7. **Rollback**: on error, restores snapshotted collections via `_applySnapshot()` (which rebuilds `_id` index and field indexes from the cloned data). Collections created inside the transaction are deleted. The `_dirty` flag is restored to its pre-transaction state.
+6. **Commit**: persists only touched collections via `PersistenceManager.saveAtomic()`. Callback ownership closes before persistence; locks release after successful persistence, before flushing deferred side effects (events, after-hooks, changelog entries).
+7. **Rollback**: on error, restores snapshotted collections via `_applySnapshot()` (which rebuilds `_id` index and field indexes from the cloned data). Only collections created through the transaction are deleted; independent creation survives. The `_dirty` flag is restored to its pre-transaction state.
 
 ### Deferred side effects
 
-During `fn()`, calls to `_emitEvent()`, `_runAfterHook()`, and `_logChange()` check `txManager.defer()`. If a transaction is active, the effect is pushed to `ctx.deferredEffects` instead of executing immediately. Effects are flushed in order after commit, or discarded on rollback.
+Scoped context callbacks defer owned events, after-hooks and changelog entries. Independent writes retain immediate effects even while another transaction is active. Deferred effects flush after successful persistence, with collection locks released so ordinary after-hook cascades can proceed.
 
 ### Stale continuation detection
 
-When a transaction is aborted (timeout or error), its `id` is added to `_abortedIds`. Any subsequent mutation from a Collection stamped with that `id` (via `_activeTxId` or `_createdInTxId`) throws `ERR_SKALEX_TX_ABORTED`.
+Every transaction handle retains its context. The callback's completion closes that context before commit starts; rollback marks it aborted. Captured methods check lifetime at invocation, and pending mutations recheck before changing data. Aborted IDs are retained only as bounded diagnostic history. Timeout bounds the callback, not persistence or after-commit effects.
 
 ---
 
