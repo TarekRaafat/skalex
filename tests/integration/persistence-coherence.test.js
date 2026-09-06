@@ -436,7 +436,7 @@ describe("FsAdapter  -  rename failure + orphan recovery", () => {
   test("cleanOrphans removes manually planted temp files", async () => {
     const adapter = new FsAdapter({ dir, format: "json" });
     // Plant a fake orphan by hand
-    const orphan = nodePath.join(dir, "foo_abc.tmp.json");
+    const orphan = nodePath.join(dir, ".skalex-12345678-1234-4234-8234-123456789abc.tmp.json");
     await fsp.writeFile(orphan, "partial");
     expect(existsSync(orphan)).toBe(true);
     const removed = await adapter.cleanOrphans();

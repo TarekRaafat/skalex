@@ -25,7 +25,7 @@
  * const server = db.mcp({ transport: 'http', port: 3456 });
  * await server.listen();
  */
-import { TOOL_DEFS, callTool } from "./tools.js";
+import { TOOL_DEFS, callTool, _validateCollection } from "./tools.js";
 import { ok, error, parse, toolResult, toolError, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./protocol.js";
 import HttpTransport from "./transports/http.js";
 import StdioTransport from "./transports/stdio.js";
@@ -159,16 +159,16 @@ class SkalexMCPServer {
       return;
     }
 
-    // Extract collection from args (most tools have one)
-    const collection = args.collection || args.collection_name || null;
-
-    if (!this._hasScope(collection, def.scope)) {
-      this._send(ok(id, toolError(`Access denied: "${name}" requires "${def.scope}" scope on collection "${collection}".`)));
-      return;
-    }
-
     try {
-      const result = await callTool(name, args, this._db, this._predicates);
+      // Authorize the same canonical identifier that the tool executes.
+      // The global collection-list tool has no collection-specific scope.
+      const collection = name === "skalex_collections" ? null : _validateCollection(args.collection);
+      if (!this._hasScope(collection, def.scope)) {
+        this._send(ok(id, toolError(`Access denied: "${name}" requires "${def.scope}" scope on collection "${collection}".`)));
+        return;
+      }
+      const normalizedArgs = collection === null ? args : { ...args, collection };
+      const result = await callTool(name, normalizedArgs, this._db, this._predicates);
       this._send(ok(id, toolResult(JSON.stringify(result, null, 2))));
     } catch (err) {
       this._send(ok(id, toolError(err.message || String(err))));

@@ -292,4 +292,4 @@ function callTool(name, args, db, predicates = null) {
   }
 }
 
-export { TOOL_DEFS, callTool, sanitizeFilter };
+export { TOOL_DEFS, callTool, sanitizeFilter, _validateCollection };

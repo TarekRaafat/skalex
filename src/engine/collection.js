@@ -242,8 +242,9 @@ class Collection {
    * Shared per-document insert preamble for `_insertCore` and `upsertMany`.
    *
    * Validates the body, runs the `BEFORE_INSERT` hook, builds the document, and
-   * enforces `_id` uniqueness against both the live store and the in-flight
-   * batch (`batchIds`). Returns the prepared document WITHOUT indexing or
+   * enforces `_id` uniqueness within the in-flight batch (`batchIds`).
+   * The caller checks the live store immediately before committing.
+   * Returns the prepared document WITHOUT indexing or
    * pushing it: the caller owns the unique-field batch assertion, index
    * insertion, and store push. This split is deliberate - `_insertCore` asserts
    * uniqueness and indexes the whole batch together (so intra-batch unique
@@ -251,18 +252,31 @@ class Collection {
    * while `upsertMany` interleaves inserts with updates and commits each one as
    * it goes. Keeping commit out of this helper preserves both timings.
    * @param {object} body - raw document body to validate and build
-   * @param {{ ttl?: number|string, embed?: string|Function, batchIds: Set<string> }} opts
+   * @param {{ ttl?: number|string, embed?: string|Function, batchIds: Set<string>|null }} opts
    * @returns {Promise<object>} the prepared document (not yet indexed or pushed)
    */
   async _prepareInsertInBatch(body, { ttl, embed, batchIds }) {
     const validated = this._applyValidation(body);
     await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
     const newDoc = await this._buildDoc(validated, { ttl, embed });
-    if (this._ds.has(newDoc._id) || batchIds.has(newDoc._id)) {
-      throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${newDoc._id}" in collection "${this.name}"`, { id: newDoc._id, collection: this.name });
+    if (batchIds) {
+      this._assertInsertIdAvailable(newDoc._id, batchIds);
+      batchIds.add(newDoc._id);
     }
-    batchIds.add(newDoc._id);
     return newDoc;
+  }
+
+  /**
+   * Check batch IDs during preparation and live IDs at synchronous commit.
+   * Preparation can await hooks or embedding, so a live-store check there
+   * cannot protect the later commit.
+   * @param {*} id
+   * @param {Set|InMemoryDataStore} [ids]
+   */
+  _assertInsertIdAvailable(id, ids = this._ds) {
+    if (ids.has(id)) {
+      throw new UniqueConstraintError("ERR_SKALEX_UNIQUE_DUPLICATE_ID", `Duplicate _id "${id}" in collection "${this.name}"`, { id, collection: this.name });
+    }
   }
 
   /**
@@ -281,12 +295,13 @@ class Collection {
       session,
       mutate: async (assertTxAlive) => {
         const newItems = [];
-        const batchIds = new Set();
+        const batchIds = items.length > 1 ? new Set() : null;
         for (const item of items) {
           newItems.push(await this._prepareInsertInBatch(item, { ttl, embed, batchIds }));
         }
 
         assertTxAlive(); // guard before first in-memory state change
+        for (const item of newItems) this._assertInsertIdAvailable(item._id);
         if (this._fieldIndex) this._fieldIndex.assertUniqueBatch(newItems);
         for (const newItem of newItems) this._addToIndex(newItem);
         this._ds.push(...newItems);
@@ -635,6 +650,7 @@ class Collection {
             newInserts.push(newDoc);
 
             assertTxAlive();
+            this._assertInsertIdAvailable(newDoc._id);
             if (this._fieldIndex) this._fieldIndex.assertUniqueBatch([newDoc]);
             this._addToIndex(newDoc);
             this._ds.push(newDoc);

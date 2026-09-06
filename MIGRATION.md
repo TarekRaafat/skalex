@@ -1,5 +1,13 @@
 # Skalex Migration Guide
 
+## Unreleased reliability fixes
+
+Release assignment is pending. Public signatures and persisted collection payloads are unchanged.
+
+- Filesystem temporary writes now use `.skalex-<uuid>.tmp.<format>`. These names cannot collide with valid collection names. Files in the old temporary-name shape are preserved because their names alone cannot distinguish an abandoned write from a real collection. A payload whose collection name differs from its storage key is rejected as corrupt under the default strict loader. If a legacy partial or mismatched file prevents loading, preserve a backup and inspect its contents before removing it; do not bulk-delete files containing `.tmp.`.
+- MCP validates and trims collection names before authorization. Configure scopes using canonical collection names. A collection-specific denial applies equally to padded names.
+- Concurrent inserts claiming an existing ID reject with `ERR_SKALEX_UNIQUE_DUPLICATE_ID`. Before-insert hooks can run before the final live-ID check; a rejected insert does not undo external hook effects. This fix does not repair duplicate IDs already stored by an older version.
+
 This file collects every upgrade guide Skalex v4 has shipped. Start with the section matching the version you are upgrading from.
 
 - [4.0.0-alpha.5 → 4.0.0-alpha.6](#400-alpha5--400-alpha6) (no breaking changes)

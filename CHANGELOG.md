@@ -9,7 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [4.0.0-alpha.7] - TBD
 
-Code-quality release. Pure refactors and hygiene ahead of the beta.1 storage-engine work, so the WAL / DataStore changes land on a deduplicated foundation instead of propagating duplication into new code. No new user-facing features, no breaking changes, no on-disk format change.
+Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, and primary-ID races alongside the shared mutation-pipeline refactors. No new public APIs or serialized payload format changes. Temporary files use a reserved naming scheme; ambiguous legacy files are preserved for inspection.
 
 ### Internal
 
@@ -20,11 +20,16 @@ Code-quality release. Pure refactors and hygiene ahead of the beta.1 storage-eng
 
 ### Fixed
 
+- **Filesystem cleanup preserves collection files** - temporary writes use a reserved leading-dot name. Listing and cleanup recognize only that format for the configured storage extension. Valid collection names containing `.tmp.`, including legacy temporary-looking names, are preserved. Loading rejects payloads whose collection name differs from their storage key, preventing legacy leftovers from replacing another collection.
+- **MCP collection authorization** - collection identifiers are validated and normalized before checking scopes, so whitespace cannot bypass a collection-specific denial through the wildcard fallback.
+- **Concurrent primary-ID uniqueness** - inserts check live IDs immediately before committing. An overlapping insert or a delayed batch cannot accept an ID that another operation claimed during preparation.
+
 - **`Symbol.asyncDispose` type resolution under `lib: ES2022` and earlier** - `src/index.d.ts` declares `[Symbol.asyncDispose](): Promise<void>` to support `await using db = new Skalex(...)`, but that symbol lives in `lib.esnext.disposable` (TS 5.2+). Consumers whose tsconfig targets `lib: ES2022` or earlier hit `TS2550` when their compiler read the declaration file. A top-of-file `/// <reference lib="esnext.disposable" />` directive now pulls the symbol in regardless of the consumer's `lib` setting. Runtime `await using` already worked on Node 18+; this fixes only the point-of-adoption type error. A zero-dependency guard (`npm run verify:lib-ref`, in the mandatory gate) asserts the directive stays at the top of the file - where a triple-slash reference is effective - so a refactor cannot silently drop or demote it.
 
 ### Tests
 
-- All 935 existing tests pass unchanged (behavior identity is the bar for this release's refactors).
+- All 951 tests pass, including new filesystem classification, MCP authorization, concurrent-ID, and persistence-name regressions.
+- Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.
 
 ## [4.0.0-alpha.6] - 2026-04-23

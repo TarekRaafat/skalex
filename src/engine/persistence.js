@@ -80,6 +80,13 @@ class PersistenceManager {
           const parsed = this._deserializer(raw);
           const { collectionName, data } = parsed;
           if (!collectionName) return;
+          if (collectionName !== name) {
+            throw new PersistenceError(
+              "ERR_SKALEX_PERSISTENCE_CORRUPT",
+              `Stored collection "${collectionName}" does not match storage key "${name}". Preserve the file and inspect it before recovery.`,
+              { collection: name, storedCollection: collectionName }
+            );
+          }
 
           // Prefer config from createCollection over persisted values
           const existing = collections[collectionName];

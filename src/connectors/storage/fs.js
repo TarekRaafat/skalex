@@ -53,7 +53,7 @@ class FsAdapter extends StorageAdapter {
 
   async write(name, data) {
     const fp = this._filePath(name);
-    const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
+    const tmp = nodePath.join(this.dir, `.skalex-${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
 
     if (this.format === "gz") {
       const compressed = await _deflate(data);
@@ -76,7 +76,7 @@ class FsAdapter extends StorageAdapter {
     try {
       for (const { name, data } of entries) {
         const fp = this._filePath(name);
-        const tmp = nodePath.join(this.dir, `${name}_${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
+        const tmp = nodePath.join(this.dir, `.skalex-${globalThis.crypto.randomUUID()}.tmp.${this.format}`);
         if (this.format === "gz") {
           const compressed = await _deflate(data);
           await nodeFs.promises.writeFile(tmp, compressed);
@@ -113,12 +113,24 @@ class FsAdapter extends StorageAdapter {
       const files = await nodeFs.promises.readdir(this.dir);
       const ext = `.${this.format}`;
       return files
-        .filter(f => f.endsWith(ext) && !f.includes(".tmp."))
+        .filter(f => f.endsWith(ext) && !this._isTempFile(f))
         .map(f => f.slice(0, -ext.length));
     } catch (err) {
       if (err.code === "ENOENT") return [];
       throw err;
     }
+  }
+
+  /**
+   * Recognize only reserved temporary names written by this adapter.
+   * The leading dot cannot occur in a valid collection name. Legacy
+   * temporary-looking names are ambiguous and must never be deleted here.
+   * @param {string} file
+   * @returns {boolean}
+   */
+  _isTempFile(file) {
+    const ext = `.${this.format}`;
+    return file.endsWith(ext) && /^\.skalex-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/.test(file.slice(0, -ext.length));
   }
 
   /** Utility: join paths. */
@@ -144,7 +156,7 @@ class FsAdapter extends StorageAdapter {
 
   /**
    * Delete any orphan temp files left by interrupted writes.
-   * Temp files are named `<name>_<uuid>.tmp.<format>` - a partial rename on
+   * Temp files are named `.skalex-<uuid>.tmp.<format>` - a partial rename on
    * the way out of `write()` / `writeAll()` can leave them on disk.
    * Best-effort: individual unlink failures are ignored.
    * @returns {Promise<number>} The number of temp files removed.
@@ -152,7 +164,7 @@ class FsAdapter extends StorageAdapter {
   async cleanOrphans() {
     try {
       const files = await nodeFs.promises.readdir(this.dir);
-      const orphans = files.filter(f => f.includes(".tmp."));
+      const orphans = files.filter(f => this._isTempFile(f));
       let removed = 0;
       for (const orphan of orphans) {
         const orphanPath = nodePath.join(this.dir, orphan);

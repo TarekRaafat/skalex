@@ -601,6 +601,8 @@ The unit of storage in Skalex. Every document lives in a collection. Collections
 
 ### Insert
 
+Primary IDs are checked against the live collection immediately before insertion. If a concurrent operation claims the same ID during preparation, the later commit rejects with `ERR_SKALEX_UNIQUE_DUPLICATE_ID`. An `insertMany` ID conflict is detected before any document in that batch is inserted.
+
 #### `insertOne(document, options?)`
 
 | Option | Type | Description |
@@ -1565,6 +1567,8 @@ Stops the server and releases all resources.
 | `skalex_ask` | read | Natural language query |
 
 ### Access Control
+
+Collection names are validated and trimmed before authorization and execution. Use canonical names as scope keys; surrounding whitespace cannot bypass a collection-specific denial.
 
 The `scopes` map grants per-collection permissions. `"*"` is the wildcard fallback. A collection-specific entry overrides the wildcard.
 
