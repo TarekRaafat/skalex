@@ -766,6 +766,8 @@ await products.upsertMany(
 
 #### `find(filter, options?)`
 
+Sort and paginate matching stored documents before applying `select` and `populate`. Sort fields need not be selected. For sorted queries, population runs only for the returned page; sorting a populated field uses its stored foreign-key value. Equal sort keys retain matching order.
+
 | Option | Type | Description |
 |--------|------|-------------|
 | `populate` | `string[]` | Collection names to join |

@@ -460,7 +460,7 @@ export interface DeleteOptions {
 export interface FindOptions {
   populate?: string[];
   select?: string[];
-  /** Sort descriptor: 1 = ascending, -1 = descending. */
+  /** Sort stored values before projection and population: 1 = ascending, -1 = descending. */
   sort?: Record<string, 1 | -1>;
   page?: number;
   limit?: number;

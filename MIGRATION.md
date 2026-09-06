@@ -61,6 +61,10 @@ Strict collections now accept their generated `createdAt` and `updatedAt` fields
 
 Compression now embeds its summary before deleting originals, adding one embedding request per successful compression. Insert watch events and hooks now precede delete events and hooks. The operation honors autoSave and remains non-atomic: failed cleanup can leave originals alongside the summary, and save failures can leave dirty memory. Inspect history before retrying.
 
+### Query ordering
+
+`find()` sorts stored fields before pagination, projection and population. Sort keys no longer need to appear in `select`. Sorting a populated field uses the stored foreign key, and sorted queries populate only returned documents.
+
 ### Other reliability changes
 
 

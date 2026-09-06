@@ -896,7 +896,8 @@ class Collection {
   }
 
   /**
-   * Find all matching documents.
+   * Find all matching documents. Sort stored field values and paginate before
+   * projecting or populating the returned documents.
    *
    * **Limit-only fast path:** when `limit` is set, `sort` is absent, and
    * `page` is 1 (default), scanning stops after `limit` matches. In this
@@ -932,9 +933,12 @@ class Collection {
     for (const item of candidates) {
       if (!this._isVisible(item, includeDeleted)) continue;
       if (!matchesFilter(item, compiledFilter)) continue;
-      const newItem = this._projectDoc(item, select);
-      if (populate) await this._populateDoc(newItem, item, populate);
-      results.push(newItem);
+      if (sort) results.push(item);
+      else {
+        const projected = this._projectDoc(item, select);
+        if (populate) await this._populateDoc(projected, item, populate);
+        results.push(projected);
+      }
       if (earlyStop && results.length >= limit) break;
     }
 
@@ -957,6 +961,14 @@ class Collection {
       const startIndex = earlyStop ? 0 : (page - 1) * limit;
       results = earlyStop ? results : results.slice(startIndex, startIndex + limit);
       extra = earlyStop ? { page } : { page, totalDocs, totalPages };
+    }
+
+    // Sort and paginate stored values before projection or population hides keys.
+    for (let i = 0; sort && i < results.length; i++) {
+      const item = results[i];
+      const projected = this._projectDoc(item, select);
+      if (populate) await this._populateDoc(projected, item, populate);
+      results[i] = projected;
     }
 
     this._ctx.queryLog?.record({ collection: this.name, op: "find", filter, duration: Date.now() - _t0, resultCount: results.length });

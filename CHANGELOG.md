@@ -34,6 +34,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Fixed
 
+- **Projection and sorting** - sort stored document values before pagination, projection and population. Hidden sort fields now produce the correct order and page; sorted queries populate only returned documents.
+
 - **Memory compression recall** - embed compressed summaries and insert them before deleting originals. Failed summary creation preserves the originals; failed cleanup can leave redundant entries. Preserve the normal autoSave policy.
 
 - **Strict-schema timestamps** - allow generated `createdAt` and `updatedAt` during updates and upserts without declaring them in the schema. Continue validating explicit timestamp constraints and rejecting unknown user fields.
@@ -60,7 +62,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 1182 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1198 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

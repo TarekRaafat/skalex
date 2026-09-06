@@ -164,6 +164,8 @@
       await idFilters(db, assert);
     const { default: strictTimestamps } = await import("./strict-timestamps.js");
     await strictTimestamps(db, assert);
+    const { default: sortProjection } = await import("./sort-projection.js");
+    await sortProjection(db, assert);
     const { default: memoryCompression } = await import("./memory-compression.js");
     await memoryCompression(Skalex, assert);
     });
