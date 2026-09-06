@@ -47,6 +47,12 @@ After inspecting storage and repairing it if needed, call `await db.acknowledgeI
 
 `_id` operator objects and regular expressions now match consistently across reads, aggregates and mutations. Previously some paths treated these filters as literal index keys and returned no match. Literal string ID lookup and additional filter conditions are preserved.
 
+### MCP HTTP request validation
+
+Origin-bearing requests now require an exact `allowedOrigin` or explicit `"*"`; default/null accepts native clients without Origin. Invalid or opaque origins reject with HTTP 403 before tool dispatch or SSE subscription. Host must match the backend hostname/interface and port; reverse proxies must rewrite Host, and forwarded headers do not bypass checks. These controls do not replace authentication.
+
+The HTTP server loads lazily from the package's existing `src/connectors/mcp/transports/http.js`. Deploy the full package rather than copying a dist file alone when using HTTP transport. `port: 0` selects an available port, exposed in `server.url` after listening.
+
 ### Other reliability changes
 
 

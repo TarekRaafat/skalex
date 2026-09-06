@@ -111,6 +111,11 @@ async function run() {
 
   // ─── Transaction ───────────────────────────────────────────────────────────
 
+  await section("HTTP origin validation", async () => {
+    const { default: httpOrigin } = await import("./http-origin.js");
+    await httpOrigin(db, assert);
+  });
+
   await section("ID filter consistency", async () => {
     const { default: idFilters } = await import("./id-filters.js");
     await idFilters(db, assert);

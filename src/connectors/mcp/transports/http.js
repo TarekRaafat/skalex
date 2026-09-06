@@ -16,9 +16,9 @@ import { error as protocolError, PARSE_ERROR } from "../protocol.js";
 class HttpTransport {
   /**
    * @param {{ port?: number, host?: string, allowedOrigin?: string | null, maxBodySize?: number }} [opts]
-   *   allowedOrigin  -  value for Access-Control-Allow-Origin.
+   *   allowedOrigin  -  exact serialized HTTP(S) origin permitted before dispatch.
    *   Set to a specific origin (e.g. "http://localhost:5173") or "*" for all origins.
-   *   Defaults to null (no CORS header) which is safe for server-to-server use.
+   *   Defaults to null: reject requests with Origin; permit origin-less native clients.
    *   Only set to "*" or a broad origin if you explicitly need browser client access.
    *
    *   maxBodySize  -  maximum POST body size in bytes (default: 1 MiB).
@@ -60,6 +60,12 @@ class HttpTransport {
   start() {
     return new Promise((resolve, reject) => {
       this._server = http.createServer((req, res) => {
+        if (!this._isAllowed(req)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Forbidden");
+          return;
+        }
+
         // CORS headers  -  only set if allowedOrigin is explicitly configured.
         if (this._allowedOrigin) {
           res.setHeader("Access-Control-Allow-Origin",  this._allowedOrigin);
@@ -84,7 +90,10 @@ class HttpTransport {
       });
 
       this._server.on("error", reject);
-      this._server.listen(this._port, this._host, () => resolve());
+      this._server.listen(this._port, this._host, () => {
+        this._port = this._server.address().port;
+        resolve();
+      });
     });
   }
 
@@ -102,6 +111,29 @@ class HttpTransport {
   }
 
   // ─── Private ───────────────────────────────────────────────────────────────
+
+  /** Reject untrusted origins and rebinding authorities before every route. */
+  _isAllowed(req) {
+    const origin = req.headers.origin;
+    if (origin !== undefined) {
+      try {
+        const url = new URL(origin);
+        if (!["http:", "https:"].includes(url.protocol) || url.origin !== origin ||
+          (this._allowedOrigin !== "*" && origin !== this._allowedOrigin)) return false;
+      } catch { return false; }
+    }
+    if (req.rawHeaders.filter((value, i) => i % 2 === 0 && value.toLowerCase() === "host").length !== 1) return false;
+    const authority = req.headers.host?.toLowerCase();
+    const address = req.socket.localAddress;
+    const hosts = [this._host, address];
+    if (/^(127\.|::1$|::ffff:127\.)/.test(address)) hosts.push("localhost");
+    return hosts.some(host => {
+      host = host.toLowerCase();
+      host = host.includes(":") ? "[" + host + "]" : host;
+      return authority === host + ":" + req.socket.localPort ||
+        (req.socket.localPort === 80 && authority === host);
+    });
+  }
 
   _handleSSE(req, res) {
     res.writeHead(200, {
@@ -149,7 +181,7 @@ class HttpTransport {
 
   get port()  { return this._port; }
   get host()  { return this._host; }
-  get url()   { return `http://${this._host}:${this._port}`; }
+  get url()   { return `http://${this._host.includes(":") ? "[" + this._host + "]" : this._host}:${this._port}`; }
   get sseUrl(){ return `${this.url}/sse`; }
 }
 

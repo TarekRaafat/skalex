@@ -13,6 +13,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Breaking Changes
 
+- **MCP HTTP request validation** - reject untrusted Origin and Host headers before POST, SSE or OPTIONS handling. Browser clients must configure `allowedOrigin`; reverse proxies must send the trusted backend Host. Native origin-less clients remain supported.
+
 - **Historical restore coordination** - both historical restore entry points reject transaction-locked targets. Restore watch events now follow successful saving; failed saves leave dirty restored memory without emitting restore events. Current index constraints are checked before replay.
 
 - **Restricted transaction and migration callbacks** - callbacks receive `TransactionHandle`, exposing only `useCollection()` and `createCollection()`. Returned `TransactionCollection` handles expose document mutations and queries; export, subscriptions, `applyUpdate()`, and internal state are unavailable. Unsupported access throws `ERR_SKALEX_TX_DIRECT_ACCESS`. Replace `tx.seed()` with owned collection inserts; transaction commit owns persistence, so remove `tx.saveData()`. Type reusable helpers against the required capability subset instead of the full `Skalex` or `Collection` class.
@@ -31,6 +33,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 - **`acknowledgeIncompleteFlush()`** - explicitly clear an inspected incomplete-flush warning on a connected database outside transactions. Does not repair or save collection data. Queue-state changes and storage failures reject with `ERR_SKALEX_PERSISTENCE_ACK_FAILED`.
 
 ### Fixed
+
+- **HTTP origin bypass** - CORS settings now gate dispatch rather than only response access. Reject malformed/opaque origins, rebinding hosts and duplicate Host headers. Load the optional HTTP transport lazily from its shipped source module to stay within the bundle budget. Honor ephemeral ports and report usable IPv6 URLs.
 
 - **ID filter consistency** - ID operators and regular expressions use the normal matcher across single-document reads, aggregates and mutations. Literal string IDs retain direct lookup and additional filter conditions.
 
@@ -52,7 +56,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
-- All 1123 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
+- All 1155 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Keep simulated commit-stage failure diagnostics separate; general index-commit rollback remains unresolved.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

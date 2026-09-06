@@ -27,7 +27,6 @@
  */
 import { TOOL_DEFS, callTool, _validateCollection } from "./tools.js";
 import { ok, error, parse, toolResult, toolError, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./protocol.js";
-import HttpTransport from "./transports/http.js";
 import StdioTransport from "./transports/stdio.js";
 
 const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.6" };
@@ -41,7 +40,7 @@ class SkalexMCPServer {
    * @param {number}  [opts.port]                 - HTTP port. Default: 3000.
    * @param {string}  [opts.host]                 - HTTP host. Default: "127.0.0.1".
    * @param {object}  [opts.scopes]               - Access control map. Default: { "*": ["read"] } (read-only).
-   * @param {string|null} [opts.allowedOrigin]    - CORS origin for HTTP transport. Default: null (disabled).
+   * @param {string|null} [opts.allowedOrigin]    - Exact browser origin for HTTP transport; "*" permits valid HTTP(S) origins. Default: null (native clients only).
    * @param {number}  [opts.maxBodySize]          - Max POST body size in bytes for HTTP transport. Default: 1 MiB.
    * @param {Record<string, Function>} [opts.predicates] - Named predicate allowlist
    *   for `$fn` in agent-supplied filters. Agents reference predicates by name;
@@ -51,7 +50,7 @@ class SkalexMCPServer {
   constructor(db, opts = {}) {
     this._db            = db;
     this._transport     = opts.transport     || "stdio";
-    this._port          = opts.port          || 3000;
+    this._port          = opts.port          ?? 3000;
     this._host          = opts.host          || "127.0.0.1";
     this._allowedOrigin = opts.allowedOrigin ?? null;
     this._maxBodySize   = opts.maxBodySize   ?? 1_048_576;
@@ -68,6 +67,7 @@ class SkalexMCPServer {
    */
   async listen() {
     if (this._transport === "http") {
+      const { default: HttpTransport } = await import("./transports/http.js");
       this._t = new HttpTransport({ port: this._port, host: this._host, allowedOrigin: this._allowedOrigin, maxBodySize: this._maxBodySize });
     } else {
       this._t = new StdioTransport();

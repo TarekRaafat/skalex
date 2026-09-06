@@ -5,6 +5,10 @@ import terser from "@rollup/plugin-terser";
 const input = "src/index.js";
 
 const external = ["node:fs", "node:path", "node:zlib", "node:crypto", "node:http"];
+const isHttpTransport = id => id.endsWith("/mcp/transports/http.js");
+const isExternal = id => external.includes(id) || isHttpTransport(id);
+// The optional HTTP server loads from the source module shipped in the package.
+const paths = id => isHttpTransport(id) ? "../src/connectors/mcp/transports/http.js" : id;
 
 /**
  * Replaces node:* built-in imports with empty stubs for browser builds.
@@ -41,11 +45,12 @@ export default [
     input,
     treeshake,
     output: {
+      paths,
       file: "dist/skalex.esm.js",
       format: "es",
       sourcemap: true,
     },
-    external,
+    external: isExternal,
     plugins,
   },
   // ESM browser build  -  node:* built-ins stubbed out
@@ -53,11 +58,13 @@ export default [
     input,
     treeshake,
     output: {
+      paths,
       file: "dist/skalex.browser.js",
       format: "es",
       sourcemap: true,
       inlineDynamicImports: true,
     },
+    external: isHttpTransport,
     plugins: [nodeBrowserStubs(), ...plugins],
   },
   // ESM minified
@@ -65,11 +72,12 @@ export default [
     input,
     treeshake,
     output: {
+      paths,
       file: "dist/skalex.esm.min.js",
       format: "es",
       sourcemap: true,
     },
-    external,
+    external: isExternal,
     plugins: minPlugins,
   },
   // UMD/IIFE minified
@@ -77,6 +85,7 @@ export default [
     input,
     treeshake,
     output: {
+      paths,
       file: "dist/skalex.umd.min.js",
       format: "iife",
       name: "Skalex",
@@ -86,6 +95,7 @@ export default [
       // Unwrap so window.Skalex is the constructor, not { default, ... }
       footer: "Skalex=Skalex.default;",
     },
+    external: isHttpTransport,
     plugins: [nodeBrowserStubs(), ...minPlugins],
   },
   // CJS build
@@ -93,6 +103,7 @@ export default [
     input,
     treeshake,
     output: {
+      paths,
       file: "dist/skalex.cjs",
       format: "cjs",
       sourcemap: true,
@@ -101,7 +112,7 @@ export default [
       // while require("skalex").SkalexError etc. still work.
       footer: "module.exports=Object.assign(exports.default,exports);delete module.exports.default;",
     },
-    external,
+    external: isExternal,
     plugins,
   },
   // CJS minified
@@ -109,13 +120,14 @@ export default [
     input,
     treeshake,
     output: {
+      paths,
       file: "dist/skalex.min.cjs",
       format: "cjs",
       sourcemap: true,
       exports: "named",
       footer: "module.exports=Object.assign(exports.default,exports);delete module.exports.default;",
     },
-    external,
+    external: isExternal,
     plugins: minPlugins,
   },
 ];

@@ -153,7 +153,8 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `db.mcp(opts?)` - expose the database to Claude Desktop, Cursor, and any MCP client
   - Supports stdio and HTTP/SSE transports
   - Configurable per-collection scopes (`read` / `write` / `admin`); collection names are validated and trimmed before both authorization and execution.
-  - CORS opt-in via `allowedOrigin`
+  - HTTP validates Origin and Host before dispatch/SSE/preflight. Null/default allowedOrigin rejects Origin-bearing requests; origin-less native clients remain allowed. Exact HTTP(S) origin or "*" opt-in; opaque/malformed origins reject. Host must match the backend hostname/interface and port; loopback accepts localhost. Proxies must rewrite Host; forwarded headers are not trusted. These checks are not authentication.
+  - HTTP transport loads lazily from the packaged source module; preserve the installed package layout. Port 0 chooses an available port reported by server.url after listen.
   - HTTP POST body limit via `maxBodySize` (default 1 MiB)
   - `predicates`: named server-side functions that MCP agents invoke by name via `{ "$fn": "name" }` - restores `$fn` expressiveness over MCP without letting code cross the wire
 

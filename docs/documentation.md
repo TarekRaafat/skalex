@@ -583,7 +583,7 @@ Creates and returns a `SkalexMCPServer` that exposes the database as MCP tools f
 | `port` | `number` | `3000` | HTTP port (http transport only) |
 | `host` | `string` | `"127.0.0.1"` | HTTP host (http transport only) |
 | `scopes` | `object` | `{ "*": ["read"] }` | Access control per collection; read-only by default |
-| `allowedOrigin` | `string \| null` | `null` | CORS origin for HTTP transport; disabled by default |
+| `allowedOrigin` | `string \| null` | `null` | Exact HTTP(S) browser origin or "*"; null rejects Origin-bearing requests |
 | `maxBodySize` | `number` | `1048576` | Maximum POST body size in bytes for HTTP transport (default 1 MiB); increase when inserting documents with large text fields via MCP |
 | `predicates` | `object` | `undefined` | Named server-side predicate functions that MCP agents can invoke by name via `{ "$fn": "predicateName" }` in filters. Restores `$fn` expressiveness over MCP without letting arbitrary code cross the wire. |
 
@@ -1634,7 +1634,13 @@ Read-only scopes hide write tools from `tools/list`, preventing AI agents from d
 
 > **Security note:** MCP scopes control tool visibility but do **not** authenticate the connecting client. Any process that can reach the stdio pipe or HTTP port has full access within the granted scopes. Never expose the HTTP transport on a public interface without an external authentication layer, and always use the most restrictive scopes needed.
 
-For the HTTP transport, CORS is **disabled by default**. Enable it only if you need browser-based MCP clients:
+HTTP requests are validated before POST dispatch, SSE subscription or preflight handling. By default, any request with an `Origin` header is rejected with HTTP 403; native clients without Origin remain allowed. Set an exact serialized HTTP(S) origin for browser access. `"*"` explicitly allows any valid HTTP(S) origin, but malformed or opaque (`null`) origins still reject.
+
+The `Host` authority must match the configured hostname or actual local interface and listening port; loopback connections also accept `localhost`. Missing, duplicate or untrusted Host headers reject. A reverse proxy must rewrite Host to the trusted backend authority; forwarded headers are not trusted. Origin and Host checks do not authenticate native clients.
+
+HTTP transport code loads only when `listen()` starts an HTTP server. Keep the installed package layout, including `src/connectors/mcp/transports/http.js`, when deploying ESM or CommonJS artifacts. Use `port: 0` for an available port and read `server.url` after listening; IPv6 URLs are bracketed.
+
+Configure browser access explicitly:
 
 ```javascript
 const server = db.mcp({

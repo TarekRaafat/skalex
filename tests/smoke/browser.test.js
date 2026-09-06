@@ -16,6 +16,7 @@
  */
 
 import { chromium } from "playwright";
+import browserHttpOrigin from "./browser-http-origin.js";
 import { createServer } from "http";
 import { readFileSync, existsSync } from "fs";
 import { extname, join, resolve } from "path";
@@ -109,6 +110,7 @@ async function run() {
     const page1 = await browser.newPage();
     attachListeners(page1);
     const r1 = await runPage(page1, port, "tests/smoke/browser.html", "browser ESM build (skalex.browser.js)");
+    await browserHttpOrigin(page1, `http://127.0.0.1:${port}`);
     await page1.close();
     totalFailed += r1.failed;
 

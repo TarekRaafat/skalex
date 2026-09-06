@@ -882,3 +882,7 @@ This is **hybrid search** when `filter` is provided; the structured filter narro
 | `search` (no filter) | O(n x d) | n = collection size, d = dimensions |
 | `search` (with filter) | O(k x d) | k = filtered candidate count |
 | `similar` | O(n x d) | Full scan minus one doc |
+
+## 26. MCP HTTP Boundary
+
+Validate Origin and Host before route dispatch, SSE subscription or preflight. Explicit browser-origin permission is separate from trusted backend authority and does not authenticate native clients. HTTP transport loads dynamically from the source module shipped alongside dist; browser clients connect to a Node/Bun/Deno HTTP server. Origin and rebinding regressions include real Chromium requests.

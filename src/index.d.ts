@@ -95,14 +95,14 @@ export interface MCPScopes {
 export interface MCPOptions {
   /** Transport type. Default: 'stdio'. */
   transport?: 'stdio' | 'http';
-  /** HTTP port (http transport only). Default: 3000. */
+  /** HTTP port (http transport only). Default: 3000; 0 selects an available port reported by server.url. */
   port?: number;
   /** HTTP host (http transport only). Default: '127.0.0.1'. */
   host?: string;
   /** Access control map. Default: { '*': ['read'] } (read-only). */
   scopes?: MCPScopes;
-  /** CORS origin for HTTP transport. Disabled by default. */
-  allowedOrigin?: string;
+  /** Exact HTTP(S) browser origin, or "*". Null/default rejects Origin-bearing requests; native clients remain allowed. */
+  allowedOrigin?: string | null;
   /** Maximum POST body size in bytes for HTTP transport. Default: 1 MiB (1_048_576). */
   maxBodySize?: number;
   /**

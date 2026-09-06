@@ -125,7 +125,7 @@
     "verify": "npm run test && npm run build && npm run size && npm run lint && npm run deps:check && npm run deps:zero && npm run types:check && npm run verify:lib-ref",
     "smoke:node": "node tests/smoke/node.test.cjs",
     "smoke:bun": "bun tests/smoke/bun.test.js && bun tests/smoke/bun-sqlite.test.js",
-    "smoke:deno": "deno run tests/smoke/deno.test.js",
+    "smoke:deno": "deno run --allow-net=127.0.0.1 tests/smoke/deno.test.js",
     "smoke:browser": "node tests/smoke/browser.test.js",
     "smoke": "npm run smoke:node && npm run smoke:bun && npm run smoke:deno && npm run smoke:browser",
     "test:all": "npm run verify && npm run smoke"
