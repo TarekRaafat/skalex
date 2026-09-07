@@ -16,7 +16,7 @@ function makeData(...docs) {
   return { data, idIndex };
 }
 
-// ─── findRaw ─────────────────────────────────────────────────────────────────
+// --- findRaw -----------------------------------------------------------------
 
 describe("findRaw", () => {
   test("null filter returns first visible doc", () => {
@@ -100,7 +100,7 @@ describe("findRaw", () => {
   });
 });
 
-// ─── findAllRaw ──────────────────────────────────────────────────────────────
+// --- findAllRaw --------------------------------------------------------------
 
 describe("findAllRaw", () => {
   test("_id filter returns single-element array or empty", () => {
@@ -140,7 +140,7 @@ describe("findAllRaw", () => {
   });
 });
 
-// ─── getCandidates ───────────────────────────────────────────────────────────
+// --- getCandidates -----------------------------------------------------------
 
 describe("getCandidates", () => {
   test("with no fieldIndex returns full data", () => {
@@ -178,7 +178,7 @@ describe("getCandidates", () => {
   });
 });
 
-// ─── findIndex ───────────────────────────────────────────────────────────────
+// --- findIndex ---------------------------------------------------------------
 
 describe("findIndex", () => {
   test("returns correct position", () => {

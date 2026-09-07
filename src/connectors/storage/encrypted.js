@@ -1,7 +1,7 @@
 /**
  * EncryptedAdapter  -  wraps any StorageAdapter with AES-256-GCM encryption.
  *
- * All data written to the underlying adapter is encrypted; reads are decrypted
+ * All data written to the underlying adapter is encrypted. Reads are decrypted
  * transparently. The encryption layer is completely invisible to callers.
  *
  * Algorithm : AES-256-GCM
@@ -72,7 +72,7 @@ class EncryptedAdapter extends StorageAdapter {
     return this._adapter.writeAll(encrypted);
   }
 
-  // ─── FsAdapter extension passthrough ────────────────────────────────────────
+  // --- FsAdapter extension passthrough ----------------------------------------
   // These stubs forward optional FsAdapter-specific methods (used by export/import).
 
   join(...args) { return this._adapter.join?.(...args); }
@@ -90,7 +90,7 @@ class EncryptedAdapter extends StorageAdapter {
     return this._decrypt(raw);
   }
 
-  // ─── Crypto ──────────────────────────────────────────────────────────────────
+  // --- Crypto ------------------------------------------------------------------
 
   async _getKey() {
     if (!this._cryptoKey) {
@@ -140,7 +140,7 @@ class EncryptedAdapter extends StorageAdapter {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function _hexToBytes(hex) {
   if (hex.length !== KEY_LEN * 2) {

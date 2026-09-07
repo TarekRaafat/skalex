@@ -201,7 +201,7 @@ describe("Memory  -  compress", () => {
   });
 });
 
-// ─── Public API access + soft-delete visibility ───────────────────────────
+// --- Public API access + soft-delete visibility ---------------------------
 
 describe("Memory  -  public API access", () => {
   test("tokenCount() and context() are async and trigger auto-connect", async () => {
@@ -235,7 +235,7 @@ describe("Memory  -  public API access", () => {
   });
 });
 
-// ─── sessionId validation (fail-fast at construction) ─────────────────────
+// --- sessionId validation (fail-fast at construction) ---------------------
 
 describe("Memory  -  sessionId validation", () => {
   test("accepts legitimate session IDs", () => {

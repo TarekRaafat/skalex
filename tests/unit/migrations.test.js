@@ -99,7 +99,7 @@ describe("MigrationEngine", () => {
     const hooks = makeHooks();
     await expect(engine.run(hooks, [])).rejects.toThrow(/boom/);
     expect(calls).toEqual([1, 2]);
-    // Only migration 1's version was recorded; migration 2 threw before
+    // Only migration 1's version was recorded. Migration 2 threw before
     // recordApplied could fire, so [1, 2] never appears.
     expect(hooks.recorded).toEqual([[1]]);
   });

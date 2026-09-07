@@ -53,7 +53,7 @@ class StorageAdapter {
     for (const { name, data } of entries) await this.write(name, data);
   }
 
-  // ─── Capability checks ────────────────────────────────────────────────
+  // --- Capability checks ------------------------------------------------
   //
   // Replaces duck-typed `typeof adapter.readRaw === "function"` checks
   // throughout the engine. Subclasses override to return true when they

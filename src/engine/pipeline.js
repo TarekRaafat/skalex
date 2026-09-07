@@ -80,7 +80,7 @@ class MutationPipeline {
    * @param {string}   opts.beforeHook  - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.BEFORE_INSERT`).
    * @param {string}   opts.afterHook   - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.AFTER_INSERT`).
    * @param {object}   opts.hookPayload - Data passed to before hook.
-   * @param {Function} opts.mutate      - (assertTxAlive) => { docs, prevDocs?, emitEvents? }; emitEvents overrides default watch events after saving.
+   * @param {Function} opts.mutate      - (assertTxAlive) => { docs, prevDocs?, emitEvents? }. The emitEvents callback overrides default watch events after saving.
    * @param {boolean} [opts.replay=false] - Suppress changelog recording for historical replay.
    * @param {Function} [opts.afterHookPayload] - (docs) => payload for after hook.
    * @param {boolean|undefined} opts.save

@@ -481,7 +481,7 @@ function inferSchema(doc) {
 
 /**
  * Compute cosine similarity between two numeric vectors.
- * Returns a value in [-1, 1]; 1 = identical direction, 0 = orthogonal.
+ * Returns a value in [-1, 1]. 1 = identical direction, 0 = orthogonal.
  * @param {number[]} a
  * @param {number[]} b
  * @returns {number}
@@ -661,7 +661,7 @@ class MutationPipeline {
    * @param {string}   opts.beforeHook  - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.BEFORE_INSERT`).
    * @param {string}   opts.afterHook   - One of the `Hooks` values from src/engine/constants.js (e.g. `Hooks.AFTER_INSERT`).
    * @param {object}   opts.hookPayload - Data passed to before hook.
-   * @param {Function} opts.mutate      - (assertTxAlive) => { docs, prevDocs?, emitEvents? }; emitEvents overrides default watch events after saving.
+   * @param {Function} opts.mutate      - (assertTxAlive) => { docs, prevDocs?, emitEvents? }. The emitEvents callback overrides default watch events after saving.
    * @param {boolean} [opts.replay=false] - Suppress changelog recording for historical replay.
    * @param {Function} [opts.afterHookPayload] - (docs) => payload for after hook.
    * @param {boolean|undefined} opts.save
@@ -1017,7 +1017,7 @@ function findRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted 
     }
     return null;
   }
-  // Only literal string IDs use the direct lookup; operators use the matcher.
+  // Only literal string IDs use the direct lookup. Operators use the matcher.
   if (typeof filter._id === "string") {
     const item = idIndex.get(filter._id) || null;
     if (!item) return null;
@@ -1515,7 +1515,7 @@ class Collection {
   /** @returns {number|null} Maximum number of documents (capped collection). */
   get _maxDocs() { return this._store.maxDocs || null; }
 
-  // ─── Insert ──────────────────────────────────────────────────────────────
+  // --- Insert --------------------------------------------------------------
 
   /**
    * Insert a single document.
@@ -1637,7 +1637,7 @@ class Collection {
     });
   }
 
-  // ─── Update ──────────────────────────────────────────────────────────────
+  // --- Update --------------------------------------------------------------
 
   /**
    * Update the first matching document.
@@ -1731,7 +1731,7 @@ class Collection {
    * Apply an update descriptor to a document in place.
    * Supports $inc, $push, and direct assignment. Increments _version when versioning is on.
    * Skips _id, createdAt, and updatedAt - these are system-managed. A user-provided
-   * `updatedAt` value is silently discarded; the field is always set to the current
+   * `updatedAt` value is silently discarded. The field is always set to the current
    * time on every successful update. Does NOT update indexes - the caller is
    * responsible for index maintenance (see _commitUpdatedDoc).
    * @param {object} item
@@ -1884,7 +1884,7 @@ class Collection {
     }
   }
 
-  // ─── Upsert ──────────────────────────────────────────────────────────────
+  // --- Upsert --------------------------------------------------------------
 
   /**
    * Update the first matching document, or insert if none exists.
@@ -1941,7 +1941,7 @@ class Collection {
     // Route the whole batch through a single pipeline pass so `ensureConnected`,
     // lock check, `_txSnapshotIfNeeded`, `markDirty`, `_saveIfNeeded`, and the
     // session-stats increment all run once instead of once per document.
-    // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure;
+    // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure.
     // afterInsert/afterUpdate outside) preserve the contract consumers rely on.
     let failure;
     let finalizing = false;
@@ -1965,7 +1965,7 @@ class Collection {
 
               if (existing) {
                 // Update path. Shares the prepare preamble and commit primitive with
-                // _updateCore; the per-doc hook and validating index commit
+                // _updateCore. The per-doc hook and validating index commit
                 // preserve upsertMany's interleaved semantics.
                 await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
                   collection: this.name,
@@ -1981,7 +1981,7 @@ class Collection {
                 prevDocs.push(prev);
                 ops.push(Ops.UPDATE);
               } else {
-                // Insert path. Shares the prepare preamble with _insertCore; the
+                // Insert path. Shares the prepare preamble with _insertCore. The
                 // validating index insertion and push stay here so
                 // upsertMany keeps committing each insert as it interleaves them
                 // with updates (rather than the batch-at-once path _insertCore uses).
@@ -2060,7 +2060,7 @@ class Collection {
     return result.docs.map(stripVector);
   }
 
-  // ─── Soft-delete restore ──────────────────────────────────────────────────
+  // --- Soft-delete restore --------------------------------------------------
 
   /**
    * Restore a soft-deleted document (undo a soft delete).
@@ -2097,7 +2097,7 @@ class Collection {
     return stripVector(docs[0]);
   }
 
-  // ─── Watch ───────────────────────────────────────────────────────────────
+  // --- Watch ---------------------------------------------------------------
 
   /**
    * Watch for mutation events on this collection.
@@ -2173,7 +2173,7 @@ class Collection {
     };
   }
 
-  // ─── Aggregation ─────────────────────────────────────────────────────────
+  // --- Aggregation ---------------------------------------------------------
 
   /**
    * Count documents matching a filter.
@@ -2225,7 +2225,7 @@ class Collection {
     return clone ? this._cloneReadResult(result) : result;
   }
 
-  // ─── Find ─────────────────────────────────────────────────────────────────
+  // --- Find -----------------------------------------------------------------
 
   /**
    * Find the first matching document (returns a shallow copy with projection).
@@ -2330,7 +2330,7 @@ class Collection {
     return extra ? { docs: results, ...extra } : { docs: results };
   }
 
-  // ─── Vector Search ───────────────────────────────────────────────────────
+  // --- Vector Search -------------------------------------------------------
 
   /**
    * Semantic similarity search  -  embed a query string and rank all documents
@@ -2380,7 +2380,7 @@ class Collection {
     return clone ? this._cloneReadResult(result) : result;
   }
 
-  // ─── Delete ──────────────────────────────────────────────────────────────
+  // --- Delete --------------------------------------------------------------
 
   /**
    * Delete the first matching document.
@@ -2484,7 +2484,7 @@ class Collection {
     });
   }
 
-  // ─── Export ──────────────────────────────────────────────────────────────
+  // --- Export --------------------------------------------------------------
 
   /**
    * Export filtered data to a file via the storage adapter.
@@ -2495,7 +2495,7 @@ class Collection {
     return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
-  // ─── Private helpers ─────────────────────────────────────────────────────
+  // --- Private helpers -----------------------------------------------------
 
   /**
    * Lazy snapshot for transactions: snapshot this collection on first write.
@@ -2540,7 +2540,7 @@ class Collection {
       case "warn":
         // `warn` mode admits invalid docs silently - log the id and errors so
         // schema drift is auditable. Callers should prefer `throw` in strict
-        // pipelines; `warn` does NOT prevent invalid data from being persisted.
+        // pipelines. `warn` does NOT prevent invalid data from being persisted.
         this._ctx.logger(
           `[${this.name}] Validation warning for doc "${item._id ?? "(new)"}": ${errors.join("; ")}`,
           "warn"
@@ -2608,12 +2608,12 @@ class Collection {
     return findIndex(filter, this._ds.data);
   }
 
-  // ─── Rehydrate (changelog restore) ───────────────────────────────────────
+  // --- Rehydrate (changelog restore) ---------------------------------------
 
   /**
    * Restore archived documents through the mutation pipeline. Preserve system
    * fields without schema coercion, embedding, hooks or capacity enforcement.
-   * Index candidates are checked before mutation; dirty tracking, transaction
+   * Index candidates are checked before mutation. Dirty tracking, transaction
    * locks and saving remain active. Emit deletes then inserts after saving.
    * @param {object[]} docs - Archived final-state documents.
    * @returns {Promise<void>}
@@ -2651,7 +2651,7 @@ class Collection {
 
   /**
    * Restore one archived document through the same guarded save lifecycle.
-   * Preserve archived fields exactly; emit the observed delete/update/insert
+   * Preserve archived fields exactly. Emit the observed delete/update/insert
    * transition after saving. Do not record replay in the changelog.
    * @param {string} id - Document ID.
    * @param {object|null} archived - Historical document, or null for deletion.
@@ -2706,7 +2706,7 @@ class Collection {
     }
   }
 
-  /** Commit prepared inserts; retain only potential FIFO victims on the success path. */
+  /** Commit prepared inserts. Retain only potential FIFO victims on the success path. */
   _commitInsertedDocs(docs, batch = false, enforceCap = false) {
     const count = this._ds.count();
     const evictCount = enforceCap && this._maxDocs ? Math.max(0, count + docs.length - this._maxDocs) : 0;
@@ -2739,7 +2739,7 @@ class Collection {
     throw error;
   }
 
-  // ─── Private index helpers ────────────────────────────────────────────────
+  // --- Private index helpers ------------------------------------------------
 
   _addToIndex(doc) {
     if (this._fieldIndex) this._fieldIndex.add(doc);
@@ -2753,7 +2753,7 @@ class Collection {
     if (this._fieldIndex) this._fieldIndex.update(oldDoc, doc);
   }
 
-  // ─── Private document construction ───────────────────────────────────────
+  // --- Private document construction ---------------------------------------
 
   /**
    * Build a new document from a raw item: assign _id/timestamps, apply TTL,
@@ -2782,7 +2782,7 @@ class Collection {
     }
   }
 
-  // ─── Private projection / population helpers ──────────────────────────────
+  // --- Private projection / population helpers ------------------------------
 
   /**
    * Return a shallow copy of doc with optional field projection.
@@ -2881,7 +2881,7 @@ class StorageAdapter {
     for (const { name, data } of entries) await this.write(name, data);
   }
 
-  // ─── Capability checks ────────────────────────────────────────────────
+  // --- Capability checks ------------------------------------------------
   //
   // Replaces duck-typed `typeof adapter.readRaw === "function"` checks
   // throughout the engine. Subclasses override to return true when they
@@ -3054,7 +3054,7 @@ class FsAdapter extends StorageAdapter {
    * Delete any orphan temp files left by interrupted writes.
    * Temp files are named `.skalex-<uuid>.tmp.<format>` - a partial rename on
    * the way out of `write()` / `writeAll()` can leave them on disk. Cleanup
-   * covers json and gz regardless of the current format; listing remains
+   * covers json and gz regardless of the current format. Listing remains
    * restricted to the current format.
    * Best-effort: individual unlink failures are ignored.
    * @returns {Promise<number>} The number of temp files removed.
@@ -3083,9 +3083,9 @@ class FsAdapter extends StorageAdapter {
  * migrations.js  -  versioned schema migrations.
  *
  * Migrations are registered with db.addMigration({ version, up }).
- * On connect(), each pending migration runs inside its own transaction;
+ * On connect(), each pending migration runs inside its own transaction.
  * the migration's data writes and the applied-version record in `_meta`
- * are flushed atomically in a single `saveAtomic` batch.
+ * share one `saveAtomic` batch with adapter-dependent disk atomicity.
  *
  * _meta collection stores: { _id: "migrations", appliedVersions: number[] }
  */
@@ -3100,31 +3100,31 @@ class MigrationEngine {
   /**
    * Register a migration. The `up()` function runs during `db.connect()`
    * after data has been loaded, **inside a transaction**. It receives the
-   * Skalex instance (transaction proxy) so callers use the standard
-   * `db.useCollection(name)` API:
+   * restricted TransactionHandle so callers use
+   * `tx.useCollection(name)` or `tx.createCollection(name, options)`:
    *
    * ```js
    * db.addMigration({
    *   version: 1,
-   *   up: async (db) => {
-   *     const users = db.useCollection("users");
+   *   up: async (tx) => {
+   *     const users = tx.useCollection("users");
    *     await users.insertOne({ name: "admin" });
    *   },
    * });
    * ```
    *
    * **Atomicity.** Each migration runs in its own transaction. If `up()`
-   * throws, the transaction rolls back every write it made and the
-   * migration's version is NOT recorded in `_meta`. The same migration
-   * will re-run on the next `connect()` from a clean slate, so crash
-   * recovery is automatic. Earlier migrations that already committed are
-   * preserved.
+   * throws, owned in-memory writes and the version record roll back.
+   * The migration is attempted again on the next connect. Interrupted
+   * adapter batches may leave partial storage and an incomplete-flush
+   * warning. This does not provide automatic crash recovery. Earlier
+   * committed migrations are preserved.
    *
    * Even so, prefer idempotent write patterns (`upsert`, check-before-mutate)
    * so a partially-rolled-back migration followed by a retry produces the
    * same final state as a clean run.
    *
-   * @param {{ version: number, description?: string, up: (db: import("../index.js").default) => Promise<void> }} migration
+   * @param {{ version: number, description?: string, up: (tx: import("../index.js").TransactionHandle) => Promise<void> }} migration
    */
   add(migration) {
     const { version, up } = migration;
@@ -3148,23 +3148,23 @@ class MigrationEngine {
    * ------------------
    * Each migration's version is recorded in `_meta` **inside** the same
    * transaction that commits the migration's data writes. Both reach disk
-   * in the same `saveAtomic()` batch, so a crash between "data committed"
-   * and "version recorded" is impossible: either both land or neither does.
+   * in the same `saveAtomic()` batch. The adapter determines atomicity.
+   * Sequential or chunked batches may persist only part of that batch.
    *
    * @param {object} hooks
    * @param {(fn: (db: any) => Promise<void>) => Promise<void>} hooks.runInTx
    *   Wrapper that runs `fn(dbProxy)` inside a transaction boundary. If
    *   `fn` throws, the transaction must roll back. In production this is
-   *   bound to `(fn) => skalex.transaction(fn)`; tests may pass a simpler
+   *   bound to `(fn) => skalex.transaction(fn)`. Tests may pass a simpler
    *   wrapper that forwards a raw db instance.
    * @param {(versions: number[]) => void} hooks.recordApplied
    *   Called inside the transaction callback after `migration.up()` returns
    *   successfully. Records the full applied-versions list in the active
-   *   transaction's `_meta` so it is flushed atomically with migration data.
+   *   transaction's `_meta` so it shares the migration-data batch.
    * @param {number[]} appliedVersions - already-applied versions from _meta
    * @returns {Promise<number[]>} The new full list of applied versions.
    *   If a migration fails, the returned list reflects the migrations that
-   *   committed successfully before the failure; the error is re-thrown.
+   *   committed successfully before the failure. The error is re-thrown.
    */
   async run({ runInTx, recordApplied }, appliedVersions = []) {
     const applied = new Set(appliedVersions);
@@ -3554,7 +3554,7 @@ class IndexEngine {
     }
   }
 
-  // ─── private ─────────────────────────────────────────────────────────────
+  // --- private -------------------------------------------------------------
 
   _validateDoc(doc) {
     for (const [, ci] of this._compoundIndexes) {
@@ -3613,7 +3613,7 @@ class IndexEngine {
  * ask.js  -  query cache and LLM filter utilities for db.ask().
  */
 
-// ─── Hash ─────────────────────────────────────────────────────────────────────
+// --- Hash ---------------------------------------------------------------------
 
 /**
  * Deterministic djb2-style hash of a string.
@@ -3628,7 +3628,7 @@ function _djb2(str) {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-// ─── QueryCache ───────────────────────────────────────────────────────────────
+// --- QueryCache ---------------------------------------------------------------
 
 /**
  * QueryCache  -  maps hash(collection + schema + query) → filter object.
@@ -3689,7 +3689,7 @@ class QueryCache {
   }
 }
 
-// ─── Filter helpers ───────────────────────────────────────────────────────────
+// --- Filter helpers -----------------------------------------------------------
 
 /**
  * Convert an LLM-generated filter into a form matchesFilter() can execute.
@@ -3937,7 +3937,7 @@ class PersistenceManager {
     return next;
   }
 
-  // ─── Load ──────────────────────────────────────────────────────────────
+  // --- Load --------------------------------------------------------------
 
   /**
    * Load all collections from the storage adapter.
@@ -4062,7 +4062,7 @@ class PersistenceManager {
     }
   }
 
-  // ─── Save ──────────────────────────────────────────────────────────────
+  // --- Save --------------------------------------------------------------
 
   /**
    * Persist one or all collections via the storage adapter.
@@ -4108,7 +4108,7 @@ class PersistenceManager {
    * Persist an incomplete marker over previously committed metadata before
    * writing any batch data. The batch still includes current _meta last, so
    * pending migration versions are not published by the preflight write.
-   * Clear only this batch's marker on success; retain earlier uncertainty.
+   * Clear only this batch's marker on success. Retain earlier uncertainty.
    * A marker or data-write failure rejects. A clear failure logs a warning
    * and leaves committed data intact. Detection is not automatic recovery.
    *
@@ -4204,7 +4204,7 @@ class PersistenceManager {
     });
   }
 
-  // ─── Serialization ─────────────────────────────────────────────────────
+  // --- Serialization -----------------------------------------------------
 
   /**
    * Serialize a collection store into a persistable string.
@@ -4214,7 +4214,7 @@ class PersistenceManager {
   _serializeCollection(col) {
     if (col._recoveryError) throw col._recoveryError;
     let data = col.data;
-    // Rollback may restore older metadata; never erase an unresolved warning.
+    // Rollback may restore older metadata. Never erase an unresolved warning.
     if (col.collectionName === "_meta" && this._pendingFlush) {
       data = col.data.map(doc => doc._id === META_DOC_ID ? { ...doc, [FLUSH_META_KEY]: this._pendingFlush } : doc);
       if (!data.some(doc => doc._id === META_DOC_ID)) data.push({ _id: META_DOC_ID, [FLUSH_META_KEY]: this._pendingFlush });
@@ -4232,7 +4232,7 @@ class PersistenceManager {
     return this._serializer(payload);
   }
 
-  // ─── Private ───────────────────────────────────────────────────────────
+  // --- Private -----------------------------------------------------------
 
   /**
    * Persist a single collection. Implements per-collection write coalescing:
@@ -4496,7 +4496,7 @@ function _createHandle(target, methods, assertAlive, kind, name) {
       { handle: kind, property: String(property) }
     );
   };
-  // Resolve only used methods; each captured function still checks lifetime.
+  // Resolve only used methods. Each captured function still checks lifetime.
   const resolve = property => {
     if (Object.hasOwn(surface, property)) return surface[property];
     if (!methods.includes(property)) return undefined;
@@ -4679,7 +4679,7 @@ class TransactionManager {
         ctx.committed = true;
 
         // Flush deferred side effects after successful commit. All effects
-        // run regardless of individual failures; the configured error
+        // run regardless of individual failures. The configured error
         // strategy decides what happens to captured errors afterwards.
         for (const effect of ctx.deferredEffects) {
           try {
@@ -4728,7 +4728,7 @@ class TransactionManager {
       }
 
       // Post-commit: handle deferred effect errors according to strategy.
-      // Runs only if we reached commit; rollback paths skip this.
+      // Runs only if we reached commit. Rollback paths skip this.
       if (deferredErrors.length > 0) {
         // Precedence: per-transaction option → Skalex instance default → "warn".
         const strategy = deferredEffectErrors ?? db._deferredEffectErrors ?? "warn";
@@ -4841,7 +4841,7 @@ class TransactionManager {
 
   /**
    * Queue a side effect for after-commit execution.
-   * Returns false without an owner; the caller then executes immediately.
+   * Returns false without an owner. The caller then executes immediately.
    * @param {Function} effect - async () => void
    * @param {object} [ctx] - Explicit transaction owner.
    * @returns {boolean} true if deferred, false if the caller should execute
@@ -5826,7 +5826,7 @@ function createLLMAdapter({ provider, apiKey, model, host, baseUrl, apiVersion, 
 /**
  * EncryptedAdapter  -  wraps any StorageAdapter with AES-256-GCM encryption.
  *
- * All data written to the underlying adapter is encrypted; reads are decrypted
+ * All data written to the underlying adapter is encrypted. Reads are decrypted
  * transparently. The encryption layer is completely invisible to callers.
  *
  * Algorithm : AES-256-GCM
@@ -5895,7 +5895,7 @@ class EncryptedAdapter extends StorageAdapter {
     return this._adapter.writeAll(encrypted);
   }
 
-  // ─── FsAdapter extension passthrough ────────────────────────────────────────
+  // --- FsAdapter extension passthrough ----------------------------------------
   // These stubs forward optional FsAdapter-specific methods (used by export/import).
 
   join(...args) { return this._adapter.join?.(...args); }
@@ -5913,7 +5913,7 @@ class EncryptedAdapter extends StorageAdapter {
     return this._decrypt(raw);
   }
 
-  // ─── Crypto ──────────────────────────────────────────────────────────────────
+  // --- Crypto ------------------------------------------------------------------
 
   async _getKey() {
     if (!this._cryptoKey) {
@@ -5963,7 +5963,7 @@ class EncryptedAdapter extends StorageAdapter {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function _hexToBytes(hex) {
   if (hex.length !== KEY_LEN * 2) {
@@ -6001,7 +6001,7 @@ const CHARS_PER_TOKEN = 4;
 /**
  * Session IDs become part of an internal `_memory_<sessionId>` collection
  * name. The collection registry enforces a 64-char limit with a restricted
- * character set; we validate against a compatible subset here so failures
+ * character set. We validate against a compatible subset here so failures
  * surface at `useMemory()` / `new Memory()` instead of at the first method
  * call, with a message that names the right parameter.
  *
@@ -6028,7 +6028,7 @@ const _SESSION_ID_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,55}$/;
 class Memory {
   /**
    * @param {string} sessionId - 1-56 characters. Must start with a letter,
-   *   digit, or underscore; subsequent characters may be letters, digits,
+   *   digit, or underscore. Subsequent characters may be letters, digits,
    *   or `_ . : -`. The underlying `_memory_<sessionId>` collection name
    *   must satisfy the registry's 64-char limit.
    * @param {object} db  - Skalex instance
@@ -6134,10 +6134,10 @@ class Memory {
 
   /**
    * Summarise and compact old memories when total tokens exceed a threshold.
-   * Keeps the most recent `keepRecent` entries intact; summarises the rest
+   * Keeps the most recent `keepRecent` entries intact. Summarises the rest
    * into one embedded entry via the configured language model adapter.
    * Insert the summary before deleting originals. Failures may leave redundant
-   * entries; replacement is not atomic and preserves the normal autoSave policy.
+   * entries. Replacement is not atomic and preserves the normal autoSave policy.
    * @param {{ threshold?: number, keepRecent?: number }} [opts]
    * @returns {Promise<void>}
    * @throws {AdapterError} If a required model adapter is unavailable.
@@ -6175,7 +6175,7 @@ class Memory {
     await this._col.deleteMany({ _id: { $in: toCompress.map(d => d._id) } });
   }
 
-  // ─── Private helpers ──────────────────────────────────────────────────────
+  // --- Private helpers ------------------------------------------------------
 
   /** Estimate token count for a single memory doc (chars / CHARS_PER_TOKEN heuristic). */
   _docTokens(doc) {
@@ -6457,7 +6457,7 @@ class SessionStats {
     this._sessions = new Map();
   }
 
-  // ─── Private ─────────────────────────────────────────────────────────────
+  // --- Private -------------------------------------------------------------
 
   _ensure(sessionId) {
     if (!this._sessions.has(sessionId)) {
@@ -6466,7 +6466,7 @@ class SessionStats {
     return this._sessions.get(sessionId);
   }
 
-  // ─── Record ───────────────────────────────────────────────────────────────
+  // --- Record ---------------------------------------------------------------
 
   /**
    * Record a read operation for a session.
@@ -6492,7 +6492,7 @@ class SessionStats {
     s.lastActive = new Date();
   }
 
-  // ─── Query ────────────────────────────────────────────────────────────────
+  // --- Query ----------------------------------------------------------------
 
   /**
    * Return stats for a single session, or null if not found.
@@ -6628,7 +6628,7 @@ class PluginEngine {
 
 /**
  * Maximum allowed depth of a filter tree sanitized from agent input.
- * Real filters rarely exceed 3-4 levels (`$or` → branch → field op); 16
+ * Real filters rarely exceed 3-4 levels (`$or` → branch → field op). 16
  * gives 4× headroom for complex compound queries. Deeper trees are
  * almost certainly malicious (stack-overflow attempts) or buggy and are
  * rejected with a stable error code.
@@ -7071,8 +7071,8 @@ class StdioTransport {
  * await server.listen();
  *
  * // HTTP + SSE
- * const server = db.mcp({ transport: 'http', port: 3456 });
- * await server.listen();
+ * const httpServer = db.mcp({ transport: 'http', port: 3456 });
+ * await httpServer.listen();
  */
 
 const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.7" };
@@ -7089,7 +7089,7 @@ class SkalexMCPServer {
    * @param {string|null} [opts.allowedOrigin]    - Exact browser origin for HTTP transport; "*" permits valid HTTP(S) origins. Default: null (native clients only).
    * @param {number}  [opts.maxBodySize]          - Max POST body size in bytes for HTTP transport. Default: 1 MiB.
    * @param {Record<string, Function>} [opts.predicates] - Named predicate allowlist
-   *   for `$fn` in agent-supplied filters. Agents reference predicates by name;
+   *   for `$fn` in agent-supplied filters. Agents reference predicates by name.
    *   the MCP handler resolves the name to the real function. No code crosses
    *   the wire. When omitted, all `$fn` keys are stripped (alpha.3 default).
    */
@@ -7105,7 +7105,7 @@ class SkalexMCPServer {
     this._t             = null; // active transport instance
   }
 
-  // ─── Public API ────────────────────────────────────────────────────────────
+  // --- Public API ------------------------------------------------------------
 
   /**
    * Start listening on the configured transport.
@@ -7146,7 +7146,7 @@ class SkalexMCPServer {
   /** @returns {string|undefined} HTTP URL (http transport only). */
   get url() { return this._t?.url; }
 
-  // ─── Message router ────────────────────────────────────────────────────────
+  // --- Message router --------------------------------------------------------
 
   async _handleMessage(raw) {
     const { msg, parseError } = typeof raw === "string" ? parse(raw) : { msg: raw };
@@ -7221,7 +7221,7 @@ class SkalexMCPServer {
     }
   }
 
-  // ─── Access control ────────────────────────────────────────────────────────
+  // --- Access control --------------------------------------------------------
 
   /**
    * Return tool definitions visible to the current scope configuration.
@@ -7261,7 +7261,7 @@ class SkalexMCPServer {
     return false;
   }
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
+  // --- Helpers ---------------------------------------------------------------
 
   _send(msg) {
     this._t?.send(msg);
@@ -7312,7 +7312,7 @@ const _serialize = (value) => {
  *     class instances with enumerable own properties) walk their own keys.
  *
  * @param {any} v
- * @param {Array<string|number>} path - mutated during traversal; captured per hit
+ * @param {Array<string|number>} path - mutated during traversal. Captured per hit
  * @param {{ bigint: Array<Array<string|number>>, Date: Array<Array<string|number>> }} types
  * @returns {any}
  */
@@ -7552,7 +7552,7 @@ class Skalex {
       for (const p of plugins) this._plugins.register(p);
     }
 
-    // ── Extracted subsystems ──────────────────────────────────────────────
+    // -- Extracted subsystems ----------------------------------------------
     this._ai = new SkalexAI({
       aiAdapter: llmAdapter ?? (ai ? createLLMAdapter(ai) : null),
       embeddingAdapter: embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null),
@@ -7575,7 +7575,7 @@ class Skalex {
     });
   }
 
-  // ─── Connection ──────────────────────────────────────────────────────────
+  // --- Connection ----------------------------------------------------------
 
   /**
    * Connect to the database: load data, run pending migrations, sweep TTL docs.
@@ -7664,7 +7664,7 @@ class Skalex {
     return this.connect();
   }
 
-  // ─── Collections ─────────────────────────────────────────────────────────
+  // --- Collections ---------------------------------------------------------
 
   /**
    * Get (or lazily create) a Collection instance by name.
@@ -7704,7 +7704,7 @@ class Skalex {
     await this.fs.delete(from);
   }
 
-  // ─── Persistence ─────────────────────────────────────────────────────────
+  // --- Persistence ---------------------------------------------------------
 
   /**
    * Load all collections from the storage adapter.
@@ -7732,7 +7732,7 @@ class Skalex {
    * Persist one or all collections via the storage adapter.
    *
    * Best-effort: each collection is written independently. If one fails,
-   * others may already be committed. transaction() coordinates owned writes;
+   * others may already be committed. transaction() coordinates owned writes.
    * its disk atomicity depends on the adapter batch implementation.
    * Ordinary writes and transaction batches share one adapter-write queue.
    * Snapshots are serialized when their queued write begins.
@@ -7770,7 +7770,7 @@ class Skalex {
     return this._registry.buildIndex(data, keyField);
   }
 
-  // ─── Migrations ──────────────────────────────────────────────────────────
+  // --- Migrations ----------------------------------------------------------
 
   /**
    * Register a migration to run on next connect().
@@ -7789,7 +7789,7 @@ class Skalex {
     return this._migrations.status(meta.appliedVersions || []);
   }
 
-  // ─── Namespace ───────────────────────────────────────────────────────────
+  // --- Namespace -----------------------------------------------------------
 
   /**
    * Create a scoped Skalex instance that stores data under a sub-directory.
@@ -7815,7 +7815,7 @@ class Skalex {
     });
   }
 
-  // ─── Plugins ──────────────────────────────────────────────────────────────
+  // --- Plugins --------------------------------------------------------------
 
   /**
    * Register a plugin. Plugins are plain objects with optional async hook
@@ -7828,7 +7828,7 @@ class Skalex {
     this._plugins.register(plugin);
   }
 
-  // ─── Global Watch ─────────────────────────────────────────────────────────
+  // --- Global Watch ---------------------------------------------------------
 
   /**
    * Subscribe to all mutation events across every collection.
@@ -7841,7 +7841,7 @@ class Skalex {
     return this._eventBus.on("*", callback);
   }
 
-  // ─── Session Stats ────────────────────────────────────────────────────────
+  // --- Session Stats --------------------------------------------------------
 
   /**
    * Return per-session read/write stats.
@@ -7858,7 +7858,7 @@ class Skalex {
   /** Whether a transaction is currently active. */
   get _inTransaction() { return this._txManager.active; }
 
-  // ─── Transaction helpers ─────────────────────────────────────────────────
+  // --- Transaction helpers -------------------------------------------------
 
   /**
    * Emit a collection event. Owned writes defer through their scoped context.
@@ -7893,7 +7893,7 @@ class Skalex {
   /**
    * Record the applied-migrations list into `_meta` in the same batch as the
    * active transaction. Called by the migration runner inside `up()`'s
-   * transaction callback; must NOT be called outside a transaction.
+   * transaction callback. Must NOT be called outside a transaction.
    *
    * Ensures `_meta` exists, snapshots it into the active tx so rollback
    * reverts the version record on failure, and mutates it via the
@@ -7937,17 +7937,17 @@ class Skalex {
     this._persistence.updateMeta(this.collections, { appliedVersions: versions });
   }
 
-  // ─── Transaction ─────────────────────────────────────────────────────────
+  // --- Transaction ---------------------------------------------------------
 
   /**
    * Run a callback inside a transaction.
    *
    * The callback receives TransactionHandle: useCollection and createCollection
-   * only. Returned handles expose document/query capabilities; persistence,
+   * only. Returned handles expose document/query capabilities. Persistence,
    * lifecycle, export, subscriptions and internal state are unavailable.
    * Ownership: use the callback's collection handles and await each operation
    * inside it. Handles and captured methods expire when the callback ends.
-   * Writes lock collections and take lazy rollback snapshots; ordinary reads
+   * Writes lock collections and take lazy rollback snapshots. Ordinary reads
    * still observe live data, including uncommitted transactional changes.
    * Independently created collections and writes remain outside rollback.
    *
@@ -7986,7 +7986,7 @@ class Skalex {
     return this._txManager.run(fn, this, opts);
   }
 
-  // ─── Seed ────────────────────────────────────────────────────────────────
+  // --- Seed ----------------------------------------------------------------
 
   /**
    * Seed collections with fixture data.
@@ -8006,7 +8006,7 @@ class Skalex {
     await this.saveData();
   }
 
-  // ─── Dump ────────────────────────────────────────────────────────────────
+  // --- Dump ----------------------------------------------------------------
 
   /**
    * Return a snapshot of all collection data.
@@ -8016,7 +8016,7 @@ class Skalex {
     return this._registry.dump();
   }
 
-  // ─── Inspect ─────────────────────────────────────────────────────────────
+  // --- Inspect -------------------------------------------------------------
 
   /**
    * Return metadata about one or all collections.
@@ -8027,7 +8027,7 @@ class Skalex {
     return this._registry.inspect(collectionName);
   }
 
-  // ─── Import ──────────────────────────────────────────────────────────────
+  // --- Import --------------------------------------------------------------
 
   /**
    * Import documents from a JSON file into a collection.
@@ -8040,7 +8040,7 @@ class Skalex {
     return this._importer.import(filePath);
   }
 
-  // ─── Embedding ───────────────────────────────────────────────────────────
+  // --- Embedding -----------------------------------------------------------
 
   /**
    * Embed a text string using the configured embedding adapter.
@@ -8051,7 +8051,7 @@ class Skalex {
     return this._ai.embed(text);
   }
 
-  // ─── AI Query ─────────────────────────────────────────────────────────────
+  // --- AI Query -------------------------------------------------------------
 
   /**
    * Natural-language query: translate `nlQuery` into a filter via the language
@@ -8066,7 +8066,7 @@ class Skalex {
     return this._ai.ask(collectionName, nlQuery, opts);
   }
 
-  // ─── Schema ──────────────────────────────────────────────────────────────
+  // --- Schema --------------------------------------------------------------
 
   /**
    * Return the schema for a collection as a plain `{ field: type }` object.
@@ -8080,7 +8080,7 @@ class Skalex {
     return this._registry.schema(collectionName);
   }
 
-  // ─── Agent Memory ─────────────────────────────────────────────────────────
+  // --- Agent Memory ---------------------------------------------------------
 
   /**
    * Get (or create) an episodic Memory store for a session.
@@ -8091,7 +8091,7 @@ class Skalex {
     return new Memory(sessionId, this);
   }
 
-  // ─── ChangeLog ────────────────────────────────────────────────────────────
+  // --- ChangeLog ------------------------------------------------------------
 
   /**
    * Return the shared ChangeLog instance.
@@ -8112,7 +8112,7 @@ class Skalex {
     return this._changeLog.restore(collectionName, timestamp, opts);
   }
 
-  // ─── Stats ────────────────────────────────────────────────────────────────
+  // --- Stats ----------------------------------------------------------------
 
   /**
    * Return size statistics for one or all collections.
@@ -8123,7 +8123,7 @@ class Skalex {
     return this._registry.stats(collectionName);
   }
 
-  // ─── Slow Query Log ───────────────────────────────────────────────────────
+  // --- Slow Query Log -------------------------------------------------------
 
   /**
    * Return recorded slow queries (requires slowQueryLog config).
@@ -8150,7 +8150,7 @@ class Skalex {
     this._queryLog?.clear();
   }
 
-  // ─── MCP Server ───────────────────────────────────────────────────────────
+  // --- MCP Server -----------------------------------------------------------
 
   /**
    * Create a Skalex MCP server that exposes this database as MCP tools.
@@ -8166,7 +8166,7 @@ class Skalex {
     return new SkalexMCPServer(this, opts);
   }
 
-  // ─── Private ─────────────────────────────────────────────────────────────
+  // --- Private -------------------------------------------------------------
 
   /**
    * Build a lazy context that resolves properties at call time.
@@ -8211,7 +8211,7 @@ class Skalex {
     if (this.debug) this._logger(msg, "info");
   }
 
-  // ── Backward-compatible accessors for extracted subsystem internals ────
+  // -- Backward-compatible accessors for extracted subsystem internals ----
   //
   // @deprecated These getters/setters proxy to the alpha.4-extracted
   // subsystems (`_ai`, `_ttlScheduler`). They exist only to avoid breaking

@@ -29,7 +29,7 @@
 
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); overflow: hidden; }
 
-    /* ── Header ──────────────────────────────────────────────────────────── */
+    /* -- Header ------------------------------------------------------------ */
     header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       height: var(--hh);
@@ -72,7 +72,7 @@
     #runBtn.busy   { opacity: .6; cursor: not-allowed; }
     #runBtn kbd    { font-size: 11px; font-weight: 400; opacity: .55; font-family: var(--font-mono); }
 
-    /* ── Layout ──────────────────────────────────────────────────────────── */
+    /* -- Layout ------------------------------------------------------------ */
     main {
       display: grid;
       grid-template-columns: 195px 1fr 330px;
@@ -80,7 +80,7 @@
       margin-top: var(--hh);
     }
 
-    /* ── Sidebar ─────────────────────────────────────────────────────────── */
+    /* -- Sidebar ----------------------------------------------------------- */
     #sidebar {
       background: var(--bg1);
       border-right: 1px solid var(--border);
@@ -113,7 +113,7 @@
     .ex-item.active .ex-title { color: var(--accent); }
     .ex-desc  { font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.3; }
 
-    /* ── Editor ──────────────────────────────────────────────────────────── */
+    /* -- Editor ------------------------------------------------------------ */
     #editor-wrap {
       display: flex; flex-direction: column; min-width: 0;
       border-right: 1px solid var(--border);
@@ -130,7 +130,7 @@
 
     #monaco { flex: 1; min-height: 0; }
 
-    /* ── Output ──────────────────────────────────────────────────────────── */
+    /* -- Output ------------------------------------------------------------ */
     #output-wrap { display: flex; flex-direction: column; min-width: 0; }
 
     .out-bar {
@@ -178,17 +178,17 @@
 
     .rule { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
 
-    /* ── Spinner ─────────────────────────────────────────────────────────── */
+    /* -- Spinner ----------------------------------------------------------- */
     .spin { display: inline-block; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Scrollbar ───────────────────────────────────────────────────────── */
+    /* -- Scrollbar --------------------------------------------------------- */
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
 
-    /* ── Mobile ──────────────────────────────────────────────────────────── */
+    /* -- Mobile ------------------------------------------------------------ */
     @media (max-width: 860px) {
       main {
         grid-template-columns: 1fr;
@@ -253,7 +253,7 @@
 <script>
 'use strict';
 
-// ── MemoryAdapter ─────────────────────────────────────────────────────────────
+// -- MemoryAdapter -------------------------------------------------------------
 class MemoryAdapter {
   constructor() { this._s = new Map(); }
   async read(k)    { const v = this._s.get(k); return v != null ? JSON.parse(v) : null; }
@@ -262,7 +262,7 @@ class MemoryAdapter {
   async list()     { return [...this._s.keys()]; }
 }
 
-// ── Examples ──────────────────────────────────────────────────────────────────
+// -- Examples ------------------------------------------------------------------
 const EXAMPLES = [
   {
     id: 'quickstart', icon: '🚀',
@@ -593,18 +593,18 @@ await db.disconnect();`
   },
 ];
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// -- State ---------------------------------------------------------------------
 let editor     = null;
 let activeId   = EXAMPLES[0].id;
 let running    = false;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 function waitForSkalex() {
   if (window.__Skalex) return Promise.resolve(window.__Skalex);
   return new Promise(r => document.addEventListener('skalex-ready', () => r(window.__Skalex), { once: true }));
 }
 
-// ── Build sidebar ─────────────────────────────────────────────────────────────
+// -- Build sidebar -------------------------------------------------------------
 const sidebar = document.getElementById('sidebar');
 EXAMPLES.forEach((ex, i) => {
   const el = document.createElement('div');
@@ -624,7 +624,7 @@ EXAMPLES.forEach((ex, i) => {
   sidebar.appendChild(el);
 });
 
-// ── Output helpers ────────────────────────────────────────────────────────────
+// -- Output helpers ------------------------------------------------------------
 const outputEl = document.getElementById('output');
 
 function clearOutput() { outputEl.innerHTML = ''; }
@@ -654,7 +654,7 @@ function fmt(...args) {
   }).join(' ');
 }
 
-// ── Runner ────────────────────────────────────────────────────────────────────
+// -- Runner --------------------------------------------------------------------
 async function run(code) {
   if (running) return;
   running = true;
@@ -691,13 +691,13 @@ async function run(code) {
   btn.innerHTML = '▶ Run <kbd>⌘↵</kbd>';
 }
 
-// ── Wire buttons ──────────────────────────────────────────────────────────────
+// -- Wire buttons --------------------------------------------------------------
 document.getElementById('runBtn').addEventListener('click', () => {
   run(editor ? editor.getValue() : EXAMPLES.find(e => e.id === activeId).code);
 });
 document.getElementById('clearBtn').addEventListener('click', clearOutput);
 
-// ── Monaco ────────────────────────────────────────────────────────────────────
+// -- Monaco --------------------------------------------------------------------
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
 
 require(['vs/editor/editor.main'], function () {

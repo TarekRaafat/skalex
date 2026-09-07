@@ -1,6 +1,6 @@
 /**
  * Semantic Document Search
- * ─────────────────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------------------
  * Builds a searchable knowledge base from a set of technical articles.
  * Demonstrates all three search modes Skalex supports:
  *
@@ -49,7 +49,7 @@ await db.connect();
 
 const articles = db.useCollection("articles");
 
-// ── Seed the knowledge base ───────────────────────────────────────────────────
+// -- Seed the knowledge base ---------------------------------------------------
 
 // Clear any data from a previous run so results are deterministic
 await articles.deleteMany({});
@@ -111,7 +111,7 @@ await articles.insertMany(docs, { embed: "content" });
 
 console.log(`  ${docs.length} articles stored with embeddings.\n`);
 
-// ── Search 1: Vector search  -  find by meaning ─────────────────────────────────
+// -- Search 1: Vector search  -  find by meaning ---------------------------------
 
 console.log("─── Search 1: Vector search  -  \"how do I set up a local database?\" ───\n");
 
@@ -125,7 +125,7 @@ for (let i = 0; i < results1.length; i++) {
   console.log(`          ${results1[i].content.slice(0, 80)}...`);
 }
 
-// ── Search 2: Hybrid search  -  vector + structured filter ─────────────────────
+// -- Search 2: Hybrid search  -  vector + structured filter ---------------------
 
 console.log("\n─── Search 2: Hybrid  -  \"AI memory concepts\" filtered to advanced level ───\n");
 
@@ -142,7 +142,7 @@ for (let i = 0; i < results2.length; i++) {
   console.log(`  [${scores2[i].toFixed(3)}] [${results2[i].level}] ${results2[i].title}`);
 }
 
-// ── Search 3: Nearest neighbours  -  similar to an existing doc ─────────────────
+// -- Search 3: Nearest neighbours  -  similar to an existing doc -----------------
 
 console.log("\n─── Search 3: Similar  -  docs nearest to \"MCP Server for AI Agents\" ───\n");
 
@@ -157,7 +157,7 @@ for (let i = 0; i < similar.length; i++) {
   console.log(`  [${scores3[i].toFixed(3)}] ${similar[i].title}`);
 }
 
-// ── Search 4: Category-filtered query ─────────────────────────────────────────
+// -- Search 4: Category-filtered query -----------------------------------------
 
 console.log("\n─── Search 4: Hybrid  -  \"encryption and security\" in security category ───\n");
 

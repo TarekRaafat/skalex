@@ -26,7 +26,7 @@
 > No server. No config. No dependencies. The AI-first JavaScript database - built for AI agents, local-first apps, and every JavaScript runtime. :rocket:
 
 > [!WARNING]
-> **These docs target v4.0.0-alpha.7.** This is a prerelease; pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading.
+> **These docs target v4.0.0-alpha.7.** This is a prerelease. Pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading.
 
 ## What is Skalex? <!-- {docsify-ignore} -->
 
@@ -55,24 +55,24 @@
 - Pure Vanilla JavaScript: zero runtime dependencies
 - Isomorphic: Node.js ≥18, Bun, Deno 2.x, browsers, edge runtimes
 - Full build matrix ships in the box: `dist/skalex.esm.js`, `dist/skalex.esm.min.js`, `dist/skalex.cjs`, `dist/skalex.min.cjs`, `dist/skalex.browser.js`, `dist/skalex.umd.min.js`
-- CDN-ready - **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`; **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.7"></script>` → `window.Skalex`
-- npm + bundler: `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors'` - single subpackage, fully tree-shakeable; scoped: `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`
-- Full TypeScript definitions with generics and union types; no `@types/` package needed
+- CDN-ready - **ESM** (recommended): `skalex.browser.js` + `src/connectors/storage/browser.js` → `{ LocalStorageAdapter, EncryptedAdapter }`. **IIFE** (quick demos): `<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.7"></script>` → `window.Skalex`
+- npm + bundler: `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors'` - single subpackage, fully tree-shakeable. Scoped: `skalex/connectors/storage`, `skalex/connectors/embedding`, `skalex/connectors/llm`
+- Full TypeScript definitions with generics and union types. No `@types/` package needed
 - Pluggable connectors: storage (`FsAdapter`, `LocalStorageAdapter`, `EncryptedAdapter`, `BunSQLiteAdapter`, `D1Adapter`, `LibSQLAdapter`), embedding (`OpenAIEmbeddingAdapter`, `OllamaEmbeddingAdapter`), LLM (`OpenAILLMAdapter`, `AnthropicLLMAdapter`, `OllamaLLMAdapter`)
 
 **Queries and data integrity:**
 - All CRUD operations <sub><sup>(Create, Read, Update, Delete)</sub></sup>
 - Query operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$regex`, `$fn`
 - Dot-notation nested field queries
-- Secondary field indexes: O(1) lookups; indexed fields evaluated first automatically
+- Secondary field indexes: O(1) lookups. Indexed fields evaluated first automatically
 - Unique index constraints
 - Schema validation: `type`, `required`, `unique`, `enum` rules
 - Relational collections <sub><sup>(populate: one-to-one & one-to-many)</sub></sup>
 
 **Data lifecycle:**
-- TTL documents: auto-expiry with `_expiresAt`; `defaultTtl` per collection; `ttlSweepInterval` for live processes
+- TTL documents: auto-expiry with `_expiresAt`. `defaultTtl` per collection. `ttlSweepInterval` for live processes
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
-- Transactions: in-memory snapshot/rollback; owned writes deferred until commit; concurrent transactions serialised; external side effects and direct collection mutations are not rolled back
+- Transactions: in-memory snapshot/rollback. Owned writes deferred until commit. Concurrent transactions serialised. External side effects and direct collection mutations are not rolled back
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: auto-increments `_version` on every write
 - Capped collections: `createCollection(name, { maxDocs: N })`, FIFO eviction
@@ -104,7 +104,7 @@
 6. **Migrations that run themselves:**
    - Register versioned migration functions with `db.addMigration({ version, up })`. They run automatically on `connect()` in the correct order, once, and never again.
 7. **Transactions with no boilerplate:**
-   - `db.transaction(fn)` snapshots owned collections lazily. Callback failures roll back owned in-memory writes; independent writes and post-commit effects remain outside that rollback. Reads are live, and disk atomicity depends on the adapter.
+   - `db.transaction(fn)` snapshots owned collections lazily. Callback failures roll back owned in-memory writes. Independent writes and post-commit effects remain outside that rollback. Reads are live, and disk atomicity depends on the adapter.
 8. **Relations without a query language:**
    - Link collections via `populate` on `find`/`findOne`. One-to-one and one-to-many relationships resolve in a single call.
 9. **Queries as expressive as your data:**

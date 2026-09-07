@@ -11,15 +11,15 @@ Skalex is an in-memory document database written in pure JavaScript with no runt
 - **Zero dependencies** - no install footprint beyond the package itself
 - **Isomorphic** - one package, one API: Node.js, Bun, Deno, browsers, Cloudflare Workers
 - **AI-native** - vector search, semantic recall, natural language queries, MCP server built into the core
-- **Local-first** - data lives in-memory; persistence is explicit and pluggable
+- **Local-first** - data lives in-memory. Persistence is explicit and pluggable
 - **TypeScript** - full generics and type declarations ship in the box
 - **Secure** - AES-256-GCM at-rest encryption via `EncryptedAdapter`
 
 ## Persistence ordering
 
-Ordinary saves and transaction batches share one adapter-write queue per database instance. A batch retains the queue through sentinel clearing. Snapshots are serialized when execution begins; same-collection saves remain coalesced. Failures release the queue, and edits during an ordinary write remain dirty. This does not add read isolation, cross-instance coordination or crash recovery.
+Ordinary saves and transaction batches share one adapter-write queue per database instance. A batch retains the queue through sentinel clearing. Snapshots are serialized when execution begins. Same-collection saves remain coalesced. Failures release the queue, and edits during an ordinary write remain dirty. This does not add read isolation, cross-instance coordination or crash recovery.
 
-Incomplete transaction batches: persist a marker over committed metadata before data writes, preserving pending migration versions until the batch. Reconnect logs an error-level warning and still loads data; no automatic repair. Unresolved markers survive later saves/transactions. Marker-read/write or batch failures reject with `ERR_SKALEX_PERSISTENCE_FLUSH_FAILED`; a failed final clear retains a conservative warning. Non-empty commits add a metadata read and marker write. Inspect storage and repair inconsistent data before calling `await db.acknowledgeIncompleteFlush()`. Requires a connected database outside transactions; clears only the observed warning, never repairs or saves collection data. No warning is an I/O-free no-op. Queued state changes and I/O failures reject with `ERR_SKALEX_PERSISTENCE_ACK_FAILED`; inspect before retrying.
+Incomplete transaction batches: persist a marker over committed metadata before data writes, preserving pending migration versions until the batch. Reconnect logs an error-level warning and still loads data. No automatic repair. Unresolved markers survive later saves/transactions. Marker-read/write or batch failures reject with `ERR_SKALEX_PERSISTENCE_FLUSH_FAILED`. A failed final clear retains a conservative warning. Non-empty commits add a metadata read and marker write. Inspect storage and repair inconsistent data before calling `await db.acknowledgeIncompleteFlush()`. Requires a connected database outside transactions. Clears only the observed warning, never repairs or saves collection data. No warning is an I/O-free no-op. Queued state changes and I/O failures reject with `ERR_SKALEX_PERSISTENCE_ACK_FAILED`. Inspect before retrying.
 
 ID filters: `{ _id: { $in: ["a", "b"] } }` and regular expressions use the normal matcher across reads, aggregates and mutations. Literal string IDs retain direct lookup, including checks for additional conditions.
 
@@ -31,15 +31,21 @@ ID filters: `{ _id: { $in: ["a", "b"] } }` and regular expressions use the norma
 - **Not designed for**: multi-process concurrency, distributed deployments, high write throughput across many clients, or datasets too large to fit in memory.
 - **Designed for**: CLI tools, desktop apps, AI agents with episodic memory, edge workers with bounded datasets, offline-first apps, and single-user or single-tenant applications.
 
+## Migration workflow
+
+Target: 4.0.0-alpha.7. Read https://tarekraafat.github.io/skalex/#/migration and the authoritative history at https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md. Identify the installed version from the application lockfile. Apply every intervening migration for earlier v4 prereleases or v3. Preserve adapter settings and keys, stop writers before backing up, and validate on an isolated storage copy.
+
+Transaction and migration callbacks receive TransactionHandle. Do not replace forbidden tx persistence calls with bare database calls, or move writes outside transactions to bypass errors. Review fixture reset/retry behavior rather than mechanically translating seed. Do not delete legacy temporary-looking files, auto-acknowledge incomplete flushes, clear recovery flags or weaken HTTP security. Report changed call sites, validation results and remaining application decisions. Installation or compilation alone does not establish a successful migration.
+
 ## Install
 
 ```bash
 npm install skalex@alpha
 ```
 
-> **These docs target v4.0.0-alpha.7.** This is a prerelease; pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **These docs target v4.0.0-alpha.7.** This is a prerelease. Pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
-**CDN - ESM** (recommended for browser apps; use the browser-specific barrel):
+**CDN - ESM** (recommended for browser apps. Use the browser-specific barrel):
 
 ```html
 <script type="module">
@@ -71,11 +77,11 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 ### Setup
 
-- `new Skalex(config)` - create a database instance; key options:
+- `new Skalex(config)` - create a database instance. Key options:
   - `path` - data directory (default: `./.db`)
   - `format` - `"gz"` (default) or `"json"`
   - `adapter` - custom `StorageAdapter` instance
-  - `ai` - AI/embedding config (`provider`, `apiKey`, `model`, `embedModel`, `host`, …)
+  - `ai` - AI/embedding config (`provider`, `apiKey`, `model`, `embedModel`, `host`, ...)
   - `encrypt` - `{ key }` for AES-256-GCM at-rest encryption
   - `autoSave` - persist after every write without `{ save: true }` (default: `false`)
   - `ttlSweepInterval` - interval in ms for periodic TTL sweep
@@ -88,35 +94,35 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 - `db.connect()` - load persisted data, run pending migrations, sweep expired TTL docs, start TTL sweep timer if configured
 - `db.disconnect()` - flush all unsaved data, clear in-memory state, stop TTL sweep timer
 - `db.useCollection(name)` - get or create a cached collection instance
-- `db.createCollection(name, opts?)` - define schema and collection behaviour before `connect()`; key options:
+- `db.createCollection(name, opts?)` - define schema and collection behaviour before `connect()`. Key options:
   - `schema` - `{ field: type | { type, required, unique, enum } }`
   - `indexes` - fields to build O(1) secondary indexes on
   - `changelog` - enable append-only mutation log
   - `softDelete` - mark documents deleted with `_deletedAt` instead of removing them
   - `versioning` - auto-increment `_version` on every insert and update
-  - `strict` - reject unknown fields except `createdAt`, `updatedAt` and underscore-prefixed fields; explicit schema constraints still apply
+  - `strict` - reject unknown fields except `createdAt`, `updatedAt` and underscore-prefixed fields. Explicit schema constraints still apply
   - `onSchemaError` - `"throw"` (default) | `"warn"` | `"strip"`
   - `defaultTtl` - TTL applied to every inserted document (e.g. `"24h"`)
   - `defaultEmbed` - field name auto-embedded as `_vector` on every insert
-  - `maxDocs` - capped collection; oldest documents evicted FIFO when exceeded
+  - `maxDocs` - capped collection. Oldest documents evicted FIFO when exceeded
 - `db.renameCollection(from, to)` - rename in memory and on disk
 
 ### CRUD
 
-- `collection.insertOne(doc, opts?)` → `doc`; opts: `save`, `ifNotExists`, `ttl`, `embed`, `session`
-- `collection.insertMany(docs, opts?)` → `doc[]`; opts: `save`, `ttl`, `embed`, `session`
-- `collection.findOne(filter, opts?)` → `doc | null`; opts: `populate`, `select`, `includeDeleted`
-- `collection.find(filter?, opts?)` → `{ docs, page?, totalDocs?, totalPages? }`; opts: `populate`, `select`, `sort`, `page`, `limit`, `session`, `includeDeleted`. Limit-only fast path (no sort and page 1): early termination; `totalDocs`/`totalPages` omitted. Supply an explicit sort or page greater than 1 to get totals.
-- Missing fields: `{ field: undefined }` matches omitted/undefined fields, not null. Single-field indexes omit undefined and request another index or a scan; compound candidates are filtered normally.
-- Read ownership: default document reads are shallow; groupBy retains live documents. Mutating shared values bypasses validation, versioning, dirty tracking and transaction checks, so memory and persistence may diverge. Pass `clone: true` to findOne/find/search/similar, memory history/recall, or groupBy(field, filter, options) for structured-clone results. Clone occurs after projection/population and read hooks. Costs scale with result size; SharedArrayBuffer backing memory remains shared. Inputs, mutation results and hooks retain existing ownership. This is not snapshot isolation.
-- Query ordering: find() sorts stored values and paginates before select/populate. Sort keys need not be selected; populated fields sort by their stored foreign keys. Sorted queries populate only returned documents.
-- `collection.updateOne(filter, update, opts?)` → `doc | null`; opts: `save`, `session`
-- `collection.updateMany(filter, update, opts?)` → `doc[]`; opts: `save`, `session`
-- `collection.deleteOne(filter, opts?)` → `doc | null`; soft-deletes when `softDelete: true`
-- `collection.deleteMany(filter, opts?)` → `doc[]`; soft-deletes when `softDelete: true`
+- `collection.insertOne(doc, opts?)` → `doc`. Opts: `save`, `ifNotExists`, `ttl`, `embed`, `session`
+- `collection.insertMany(docs, opts?)` → `doc[]`. Opts: `save`, `ttl`, `embed`, `session`
+- `collection.findOne(filter, opts?)` → `doc | null`. Opts: `populate`, `select`, `includeDeleted`
+- `collection.find(filter?, opts?)` → `{ docs, page?, totalDocs?, totalPages? }`. Opts: `populate`, `select`, `sort`, `page`, `limit`, `session`, `includeDeleted`. Limit-only fast path (no sort and page 1): early termination. `totalDocs`/`totalPages` omitted. Supply an explicit sort or page greater than 1 to get totals.
+- Missing fields: `{ field: undefined }` matches omitted/undefined fields, not null. Single-field indexes omit undefined and request another index or a scan. Compound candidates are filtered normally.
+- Read ownership: default document reads are shallow. GroupBy retains live documents. Mutating shared values bypasses validation, versioning, dirty tracking and transaction checks, so memory and persistence may diverge. Pass `clone: true` to findOne/find/search/similar, memory history/recall, or groupBy(field, filter, options) for structured-clone results. Clone occurs after projection/population and read hooks. Costs scale with result size. SharedArrayBuffer backing memory remains shared. Inputs, mutation results and hooks retain existing ownership. This is not snapshot isolation.
+- Query ordering: find() sorts stored values and paginates before select/populate. Sort keys need not be selected. Populated fields sort by their stored foreign keys. Sorted queries populate only returned documents.
+- `collection.updateOne(filter, update, opts?)` → `doc | null`. Opts: `save`, `session`
+- `collection.updateMany(filter, update, opts?)` → `doc[]`. Opts: `save`, `session`
+- `collection.deleteOne(filter, opts?)` → `doc | null`. Soft-deletes when `softDelete: true`
+- `collection.deleteMany(filter, opts?)` → `doc[]`. Soft-deletes when `softDelete: true`
 - `collection.upsert(filter, update, opts?)` → `doc`
-- `collection.upsertMany(docs, matchKey, opts?)` → `doc[]`; batch upsert keyed on `matchKey`, runs in a single pipeline pass (one save, one session-stats increment; per-doc `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` hooks, watch events, and changelog entries preserved with op-correct payloads). On an item failure, completed earlier items remain applied and finish normal effects before the original error is rethrown; later items are not attempted. Saving honors `save` / `autoSave`. An uncaught error rolls back an enclosing transaction; catching it inside the transaction permits the completed prefix to commit. A second failure during finalization rejects with `ERR_SKALEX_MUTATION_FINALIZE`, whose details include `mutationError` and `finalizationError`; remaining effects may be incomplete.
-- `collection.restore(filter, opts?)` → `doc | null`; undo a soft delete (requires `softDelete: true`)
+- `collection.upsertMany(docs, matchKey, opts?)` → `doc[]`. Batch upsert keyed on `matchKey`, runs in a single pipeline pass (one save, one session-stats increment. Per-doc `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` hooks, watch events, and changelog entries preserved with op-correct payloads). On an item failure, completed earlier items remain applied and finish normal effects before the original error is rethrown. Later items are not attempted. Saving honors `save` / `autoSave`. An uncaught error rolls back an enclosing transaction. Catching it inside the transaction permits the completed prefix to commit. A second failure during finalization rejects with `ERR_SKALEX_MUTATION_FINALIZE`, whose details include `mutationError` and `finalizationError`. Remaining effects may be incomplete.
+- `collection.restore(filter, opts?)` → `doc | null`. Undo a soft delete (requires `softDelete: true`)
 
 ### Update Operators
 
@@ -133,49 +139,49 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 ### Vector Search
 
 - `collection.insertOne(doc, { embed: "fieldName" })` - store embedding for the named field
-- `collection.search(query, opts?)` → `{ docs, scores }` - cosine similarity; opts: `filter`, `limit`, `minScore`
+- `collection.search(query, opts?)` → `{ docs, scores }` - cosine similarity. Opts: `filter`, `limit`, `minScore`
 - `collection.similar(id, opts?)` → `{ docs, scores }` - nearest-neighbour by document ID
 
 ### AI Queries
 
-- `db.ask(collection, nlQuery, opts?)` - translate natural language to a structured filter via LLM; results cached by `{ collection, schema, query }` hash
+- `db.ask(collection, nlQuery, opts?)` - translate natural language to a structured filter via LLM. Results cached by `{ collection, schema, query }` hash
 
 ### Agent Memory
 
-- `db.useMemory(sessionId)` - episodic store backed by `_memory_<sessionId>` collection. `sessionId` must be 1-56 chars matching `[a-zA-Z0-9_][a-zA-Z0-9_.:-]*`; invalid IDs throw `ValidationError` / `ERR_SKALEX_VALIDATION_SESSION_ID` at construction.
+- `db.useMemory(sessionId)` - episodic store backed by `_memory_<sessionId>` collection. `sessionId` must be 1-56 chars matching `[a-zA-Z0-9_][a-zA-Z0-9_.:-]*`. Invalid IDs throw `ValidationError` / `ERR_SKALEX_VALIDATION_SESSION_ID` at construction.
 - `memory.remember(text)` → `Promise<doc>` - store a text episode with embedding
 - `memory.recall(query, opts?)` → `Promise<{ docs, scores }>` - semantic similarity recall
-- `memory.history(opts?)` → `Promise<doc[]>` - chronological listing; opts: `since`, `limit`
+- `memory.history(opts?)` → `Promise<doc[]>` - chronological listing. Opts: `since`, `limit`
 - `memory.forget(id)` → `Promise<doc | null>` - delete a memory entry
-- `memory.context(opts?)` → `Promise<string>` - LLM-ready context string capped to a token budget; opts: `tokens`. **Async**.
-- `memory.compress(opts?)` → `Promise<void>` - summarise old episodes via LLM and embed the summary before deleting originals. Honors autoSave; failed cleanup can leave redundant entries. Adds one summary embedding request; opts: `threshold`, `keepRecent`
+- `memory.context(opts?)` → `Promise<string>` - LLM-ready context string capped to a token budget. Opts: `tokens`. **Async**.
+- `memory.compress(opts?)` → `Promise<void>` - summarise old episodes via LLM and embed the summary before deleting originals. Honors autoSave. Failed cleanup can leave redundant entries. Adds one summary embedding request. Opts: `threshold`, `keepRecent`
 - `memory.tokenCount()` → `Promise<{ tokens, count }>` - **async**.
 
 ### MCP Server
 
 - `db.mcp(opts?)` - expose the database to Claude Desktop, Cursor, and any MCP client
   - Supports stdio and HTTP/SSE transports
-  - Configurable per-collection scopes (`read` / `write` / `admin`); collection names are validated and trimmed before both authorization and execution.
-  - HTTP validates Origin and Host before dispatch/SSE/preflight. Null/default allowedOrigin rejects Origin-bearing requests; origin-less native clients remain allowed. Exact HTTP(S) origin or "*" opt-in; opaque/malformed origins reject. Host must match the backend hostname/interface and port; loopback accepts localhost. Proxies must rewrite Host; forwarded headers are not trusted. These checks are not authentication.
-  - HTTP transport loads lazily from the packaged source module; preserve the installed package layout. Port 0 chooses an available port reported by server.url after listen.
+  - Configurable per-collection scopes (`read` / `write` / `admin`). Collection names are validated and trimmed before both authorization and execution.
+  - HTTP validates Origin and Host before dispatch/SSE/preflight. Null/default allowedOrigin rejects Origin-bearing requests. Origin-less native clients remain allowed. Exact HTTP(S) origin or "*" opt-in. Opaque/malformed origins reject. Host must match the backend hostname/interface and port. Loopback accepts localhost. Proxies must rewrite Host. Forwarded headers are not trusted. These checks are not authentication.
+  - HTTP transport loads lazily from the packaged source module. Preserve the installed package layout. Port 0 chooses an available port reported by server.url after listen.
   - HTTP POST body limit via `maxBodySize` (default 1 MiB)
   - `predicates`: named server-side functions that MCP agents invoke by name via `{ "$fn": "name" }` - restores `$fn` expressiveness over MCP without letting code cross the wire
 
 ### Transactions & Integrity
 
-- `db.transaction(fn, opts?)` - in-memory snapshot/rollback; owned writes deferred until commit; concurrent transactions serialised; callback failure rolls back owned in-memory writes; external side effects and direct `db.collections` mutations are not covered by rollback. Collections touched by a write inside the transaction are locked - non-tx writes throw `ERR_SKALEX_TX_COLLECTION_LOCKED`. `opts`: `{ timeout?: number, deferredEffectErrors?: "throw" | "warn" | "ignore" }`. Nested transactions throw `ERR_SKALEX_TX_NESTED`. Supports `Symbol.asyncDispose` for `await using db = new Skalex(...)`.
-- Callback surface: `TransactionHandle` exposes only `useCollection` and `createCollection`, including migration callbacks. Returned `TransactionCollection` handles allow insert/update/upsert/delete, soft-delete restore, find/search/similar and count/sum/avg/groupBy plus readonly name. Other capabilities throw `ERR_SKALEX_TX_DIRECT_ACCESS`: no save/seed/import/historical restore/lifecycle/inspection or memory/changelog factories, and no collection export/watch/applyUpdate/private state. Commit saves owned writes; seed with owned insertMany calls. Use capability-subset types for helpers shared with the ordinary database.
-- Transaction ownership: use `tx.useCollection()` and await all operations inside the callback. Handles and captured functions expire at callback completion (`ERR_SKALEX_TX_STALE_PROXY`) or abort (`ERR_SKALEX_TX_ABORTED`); reacquire from the original database afterward. Transaction-created collections lock immediately. Independent creations, writes and effects remain outside rollback. Existing definitions cannot be replaced through `tx.createCollection()` (`ERR_SKALEX_TX_DIRECT_ACCESS`). Reads see live data, including uncommitted writes. Timeout bounds the callback; persistence and deferred hooks finish afterward. After-hook cascades use ordinary database handles.
-- `db.namespace(id)` - scoped sub-instance per tenant or user; inherits all config from parent; throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
-- `db.seed(fixtures, opts?)` - bulk-insert fixtures; `reset: true` clears first
-- `db.addMigration({ version, up })` - versioned migration; `up(tx)` receives a restricted TransactionHandle and runs inside a transaction. Callback failure rolls back owned in-memory writes; the version record and data share an adapter batch whose disk atomicity is adapter-dependent; runs automatically on `connect()`
+- `db.transaction(fn, opts?)` - in-memory snapshot/rollback. Owned writes deferred until commit. Concurrent transactions serialised. Callback failure rolls back owned in-memory writes. External side effects and direct `db.collections` mutations are not covered by rollback. Collections touched by a write inside the transaction are locked - non-tx writes throw `ERR_SKALEX_TX_COLLECTION_LOCKED`. `opts`: `{ timeout?: number, deferredEffectErrors?: "throw" | "warn" | "ignore" }`. Nested transactions throw `ERR_SKALEX_TX_NESTED`. Supports `Symbol.asyncDispose` for `await using db = new Skalex(...)`.
+- Callback surface: `TransactionHandle` exposes only `useCollection` and `createCollection`, including migration callbacks. Returned `TransactionCollection` handles allow insert/update/upsert/delete, soft-delete restore, find/search/similar and count/sum/avg/groupBy plus readonly name. Other capabilities throw `ERR_SKALEX_TX_DIRECT_ACCESS`: no save/seed/import/historical restore/lifecycle/inspection or memory/changelog factories, and no collection export/watch/applyUpdate/private state. Commit saves owned writes. Seed with owned insertMany calls. Use capability-subset types for helpers shared with the ordinary database.
+- Transaction ownership: use `tx.useCollection()` and await all operations inside the callback. Handles and captured functions expire at callback completion (`ERR_SKALEX_TX_STALE_PROXY`) or abort (`ERR_SKALEX_TX_ABORTED`). Reacquire from the original database afterward. Transaction-created collections lock immediately. Independent creations, writes and effects remain outside rollback. Existing definitions cannot be replaced through `tx.createCollection()` (`ERR_SKALEX_TX_DIRECT_ACCESS`). Reads see live data, including uncommitted writes. Timeout bounds the callback. Persistence and deferred hooks finish afterward. After-hook cascades use ordinary database handles.
+- `db.namespace(id)` - scoped sub-instance per tenant or user. Inherits all config from parent. Throws if a custom `adapter` was configured (use a separate `Skalex` instance instead)
+- `db.seed(fixtures, opts?)` - bulk-insert fixtures. `reset: true` clears first
+- `db.addMigration({ version, up })` - versioned migration. `up(tx)` receives a restricted TransactionHandle and runs inside a transaction. Callback failure rolls back owned in-memory writes. The version record and data share an adapter batch whose disk atomicity is adapter-dependent. Runs automatically on `connect()`
 
 ### Observability
 
-- `collection.watch(filter?, callback?, opts?)` - reactive collection observer; callback or `AsyncIterableIterator`. `opts`: `{ maxBufferSize }` caps the event queue for the async iterator form (oldest events dropped; `iter.dropped` counter tracks discards)
-- `db.watch(callback)` - cross-collection global observer; fires for every mutation across all collections
+- `collection.watch(filter?, callback?, opts?)` - reactive collection observer. Callback or `AsyncIterableIterator`. `opts`: `{ maxBufferSize }` caps the event queue for the async iterator form (oldest events dropped. `iter.dropped` counter tracks discards)
+- `db.watch(callback)` - cross-collection global observer. Fires for every mutation across all collections
 - `db.changelog()` - append-only mutation log
-- `db.restore(collection, timestamp, opts?)` / `db.changelog().restore(collection, timestamp, opts?)` - historical replay; opts: `{ _id?: string }`. Preserves archived fields exactly. Uses pipeline lock checks and saving; skips mutation hooks, schema transformations, caps and changelog recording. Current index constraints are checked before mutation. Locked targets reject with `ERR_SKALEX_TX_COLLECTION_LOCKED`. Save runs regardless of autoSave; restore events follow successful saving. Save failure leaves dirty restored memory and emits no restore events; disk rollback is not guaranteed.
+- `db.restore(collection, timestamp, opts?)` / `db.changelog().restore(collection, timestamp, opts?)` - historical replay. Opts: `{ _id?: string }`. Preserves archived fields exactly. Uses pipeline lock checks and saving. Skips mutation hooks, schema transformations, caps and changelog recording. Current index constraints are checked before mutation. Locked targets reject with `ERR_SKALEX_TX_COLLECTION_LOCKED`. Save runs regardless of autoSave. Restore events follow successful saving. Save failure leaves dirty restored memory and emits no restore events. Disk rollback is not guaranteed.
 - `db.stats()` - count, estimated size, average doc size per collection
 - `db.slowQueries()` - slow query log with configurable threshold and ring buffer
 - `db.sessionStats()` - reads/writes/lastActive keyed by session ID
@@ -185,11 +191,11 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 
 - `ERR_SKALEX_PERSISTENCE_ACK_FAILED` (`PersistenceError`): acknowledgement is unavailable or the warning changed (`details.reason: "state_changed"`), or metadata I/O failed (`details.cause`). Inspect storage and the latest warning before retrying.
 
-Engine errors expose a stable `code` and structured `details`; typed error classes are available as named imports from `skalex`. See the API documentation's Error Types section for the hierarchy.
+Engine errors expose a stable `code` and structured `details`. Typed error classes are available as named imports from `skalex`. See the API documentation's Error Types section for the hierarchy.
 
-- `ERR_SKALEX_QUERY_CLONE` (`QueryError`): requested result cloning failed; `details` contains `collection` and `cause`. Select cloneable fields or omit clone for shallow reads. Functions cannot be cloned.
-- `ERR_SKALEX_MUTATION_RECOVERY` (`SkalexError`): commit recovery also failed. Details: `collection`, `mutationError`, `recoveryError`. Further pipeline writes and collection serialization reject; reads may be inconsistent. Discard the instance and reopen verified storage. No supported reset.
-- `ERR_SKALEX_MUTATION_FINALIZE` (`SkalexError`): an `upsertMany()` item failed and a second error interrupted finalization of earlier completed items. `details` contains `collection`, `mutationError`, and `finalizationError`. Earlier writes/effects may already have completed; remaining effects may be incomplete. This is not a rollback guarantee.
+- `ERR_SKALEX_QUERY_CLONE` (`QueryError`): requested result cloning failed. `details` contains `collection` and `cause`. Select cloneable fields or omit clone for shallow reads. Functions cannot be cloned.
+- `ERR_SKALEX_MUTATION_RECOVERY` (`SkalexError`): commit recovery also failed. Details: `collection`, `mutationError`, `recoveryError`. Further pipeline writes and collection serialization reject. Reads may be inconsistent. Discard the instance and reopen verified storage. No supported reset.
+- `ERR_SKALEX_MUTATION_FINALIZE` (`SkalexError`): an `upsertMany()` item failed and a second error interrupted finalization of earlier completed items. `details` contains `collection`, `mutationError`, and `finalizationError`. Earlier writes/effects may already have completed. Remaining effects may be incomplete. This is not a rollback guarantee.
 
 ## Document System Fields
 
@@ -210,9 +216,9 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 
 `import { FsAdapter, LocalStorageAdapter, EncryptedAdapter, BunSQLiteAdapter, D1Adapter, LibSQLAdapter } from 'skalex/connectors/storage'`
 
-- `FsAdapter` - Node.js / Bun / Deno filesystem (default); atomic per-file writes; gz/json formats. Cleanup only deletes reserved `.skalex-<uuid>.tmp.json` and `.skalex-<uuid>.tmp.gz` files, regardless of the active format; ambiguous legacy temporary-looking files are preserved.
+- `FsAdapter` - Node.js / Bun / Deno filesystem (default). Atomic per-file writes. Gz/json formats. Cleanup only deletes reserved `.skalex-<uuid>.tmp.json` and `.skalex-<uuid>.tmp.gz` files, regardless of the active format. Ambiguous legacy temporary-looking files are preserved.
 - `LocalStorageAdapter` - browser `localStorage`
-- `EncryptedAdapter` - AES-256-GCM wrapper for any adapter; zero extra dependencies
+- `EncryptedAdapter` - AES-256-GCM wrapper for any adapter. Zero extra dependencies
 - `BunSQLiteAdapter` - Bun-native `bun:sqlite`
 - `D1Adapter` - Cloudflare D1 / Workers
 - `LibSQLAdapter` - LibSQL / Turso
@@ -222,41 +228,41 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 `import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors/embedding'`
 
 - `OpenAIEmbeddingAdapter` - OpenAI `text-embedding-3-small` (and any model override)
-- `OllamaEmbeddingAdapter` - local embeddings via Ollama; zero API cost
+- `OllamaEmbeddingAdapter` - local embeddings via Ollama. Zero API cost
 
 ## Language Model Adapters
 
 `import { OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors/llm'`
 
-- `OpenAILLMAdapter` - `gpt-4o-mini` (default); any OpenAI chat model
-- `AnthropicLLMAdapter` - `claude-haiku-4-5` (default); any Anthropic model
-- `OllamaLLMAdapter` - `llama3.2` (default); any locally running Ollama model
+- `OpenAILLMAdapter` - `gpt-4o-mini` (default). Any OpenAI chat model
+- `AnthropicLLMAdapter` - `claude-haiku-4-5` (default). Any Anthropic model
+- `OllamaLLMAdapter` - `llama3.2` (default). Any locally running Ollama model
 
 ## Roadmap
 
 Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
-**Sync & multi-device:** pluggable push/pull replication (REST, WebSocket, CouchDB/PouchDB, Supabase, Firebase); multi-tab BroadcastChannel sync; partial/filtered replication; CRDT field-level merging with presence tracking
+**Sync & multi-device:** pluggable push/pull replication (REST, WebSocket, CouchDB/PouchDB, Supabase, Firebase). Multi-tab BroadcastChannel sync. Partial/filtered replication. CRDT field-level merging with presence tracking
 
-**Query & schema:** additional query operators (`$exists`, `$type`, `$size`, `$all`, `$elemMatch`); aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`); full-text search with inverted index and `$text` operator; cursor-based pagination; `db.stream()` async generator for large result sets; schema change safety with `addMigration({ dryRun: true })`; Zod schema integration; QueryCache invalidation on schema change
+**Query & schema:** additional query operators (`$exists`, `$type`, `$size`, `$all`, `$elemMatch`). Aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`). Full-text search with inverted index and `$text` operator. Cursor-based pagination. `db.stream()` async generator for large result sets. Schema change safety with `addMigration({ dryRun: true })`. Zod schema integration. QueryCache invalidation on schema change
 
-**AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15-30% better recall); multimodal embeddings (text + image unified space via CLIP); vector quantization (4-8× memory reduction); graph-enhanced vector retrieval; streaming LLM responses for `db.ask()` and `memory.compress()`; embedding cache for deduplicating API calls; `collection.similar(doc)`; `db.classify(doc, labels)` zero-shot classification; `db.summarize()`; `db.rag()` one-call RAG pipeline; strict LLM response validation
+**AI:** BM25 + vector hybrid search with Reciprocal Rank Fusion (15-30% better recall). Multimodal embeddings (text + image unified space via CLIP). Vector quantization (4-8× memory reduction). Graph-enhanced vector retrieval. Streaming LLM responses for `db.ask()` and `memory.compress()`. Embedding cache for deduplicating API calls. `collection.similar(doc)`. `db.classify(doc, labels)` zero-shot classification. `db.summarize()`. `db.rag()` one-call RAG pipeline. Strict LLM response validation
 
-**Graph:** `collection.traverse(startId, options)` multi-hop traversal; shortest-path and neighbor queries
+**Graph:** `collection.traverse(startId, options)` multi-hop traversal. Shortest-path and neighbor queries
 
 **Time-series:** `createCollection(name, { timeSeries: true })` with windowed queries, time-bucketed aggregations, and downsampling
 
-**Security:** field-level encryption with separate keys; row-level security (per-collection access control functions); key rotation for `EncryptedAdapter`; MCP HTTP authentication (API key / bearer token)
+**Security:** field-level encryption with separate keys. Row-level security (per-collection access control functions). Key rotation for `EncryptedAdapter`. MCP HTTP authentication (API key / bearer token)
 
-**MCP:** request schema validation; rate limiting on HTTP transport; SSE heartbeat for stale connection detection
+**MCP:** request schema validation. Rate limiting on HTTP transport. SSE heartbeat for stale connection detection
 
-**Storage adapters:** `SQLiteWASMAdapter` (browser-native SQLite via official WASM build); `IndexedDB` adapter; `PostgresAdapter`; `BetterSQLite3Adapter`; `RedisAdapter`; `MongoAdapter`; `BunPostgresAdapter`; `DenoKVAdapter`
+**Storage adapters:** `SQLiteWASMAdapter` (browser-native SQLite via official WASM build). `IndexedDB` adapter. `PostgresAdapter`. `BetterSQLite3Adapter`. `RedisAdapter`. `MongoAdapter`. `BunPostgresAdapter`. `DenoKVAdapter`
 
-**Resilience & memory:** plugin hook timeouts; `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler; Write-Ahead Log (WAL) for crash safety; `db.size()` memory footprint reporting; `db.on('memoryWarning', cb)` memory pressure events; memory budgets with LRU eviction; per-collection transaction locking; copy-on-write transaction isolation; crash recovery beyond sentinel warning; persistence state encapsulation
+**Resilience & memory:** plugin hook timeouts. `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler. Write-Ahead Log (WAL) for crash safety. `db.size()` memory footprint reporting. `db.on('memoryWarning', cb)` memory pressure events. Memory budgets with LRU eviction. Per-collection transaction locking. Copy-on-write transaction isolation. Crash recovery beyond sentinel warning. Persistence state encapsulation
 
-**DX & tooling:** `create-skalex` scaffolding CLI; interactive browser playground; `createTestDb()` test helper; `db.rest()` auto-REST API; `db.graphql()` auto-GraphQL API; `db.compact()`; OpenTelemetry integration; actionable error messages with codes; Prisma/Drizzle schema import; `@skalex/devtools` browser extension; `npx skalex` REPL; query explain/execution plan; migration rollback (`down()` support); automated backup & restore; NDJSON/Parquet export formats; stress and performance test suite; performance characteristics documentation; dataset size and memory architecture guide; custom serializer protocol guide
+**DX & tooling:** `create-skalex` scaffolding CLI. Interactive browser playground. `createTestDb()` test helper. `db.rest()` auto-REST API. `db.graphql()` auto-GraphQL API. `db.compact()`. OpenTelemetry integration. Actionable error messages with codes. Prisma/Drizzle schema import. `@skalex/devtools` browser extension. `npx skalex` REPL. Query explain/execution plan. Migration rollback (`down()` support). Automated backup & restore. NDJSON/Parquet export formats. Stress and performance test suite. Performance characteristics documentation. Dataset size and memory architecture guide. Custom serializer protocol guide
 
-**Framework adapters:** `skalex/react` (React hooks and context); `skalex/vue` (Vue 3 composables); `skalex/svelte` (Svelte stores); `skalex/solid` (SolidJS signals); `skalex/eleva` (Eleva.js signals and reactive store)
+**Framework adapters:** `skalex/react` (React hooks and context). `skalex/vue` (Vue 3 composables). `skalex/svelte` (Svelte stores). `skalex/solid` (SolidJS signals). `skalex/eleva` (Eleva.js signals and reactive store)
 
 ## Documentation
 
@@ -271,10 +277,10 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 ### Commit-stage recovery
 
-A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay; it does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
+A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay. It does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
 
-For upsertMany, only the failing item is recovered; completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
+For upsertMany, only the failing item is recovered. Completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
 
-If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage; there is no supported reset of this failure state.
+If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage. There is no supported reset of this failure state.
 
-Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives; it is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
+Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives. It is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.

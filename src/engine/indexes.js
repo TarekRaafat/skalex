@@ -352,7 +352,7 @@ class IndexEngine {
     }
   }
 
-  // ─── private ─────────────────────────────────────────────────────────────
+  // --- private -------------------------------------------------------------
 
   _validateDoc(doc) {
     for (const [, ci] of this._compoundIndexes) {

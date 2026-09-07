@@ -26,7 +26,7 @@ class MockTransport {
   /** start() is a no-op for the mock. */
   start() {}
 
-  // ─── Test helpers ─────────────────────────────────────────────────────────
+  // --- Test helpers ---------------------------------------------------------
 
   /**
    * Simulate a client message arriving at the server.

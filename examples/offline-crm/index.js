@@ -1,6 +1,6 @@
 /**
  * Offline CRM
- * ─────────────────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------------------
  * A complete offline-first CRM with Contacts, Companies, and Deals.
  * No API keys, no server, no internet connection required.
  *
@@ -38,7 +38,7 @@ const dir = mkdtempSync(join(tmpdir(), "skalex-crm-"));
 
 const db = new Skalex({ path: dir, format: "json" });
 
-// ── Schema definitions ────────────────────────────────────────────────────────
+// -- Schema definitions --------------------------------------------------------
 
 db.createCollection("companies", {
   schema: {
@@ -80,7 +80,7 @@ const companies = db.useCollection("companies");
 const contacts  = db.useCollection("contacts");
 const deals     = db.useCollection("deals");
 
-// ── Seed initial data ─────────────────────────────────────────────────────────
+// -- Seed initial data ---------------------------------------------------------
 
 console.log("\n─── Seeding CRM data ───\n");
 
@@ -105,12 +105,12 @@ console.log(`  companies : ${await companies.count()}`);
 console.log(`  contacts  : ${await contacts.count()}`);
 console.log(`  deals     : ${await deals.count()}`);
 
-// ── Watch for deal changes ────────────────────────────────────────────────────
+// -- Watch for deal changes ----------------------------------------------------
 
 const dealEvents = [];
 const unsub = deals.watch(event => dealEvents.push(event));
 
-// ── Query: deals by stage with populate ───────────────────────────────────────
+// -- Query: deals by stage with populate ---------------------------------------
 
 console.log("\n─── Open deals (lead + qualified + proposal) ───\n");
 
@@ -131,7 +131,7 @@ for (const deal of openDeals) {
   );
 }
 
-// ── Aggregation: pipeline by stage ────────────────────────────────────────────
+// -- Aggregation: pipeline by stage --------------------------------------------
 
 console.log("\n─── Pipeline summary ───\n");
 
@@ -150,7 +150,7 @@ console.log(`\n  Total pipeline  : $${totalPipeline.toLocaleString()}`);
 console.log(`  Won revenue     : $${wonRevenue.toLocaleString()}`);
 console.log(`  Avg deal size   : $${avgDealSize.toLocaleString()}`);
 
-// ── Update: advance a deal stage ──────────────────────────────────────────────
+// -- Update: advance a deal stage ----------------------------------------------
 
 console.log("\n─── Advancing Nova pilot to proposal ───");
 
@@ -163,7 +163,7 @@ await deals.updateOne(
 const novaDeal = await deals.findOne({ title: "Nova  -  Pilot contract" });
 console.log(`  New stage: ${novaDeal.stage}`);
 
-// ── Transaction: close a deal and tag the contact ─────────────────────────────
+// -- Transaction: close a deal and tag the contact -----------------------------
 
 console.log("\n─── Closing Vault enterprise deal (transaction) ───");
 
@@ -188,7 +188,7 @@ console.log(`  Carol's tags: ${carolAfter.tags?.join(", ")}`);
 const newWon = await deals.sum("value", { stage: "closed-won" });
 console.log(`  Total won revenue: $${newWon.toLocaleString()}`);
 
-// ── Upsert: sync a contact from an external source ────────────────────────────
+// -- Upsert: sync a contact from an external source ----------------------------
 
 console.log("\n─── Upserting a contact from an external sync ───");
 
@@ -206,7 +206,7 @@ await contacts.upsert(
 const eve = await contacts.findOne({ email: "eve@acme.io" });
 console.log(`  Eve's role: ${eve.role}`);
 
-// ── Pagination: contacts by company ───────────────────────────────────────────
+// -- Pagination: contacts by company -------------------------------------------
 
 console.log("\n─── Contacts at Acme Corp (page 1, 2 per page) ───\n");
 
@@ -220,7 +220,7 @@ for (const c of page1.docs) {
   console.log(`    ${c.name.padEnd(18)} ${c.role}`);
 }
 
-// ── Schema validation ─────────────────────────────────────────────────────────
+// -- Schema validation ---------------------------------------------------------
 
 console.log("\n─── Schema validation ───");
 
@@ -245,7 +245,7 @@ try {
   console.log(`  Unique constraint       → ${err.message}`);
 }
 
-// ── Namespace: isolate a second tenant ────────────────────────────────────────
+// -- Namespace: isolate a second tenant ----------------------------------------
 
 console.log("\n─── Multi-tenant namespace ───");
 
@@ -259,7 +259,7 @@ const { docs: mainDeals } = await deals.find({});
 console.log(`  Main tenant deals: ${mainDeals.length} (unchanged)`);
 await tenantB.disconnect();
 
-// ── Watch events captured ─────────────────────────────────────────────────────
+// -- Watch events captured -----------------------------------------------------
 
 unsub();
 
@@ -268,7 +268,7 @@ for (const ev of dealEvents) {
   console.log(`  [${ev.op.padEnd(6)}] ${ev.doc.title}`);
 }
 
-// ── Export ────────────────────────────────────────────────────────────────────
+// -- Export --------------------------------------------------------------------
 
 console.log("\n─── Exporting won deals to CSV ───");
 
@@ -280,7 +280,7 @@ await deals.export(
 
 console.log(`  Written to ${exportDir}/won-deals.csv`);
 
-// ── Final stats ───────────────────────────────────────────────────────────────
+// -- Final stats ---------------------------------------------------------------
 
 console.log("\n─── Database stats ───\n");
 

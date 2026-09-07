@@ -60,8 +60,8 @@ export default [
       // All logging goes through the configurable `logger` option. Direct
       // console calls bypass the user's logger and are almost always bugs.
       "no-console": "error",
-      // async only on methods that await (CLAUDE.md rule). Warn for now;
-      // many facade methods return a promise without awaiting (intentional
+      // Use async only on methods that await. Warn for now.
+      // Many facade methods return a promise without awaiting (intentional
       // for API consistency). A full sweep is deferred to a later release.
       "require-await": "warn",
     },
@@ -75,7 +75,7 @@ export default [
 
   // Test harness mocks that mirror real async signatures. The `forTesting`
   // factory in collection-context produces stubs that callers `await`
-  // uniformly; forcing sync would break the contract.
+  // uniformly. Forcing sync would break the contract.
   {
     files: ["src/engine/collection-context.js"],
     rules: { "require-await": "off" },

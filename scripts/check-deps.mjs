@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Zero-runtime-dependency gate. Zero dependencies - node:* builtins only.
 //
-// Enforces the hard rule in CLAUDE.md: `npm install skalex` installs Skalex
+// Enforces the hard rule for this project: `npm install skalex` installs Skalex
 // and nothing else. This is the automated guardrail behind the zero-dependency
 // promise - the badge, the marketing, and the reason Skalex works the same on
 // every runtime. A PR that adds a runtime dependency fails the build here.

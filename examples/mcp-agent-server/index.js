@@ -1,6 +1,6 @@
 /**
  * MCP Agent Server
- * ─────────────────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------------------
  * Exposes a Skalex database to any MCP client  -  Claude Desktop, Cursor,
  * or any agent that speaks the Model Context Protocol.
  *
@@ -27,7 +27,7 @@
  *
  * Requirements:
  *   OPENAI_KEY env var  (for vector search + db.ask())
- *   Transport is stdio by default; set TRANSPORT=http for HTTP/SSE
+ *   Transport is stdio by default. Set TRANSPORT=http for HTTP/SSE
  *
  * Run (stdio  -  for Claude Desktop):
  *   OPENAI_KEY=sk-... node index.js
@@ -61,7 +61,7 @@ if (!process.env.OPENAI_KEY) {
   // Not a fatal error  -  the server still works for basic CRUD tools
 }
 
-// ── Database setup ────────────────────────────────────────────────────────────
+// -- Database setup ------------------------------------------------------------
 
 const db = new Skalex({
   path: "./.db",
@@ -110,7 +110,7 @@ db.createCollection("orders", {
 
 await db.connect();
 
-// ── Seed some initial data so the agent has something to explore ──────────────
+// -- Seed some initial data so the agent has something to explore --------------
 
 const products  = db.useCollection("products");
 const customers = db.useCollection("customers");
@@ -132,7 +132,7 @@ if (await customers.count() === 0) {
   ]);
 }
 
-// ── MCP server ────────────────────────────────────────────────────────────────
+// -- MCP server ----------------------------------------------------------------
 
 const mcpOptions = {
   transport: TRANSPORT,
@@ -153,7 +153,7 @@ if (TRANSPORT === "http") {
 
 const server = db.mcp(mcpOptions);
 
-// ── Start listening ───────────────────────────────────────────────────────────
+// -- Start listening -----------------------------------------------------------
 
 if (TRANSPORT === "stdio") {
   // stdio: used by Claude Desktop and Cursor.

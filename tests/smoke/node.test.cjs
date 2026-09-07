@@ -15,7 +15,7 @@ const { tmpdir } = require("os");
 const { mkdtempSync, rmSync } = require("fs");
 const { join } = require("path");
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// --- Helpers -----------------------------------------------------------------
 
 let passed = 0;
 let failed = 0;
@@ -40,7 +40,7 @@ async function section(name, fn) {
   }
 }
 
-// ─── Setup ───────────────────────────────────────────────────────────────────
+// --- Setup -------------------------------------------------------------------
 
 const tmpDir = mkdtempSync(join(tmpdir(), "skalex-node-smoke-"));
 
@@ -48,7 +48,7 @@ async function run() {
   const db = new Skalex({ path: tmpDir, format: "json" });
   await db.connect();
 
-  // ─── Insert ────────────────────────────────────────────────────────────────
+  // --- Insert ----------------------------------------------------------------
 
   await section("insertOne / findOne / find", async () => {
     const col = db.useCollection("users");
@@ -70,7 +70,7 @@ async function run() {
     assert("find({}) returns all docs", all.length === 2);
   });
 
-  // ─── insertMany ────────────────────────────────────────────────────────────
+  // --- insertMany ------------------------------------------------------------
 
   await section("insertMany", async () => {
     const col = db.useCollection("items");
@@ -79,7 +79,7 @@ async function run() {
     assert("insertMany assigns _id to each", docs.every(d => typeof d._id === "string"));
   });
 
-  // ─── Update ────────────────────────────────────────────────────────────────
+  // --- Update ----------------------------------------------------------------
 
   await section("updateOne / updateMany / $inc / $push", async () => {
     const col = db.useCollection("users");
@@ -96,7 +96,7 @@ async function run() {
     assert("updateMany updates all matching", docs.length === 2);
   });
 
-  // ─── Upsert / ifNotExists ──────────────────────────────────────────────────
+  // --- Upsert / ifNotExists --------------------------------------------------
 
   await section("upsert / ifNotExists", async () => {
     const col = db.useCollection("settings");
@@ -110,7 +110,7 @@ async function run() {
     assert("ifNotExists returns existing on dup", first._id === second._id);
   });
 
-  // ─── Delete ────────────────────────────────────────────────────────────────
+  // --- Delete ----------------------------------------------------------------
 
   await section("deleteOne / deleteMany", async () => {
     const col = db.useCollection("scratch");
@@ -126,7 +126,7 @@ async function run() {
     assert("collection empty after deletes", remaining.length === 0);
   });
 
-  // ─── TTL ───────────────────────────────────────────────────────────────────
+  // --- TTL -------------------------------------------------------------------
 
   await section("TTL documents", async () => {
     const col = db.useCollection("sessions");
@@ -135,7 +135,7 @@ async function run() {
     assert("_expiresAt is in the future", data._expiresAt > new Date());
   });
 
-  // ─── Aggregation ───────────────────────────────────────────────────────────
+  // --- Aggregation -----------------------------------------------------------
 
   await section("count / sum / avg / groupBy", async () => {
     const col = db.useCollection("orders");
@@ -155,7 +155,7 @@ async function run() {
     assert("groupBy() correct counts", groups.Widget.length === 2);
   });
 
-  // ─── Schema validation ─────────────────────────────────────────────────────
+  // --- Schema validation -----------------------------------------------------
 
   await section("schema validation", async () => {
     db.createCollection("products", {
@@ -177,7 +177,7 @@ async function run() {
     assert("schema: unique constraint throws", threw2);
   });
 
-  // ─── Sorting & Pagination ──────────────────────────────────────────────────
+  // --- Sorting & Pagination --------------------------------------------------
 
   await section("sort / pagination", async () => {
     const col = db.useCollection("nums");
@@ -195,7 +195,7 @@ async function run() {
     assert("pagination: docs on page 1", page.docs.length === 2);
   });
 
-  // ─── Transactions ──────────────────────────────────────────────────────────
+  // --- Transactions ----------------------------------------------------------
 
   await section("HTTP origin validation", async () => {
     const { default: httpOrigin } = await import("./http-origin.js");
@@ -271,7 +271,7 @@ async function run() {
     assert("transaction rollback on error", threw && aliceAfter.balance === 90);
   });
 
-  // ─── Reactive (watch) ──────────────────────────────────────────────────────
+  // --- Reactive (watch) ------------------------------------------------------
 
   await section("collection.watch()", async () => {
     const col = db.useCollection("events");
@@ -291,7 +291,7 @@ async function run() {
     assert("unsub stops events", events.length === 3);
   });
 
-  // ─── Plugin system ─────────────────────────────────────────────────────────
+  // --- Plugin system ---------------------------------------------------------
 
   await section("plugin system (db.use())", async () => {
     const plugDb = new Skalex({ path: tmpDir + "/plugins", format: "json" });
@@ -317,7 +317,7 @@ async function run() {
     await plugDb.disconnect();
   });
 
-  // ─── Session stats ─────────────────────────────────────────────────────────
+  // --- Session stats ---------------------------------------------------------
 
   await section("session stats (db.sessionStats())", async () => {
     const col = db.useCollection("stats-test");
@@ -336,7 +336,7 @@ async function run() {
     assert("sessionStats(): contains user-1", all.some(e => e.sessionId === "user-1"));
   });
 
-  // ─── db.stats() ────────────────────────────────────────────────────────────
+  // --- db.stats() ------------------------------------------------------------
 
   await section("db.stats()", async () => {
     const s = db.stats("users");
@@ -349,7 +349,7 @@ async function run() {
     assert("stats() returns array", Array.isArray(all));
   });
 
-  // ─── db.dump / db.inspect ──────────────────────────────────────────────────
+  // --- db.dump / db.inspect --------------------------------------------------
 
   await section("db.dump() / db.inspect()", async () => {
     const dump = db.dump();
@@ -361,7 +361,7 @@ async function run() {
     assert("inspect() has indexes array", Array.isArray(info?.indexes));
   });
 
-  // ─── Namespace ─────────────────────────────────────────────────────────────
+  // --- Namespace -------------------------------------------------------------
 
   await section("db.namespace()", async () => {
     const ns = db.namespace("tenant-1");
@@ -373,7 +373,7 @@ async function run() {
     await ns.disconnect();
   });
 
-  // ─── Seed ──────────────────────────────────────────────────────────────────
+  // --- Seed ------------------------------------------------------------------
 
   await section("db.seed()", async () => {
     await db.seed({
@@ -383,7 +383,7 @@ async function run() {
     assert("seed() inserts fixtures", docs.length === 2);
   });
 
-  // ─── ChangeLog ─────────────────────────────────────────────────────────────
+  // --- ChangeLog -------------------------------------------------------------
 
   await section("changelog / restore", async () => {
     db.createCollection("ledger", { changelog: true });
@@ -403,7 +403,7 @@ async function run() {
     assert("restore() rolls back update", restored?.amount === 100);
   });
 
-  // ─── MCP server factory ────────────────────────────────────────────────────
+  // --- MCP server factory ----------------------------------------------------
 
   await section("db.mcp() factory", async () => {
     const server = db.mcp({ transport: "stdio" });
@@ -412,7 +412,7 @@ async function run() {
     assert("mcp() transport is stdio", server.transport === "stdio");
   });
 
-  // ─── Connector barrels ─────────────────────────────────────────────────────
+  // --- Connector barrels -----------------------------------------------------
 
   await section("connector barrels", async () => {
     const storage = await import("../../src/connectors/storage/index.js");
@@ -436,11 +436,11 @@ async function run() {
       typeof root.OpenAILLMAdapter === "function");
   });
 
-  // ─── Disconnect ────────────────────────────────────────────────────────────
+  // --- Disconnect ------------------------------------------------------------
 
   await db.disconnect();
 
-  // ─── Summary ───────────────────────────────────────────────────────────────
+  // --- Summary ---------------------------------------------------------------
 
   console.log(`\n${"─".repeat(50)}`);
   console.log(`Node.js ${process.version} smoke test`);

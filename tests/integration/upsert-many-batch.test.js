@@ -70,7 +70,7 @@ describe("upsertMany batch pipeline", () => {
     ], "k");
 
     unsub();
-    // One update + one insert; order follows the batch order.
+    // One update + one insert. Order follows the batch order.
     expect(events).toEqual([
       { op: "update", k: "a" },
       { op: "insert", k: "b" },

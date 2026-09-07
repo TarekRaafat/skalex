@@ -2,7 +2,7 @@
  * Verify an installed tarball and alpha.6 storage compatibility without publishing.
  * Build and pack first with bun run build and bun pm pack --ignore-scripts.
  * Run: bun tests/reconciliation/consumer.mjs <candidate.tgz> <alpha.6.tgz> <output.json>
- * Uses the existing tsd TypeScript compiler; adds no dependencies.
+ * Uses the existing tsd TypeScript compiler. Adds no dependencies.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

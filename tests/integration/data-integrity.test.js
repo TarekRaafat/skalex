@@ -19,7 +19,7 @@ function makeDb(opts = {}) {
   return { db: new Skalex({ adapter, ...opts }), adapter };
 }
 
-// ─── #1  Stale Collection instances ────────────────────────────────────────
+// --- #1  Stale Collection instances ----------------------------------------
 
 describe("#1 stale Collection instances after createCollection -> connect", () => {
   test("useCollection returns loaded data after createCollection + connect", async () => {
@@ -67,7 +67,7 @@ describe("#1 stale Collection instances after createCollection -> connect", () =
   });
 });
 
-// ─── #2  Upsert operator leak ──────────────────────────────────────────────
+// --- #2  Upsert operator leak ----------------------------------------------
 
 describe("#2 upsert operator leak", () => {
   test("upsert with $eq filter stores resolved plain value", async () => {
@@ -122,7 +122,7 @@ describe("#2 upsert operator leak", () => {
   });
 });
 
-// ─── #3  insertMany index corruption ───────────────────────────────────────
+// --- #3  insertMany index corruption ---------------------------------------
 
 describe("#3 insertMany unique index corruption on partial failure", () => {
   test("duplicate unique field in batch throws and leaves no ghost entries", async () => {
@@ -164,7 +164,7 @@ describe("#3 insertMany unique index corruption on partial failure", () => {
   });
 });
 
-// ─── #4  Non-tx writes not captured by rollback ───────────────────────────
+// --- #4  Non-tx writes not captured by rollback ---------------------------
 
 describe("#4 non-transactional writes during active transaction", () => {
   test("non-tx write to untouched collection survives transaction rollback", async () => {
@@ -225,7 +225,7 @@ describe("#4 non-transactional writes during active transaction", () => {
   });
 });
 
-// ─── #5  Stale transaction proxy ───────────────────────────────────────────
+// --- #5  Stale transaction proxy -------------------------------------------
 
 describe("#5 stale transaction proxy after commit/timeout", () => {
   test("proxy throws ERR_SKALEX_TX_STALE_PROXY after commit", async () => {
@@ -274,7 +274,7 @@ describe("#5 stale transaction proxy after commit/timeout", () => {
   });
 });
 
-// ─── #6  Save durability ───────────────────────────────────────────────────
+// --- #6  Save durability ---------------------------------------------------
 
 describe("#6 save:true awaits actual disk write", () => {
   test("concurrent saves both await actual persistence", async () => {
@@ -310,7 +310,7 @@ describe("#6 save:true awaits actual disk write", () => {
   });
 });
 
-// ─── #7  ChangeLog.restore() persistence ───────────────────────────────────
+// --- #7  ChangeLog.restore() persistence -----------------------------------
 
 describe("#7 changelog restore persists to disk", () => {
   test("restored state survives disconnect/reconnect", async () => {

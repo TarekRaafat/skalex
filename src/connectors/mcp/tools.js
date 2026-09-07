@@ -23,7 +23,7 @@ import { ValidationError } from "../../engine/errors.js";
 
 /**
  * Maximum allowed depth of a filter tree sanitized from agent input.
- * Real filters rarely exceed 3-4 levels (`$or` → branch → field op); 16
+ * Real filters rarely exceed 3-4 levels (`$or` → branch → field op). 16
  * gives 4× headroom for complex compound queries. Deeper trees are
  * almost certainly malicious (stack-overflow attempts) or buggy and are
  * rejected with a stable error code.

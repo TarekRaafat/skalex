@@ -17,7 +17,7 @@ function makeDb(opts = {}) {
   return { db, adapter };
 }
 
-// ─── transaction() ───────────────────────────────────────────────────────────
+// --- transaction() -----------------------------------------------------------
 
 describe("transaction()", () => {
   test("commits all writes when fn resolves", async () => {
@@ -374,7 +374,7 @@ describe("transaction()", () => {
   });
 });
 
-// ─── namespace() ─────────────────────────────────────────────────────────────
+// --- namespace() -------------------------------------------------------------
 
 describe("namespace()", () => {
   // Structural tests use a plain Skalex (default FsAdapter)  -  no connection needed.
@@ -439,7 +439,7 @@ describe("namespace()", () => {
   });
 });
 
-// ─── seed() ──────────────────────────────────────────────────────────────────
+// --- seed() ------------------------------------------------------------------
 
 describe("seed()", () => {
   test("inserts fixture data into named collections", async () => {
@@ -487,7 +487,7 @@ describe("seed()", () => {
   });
 });
 
-// ─── dump() ──────────────────────────────────────────────────────────────────
+// --- dump() ------------------------------------------------------------------
 
 describe("dump()", () => {
   test("returns a map of collection name to document array", async () => {
@@ -523,7 +523,7 @@ describe("dump()", () => {
   });
 });
 
-// ─── inspect() ───────────────────────────────────────────────────────────────
+// --- inspect() ---------------------------------------------------------------
 
 describe("inspect()", () => {
   test("returns metadata for a named collection", async () => {
@@ -581,7 +581,7 @@ describe("inspect()", () => {
   });
 });
 
-// ─── import() ────────────────────────────────────────────────────────────────
+// --- import() ----------------------------------------------------------------
 
 describe("import()", () => {
   test("imports a JSON array and inserts documents into a collection named after the file", async () => {
@@ -615,7 +615,7 @@ describe("import()", () => {
   });
 });
 
-// ─── collection.export() ─────────────────────────────────────────────────────
+// --- collection.export() -----------------------------------------------------
 
 describe("collection.export()", () => {
   test("writes all documents as JSON to the adapter", async () => {
@@ -678,7 +678,7 @@ describe("collection.export()", () => {
   });
 });
 
-// ─── applyUpdate() edge cases ────────────────────────────────────────────────
+// --- applyUpdate() edge cases ------------------------------------------------
 
 describe("applyUpdate()  -  edge cases", () => {
   async function getCol(opts = {}) {
@@ -747,7 +747,7 @@ describe("applyUpdate()  -  edge cases", () => {
   });
 });
 
-// ─── search() ────────────────────────────────────────────────────────────────
+// --- search() ----------------------------------------------------------------
 
 describe("collection.search()", () => {
   function makeVectorDb() {
@@ -794,7 +794,7 @@ describe("collection.search()", () => {
     await col.insertMany([
       { name: "cat" }, { name: "car" },
     ], { embed: "name" });
-    // "car" has cosine 0 with "query"; setting minScore=0.5 should exclude it
+    // "car" has cosine 0 with "query". Setting minScore=0.5 should exclude it
     const { docs } = await col.search("query", { minScore: 0.5 });
     expect(docs.every(d => d.name !== "car")).toBe(true);
     await db.disconnect();
@@ -847,7 +847,7 @@ describe("collection.search()", () => {
   });
 });
 
-// ─── similar() ───────────────────────────────────────────────────────────────
+// --- similar() ---------------------------------------------------------------
 
 describe("collection.similar()", () => {
   function makeVectorDb() {
@@ -937,7 +937,7 @@ describe("collection.similar()", () => {
   });
 });
 
-// ─── db.ask() ────────────────────────────────────────────────────────────────
+// --- db.ask() ----------------------------------------------------------------
 
 describe("db.ask()", () => {
   test("throws when no LLM adapter is configured", async () => {
@@ -977,7 +977,7 @@ describe("db.ask()", () => {
   });
 });
 
-// ─── slowQueryCount() / clearSlowQueries() ───────────────────────────────────
+// --- slowQueryCount() / clearSlowQueries() -----------------------------------
 
 describe("slowQueryCount() / clearSlowQueries()", () => {
   test("slowQueryCount() returns 0 when no slow query log is configured", async () => {
@@ -1015,7 +1015,7 @@ describe("slowQueryCount() / clearSlowQueries()", () => {
   });
 });
 
-// ─── namespace() config inheritance ────────────────────────────────────────
+// --- namespace() config inheritance ----------------------------------------
 
 describe("namespace()  -  config inheritance", () => {
   test("child inherits every option except path", () => {
@@ -1038,7 +1038,7 @@ describe("namespace()  -  config inheritance", () => {
   });
 });
 
-// ─── useCollection / createCollection  -  name validation ─────────────────
+// --- useCollection / createCollection  -  name validation -----------------
 
 describe("useCollection  -  collection name validation", () => {
   test("accepts legitimate internal and unusual names", () => {
@@ -1078,7 +1078,7 @@ describe("useCollection  -  collection name validation", () => {
   });
 });
 
-// ─── Symbol.toStringTag ─────────────────────────────────────────────────────
+// --- Symbol.toStringTag -----------------------------------------------------
 
 describe("Symbol.toStringTag", () => {
   test("Object.prototype.toString.call(db) returns '[object Skalex]'", () => {
@@ -1093,7 +1093,7 @@ describe("Symbol.toStringTag", () => {
   });
 });
 
-// ─── Symbol.asyncDispose ────────────────────────────────────────────────────
+// --- Symbol.asyncDispose ----------------------------------------------------
 
 describe("Symbol.asyncDispose", () => {
   test("calling Symbol.asyncDispose disconnects the database", async () => {
@@ -1112,7 +1112,7 @@ describe("Symbol.asyncDispose", () => {
   });
 });
 
-// ─── Stats cache ────────────────────────────────────────────────────────────
+// --- Stats cache ------------------------------------------------------------
 
 describe("Stats cache", () => {
   test("stats() returns correct count after insertOne", async () => {

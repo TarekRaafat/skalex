@@ -50,7 +50,7 @@ import Skalex, {
   QueryError,
 } from "../../dist/skalex.js";
 
-// ─── Construction ──────────────────────────────────────────────────────────
+// --- Construction ----------------------------------------------------------
 
 const db = new Skalex();
 expectType<Promise<void>>(db.connect());
@@ -71,7 +71,7 @@ expectAssignable<SkalexConfig>({
   ttlSweepInterval: 1000,
 });
 
-// ─── Collections (untyped) ─────────────────────────────────────────────────
+// --- Collections (untyped) -------------------------------------------------
 
 const users = db.useCollection("users");
 expectAssignable<Collection>(users);
@@ -94,7 +94,7 @@ users.find({}).then((r) => {
 
 expectType<Promise<number>>(users.count());
 
-// ─── Collections (generic) ────────────────────────────────────────────────
+// --- Collections (generic) ------------------------------------------------
 
 interface User extends Record<string, unknown> {
   name: string;
@@ -107,7 +107,7 @@ typedUsers.find({}).then((r) => {
   expectAssignable<FindResult<User & Document>>(r);
 });
 
-// ─── Transactions ──────────────────────────────────────────────────────────
+// --- Transactions ----------------------------------------------------------
 
 const txOpts: TransactionOptions = {
   timeout: 5000,
@@ -124,7 +124,7 @@ db.transaction<string>(async () => "ok").then((v) => {
   expectType<string>(v);
 });
 
-// ─── Memory ────────────────────────────────────────────────────────────────
+// --- Memory ----------------------------------------------------------------
 
 function checkMemory(mem: Memory) {
   expectType<Promise<{ tokens: number; count: number }>>(mem.tokenCount());
@@ -133,7 +133,7 @@ function checkMemory(mem: Memory) {
   expectType<Promise<void>>(mem.compress());
 }
 
-// ─── Migration signature ───────────────────────────────────────────────────
+// --- Migration signature ---------------------------------------------------
 
 const migration: Migration = {
   version: 1,
@@ -146,7 +146,7 @@ const migration: Migration = {
 db.addMigration(migration);
 expectAssignable<MigrationStatus>(db.migrationStatus());
 
-// ─── Plugin shape ──────────────────────────────────────────────────────────
+// --- Plugin shape ----------------------------------------------------------
 
 const plugin: Plugin = {
   async beforeInsert(ctx) {
@@ -161,19 +161,19 @@ const plugin: Plugin = {
 };
 db.use(plugin);
 
-// ─── Watch ─────────────────────────────────────────────────────────────────
+// --- Watch -----------------------------------------------------------------
 
 const unsubscribe = db.watch((event) => {
   expectAssignable<{ op: string; collection: string }>(event);
 });
 expectType<() => void>(unsubscribe);
 
-// ─── MCP ────────────────────────────────────────────────────────────────────
+// --- MCP --------------------------------------------------------------------
 
 const mcp = db.mcp();
 expectAssignable<SkalexMCPServer>(mcp);
 
-// ─── Connectors ────────────────────────────────────────────────────────────
+// --- Connectors ------------------------------------------------------------
 
 expectAssignable<StorageAdapter>(new FsAdapter({ dir: "./data" }));
 expectAssignable<StorageAdapter>(new LocalStorageAdapter());
@@ -199,7 +199,7 @@ expectAssignable<AnthropicLLMCtor>(AnthropicLLMAdapter);
 type OllamaLLMCtor = new (opts: any) => OllamaLLMAdapter;
 expectAssignable<OllamaLLMCtor>(OllamaLLMAdapter);
 
-// ─── Error classes (named + static) ────────────────────────────────────────
+// --- Error classes (named + static) ----------------------------------------
 
 expectAssignable<typeof SkalexError>(SkalexError);
 expectAssignable<typeof ValidationError>(ValidationError);
@@ -216,12 +216,12 @@ function errorCheck(e: Error) {
   }
 }
 
-// ─── ChangeLog ─────────────────────────────────────────────────────────────
+// --- ChangeLog -------------------------------------------------------------
 
 function checkChangeLog(c: ChangeLog) {
   expectAssignable<ChangeLog>(c);
 }
-// ChangeLogEntry.doc is a Document (has _id/createdAt/updatedAt);
+// ChangeLogEntry.doc is a Document (has _id/createdAt/updatedAt).
 // timestamp is a Date instance.
 expectAssignable<ChangeLogEntry>({
   _id: "1",
@@ -232,7 +232,7 @@ expectAssignable<ChangeLogEntry>({
   timestamp: new Date(),
 });
 
-// ─── Search ────────────────────────────────────────────────────────────────
+// --- Search ----------------------------------------------------------------
 
 const searchOpts: SearchOptions = { limit: 10, minScore: 0.5 };
 expectAssignable<SearchOptions>(searchOpts);
@@ -240,12 +240,12 @@ users.search("query", searchOpts).then((r) => {
   expectAssignable<SearchResult>(r);
 });
 
-// ─── Inspection ────────────────────────────────────────────────────────────
+// --- Inspection ------------------------------------------------------------
 
 expectAssignable<CollectionStats | CollectionStats[]>(db.stats());
 expectAssignable<CollectionInfo | null>(db.inspect("users"));
 
-// ─── Negative checks ───────────────────────────────────────────────────────
+// --- Negative checks -------------------------------------------------------
 
 // TransactionOptions.deferredEffectErrors rejects invalid strings.
 expectError<TransactionOptions>({ deferredEffectErrors: "whoops" as const });

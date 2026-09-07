@@ -93,7 +93,7 @@ describe("sweep", () => {
 
   test("sweep removes all expired docs in one linear pass", () => {
     // Regression: sweep() used to splice-in-place, making it O(n*k). Now
-    // it filters once; this test pins the linear behaviour (large n, many
+    // it filters once. This test pins the linear behaviour (large n, many
     // expired) so a regression to the splice loop would time out or fail
     // to remove everything on the first pass.
     const past = new Date(Date.now() - 1000);
@@ -112,7 +112,7 @@ describe("sweep", () => {
   });
 });
 
-// ─── TtlScheduler ──────────────────────────────────────────────────────────
+// --- TtlScheduler ----------------------------------------------------------
 
 describe("TtlScheduler", () => {
   beforeEach(() => { vi.useFakeTimers(); });

@@ -6,7 +6,7 @@ import { count, sum, avg, groupBy } from "../../src/features/aggregation.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
-// ─── Pure aggregation functions ───────────────────────────────────────────────
+// --- Pure aggregation functions -----------------------------------------------
 
 const DOCS = [
   { name: "Alice", age: 30, dept: "eng" },
@@ -93,7 +93,7 @@ describe("groupBy()", () => {
   });
 });
 
-// ─── Collection aggregation methods ──────────────────────────────────────────
+// --- Collection aggregation methods ------------------------------------------
 
 function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });
@@ -185,7 +185,7 @@ describe("collection.groupBy()", () => {
   });
 });
 
-// ─── db.stats() ───────────────────────────────────────────────────────────────
+// --- db.stats() ---------------------------------------------------------------
 
 describe("db.stats()", () => {
   test("returns stats for a single collection", async () => {
@@ -227,7 +227,7 @@ describe("db.stats()", () => {
   });
 });
 
-// ─── db.slowQueries() ────────────────────────────────────────────────────────
+// --- db.slowQueries() --------------------------------------------------------
 
 describe("db.slowQueries()", () => {
   test("returns empty array when no slow query log configured", () => {

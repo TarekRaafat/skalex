@@ -5,9 +5,9 @@
 // or earlier. Guarded by scripts/verify-lib-ref.mjs (npm run verify:lib-ref) so
 // it cannot be dropped in a refactor without failing the gate.
 
-// ─── Skalex v4 TypeScript Definitions ────────────────────────────────────────
+// --- Skalex v4 TypeScript Definitions ----------------------------------------
 
-// ─── Config ──────────────────────────────────────────────────────────────────
+// --- Config ------------------------------------------------------------------
 
 export interface AIConfig {
   /** AI provider. */
@@ -95,20 +95,20 @@ export interface MCPScopes {
 export interface MCPOptions {
   /** Transport type. Default: 'stdio'. */
   transport?: 'stdio' | 'http';
-  /** HTTP port (http transport only). Default: 3000; 0 selects an available port reported by server.url. */
+  /** HTTP port (http transport only). Default: 3000. 0 selects an available port reported by server.url. */
   port?: number;
   /** HTTP host (http transport only). Default: '127.0.0.1'. */
   host?: string;
   /** Access control map. Default: { '*': ['read'] } (read-only). */
   scopes?: MCPScopes;
-  /** Exact HTTP(S) browser origin, or "*". Null/default rejects Origin-bearing requests; native clients remain allowed. */
+  /** Exact HTTP(S) browser origin, or "*". Null/default rejects Origin-bearing requests. Native clients remain allowed. */
   allowedOrigin?: string | null;
   /** Maximum POST body size in bytes for HTTP transport. Default: 1 MiB (1_048_576). */
   maxBodySize?: number;
   /**
    * Named predicate allowlist for `$fn` in agent-supplied filters.
-   * Agents reference predicates by name (e.g. `{ "$fn": "isHighValue" }`);
-   * the MCP handler resolves the name to the registered function.
+   * Agents reference predicates by name (e.g. `{ "$fn": "isHighValue" }`).
+   * The MCP handler resolves the name to the registered function.
    * No code crosses the wire. When omitted, all `$fn` keys are stripped.
    */
   predicates?: Record<string, (doc: Record<string, unknown>) => boolean>;
@@ -170,7 +170,7 @@ export interface SkalexConfig {
   lenientLoad?: boolean;
 }
 
-// ─── Plugin ───────────────────────────────────────────────────────────────────
+// --- Plugin -------------------------------------------------------------------
 
 export interface PluginInsertContext  { collection: string; doc: Record<string, unknown>; }
 export interface PluginUpdateContext  { collection: string; filter: object; update: object; result?: Record<string, unknown> | Record<string, unknown>[]; }
@@ -193,7 +193,7 @@ export interface Plugin {
   afterSearch?(ctx: PluginSearchContext):  void | Promise<void>;
 }
 
-// ─── Session Stats ────────────────────────────────────────────────────────────
+// --- Session Stats ------------------------------------------------------------
 
 export interface SessionEntry {
   sessionId: string;
@@ -202,7 +202,7 @@ export interface SessionEntry {
   lastActive: Date | null;
 }
 
-// ─── Storage Adapters ────────────────────────────────────────────────────────
+// --- Storage Adapters --------------------------------------------------------
 
 export declare abstract class StorageAdapter {
   abstract read(name: string): Promise<string | null>;
@@ -288,7 +288,7 @@ export declare class LibSQLAdapter extends StorageAdapter {
   list(): Promise<string[]>;
 }
 
-// ─── Embedding Adapters ───────────────────────────────────────────────────────
+// --- Embedding Adapters -------------------------------------------------------
 
 export declare abstract class EmbeddingAdapter {
   abstract embed(text: string): Promise<number[]>;
@@ -306,7 +306,7 @@ export declare class OllamaEmbeddingAdapter extends EmbeddingAdapter {
   embed(text: string): Promise<number[]>;
 }
 
-// ─── Language Model Adapters ──────────────────────────────────────────────────
+// --- Language Model Adapters --------------------------------------------------
 
 export declare abstract class LLMAdapter {
   abstract generate(schema: Record<string, string> | null, nlQuery: string): Promise<Record<string, unknown>>;
@@ -334,7 +334,7 @@ export declare class OllamaLLMAdapter extends LLMAdapter {
   summarize(texts: string): Promise<string>;
 }
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
+// --- Schema -------------------------------------------------------------------
 
 export type FieldType = 'string' | 'number' | 'boolean' | 'object' | 'array' | 'date' | 'any';
 
@@ -369,7 +369,7 @@ export interface CollectionOptions {
   maxDocs?: number;
 }
 
-// ─── Mutation Event ───────────────────────────────────────────────────────────
+// --- Mutation Event -----------------------------------------------------------
 
 export interface MutationEvent<T = Document> {
   op: 'insert' | 'update' | 'delete' | 'restore';
@@ -388,7 +388,7 @@ export interface WatchIterator<T = Document> extends AsyncIterableIterator<Mutat
   readonly dropped: number;
 }
 
-// ─── Query Operators ─────────────────────────────────────────────────────────
+// --- Query Operators ---------------------------------------------------------
 
 export interface QueryOperators<T = unknown> {
   $eq?: T;
@@ -410,7 +410,7 @@ export type Filter<T = Record<string, unknown>> =
   | ((doc: T) => boolean)
   | Record<string, FilterValue>;
 
-// ─── Update Operators ─────────────────────────────────────────────────────────
+// --- Update Operators ---------------------------------------------------------
 
 export interface UpdateOperators {
   /** Increment a numeric field by the given amount. */
@@ -422,7 +422,7 @@ export interface UpdateOperators {
 export type UpdateDescriptor<T = Record<string, unknown>> =
   { [K in keyof T]?: T[K] | UpdateOperators } & Record<string, unknown | UpdateOperators>;
 
-// ─── Operation Options ────────────────────────────────────────────────────────
+// --- Operation Options --------------------------------------------------------
 
 export interface InsertOneOptions {
   save?: boolean;
@@ -458,7 +458,7 @@ export interface DeleteOptions {
 }
 
 export interface FindOptions {
-  /** Structured-clone returned data. Default false; throws ERR_SKALEX_QUERY_CLONE for uncloneable values. */
+  /** Structured-clone returned data. Default false. Throws ERR_SKALEX_QUERY_CLONE for uncloneable values. */
   clone?: boolean;
   populate?: string[];
   select?: string[];
@@ -478,7 +478,7 @@ export interface ExportOptions {
   format?: 'json' | 'csv';
 }
 
-// ─── Return Shapes ────────────────────────────────────────────────────────────
+// --- Return Shapes ------------------------------------------------------------
 
 export interface Document {
   _id: string;
@@ -498,7 +498,7 @@ export interface FindResult<T = Document> {
 }
 
 export interface SearchOptions<T = Record<string, unknown>> {
-  /** Structured-clone returned data. Default false; throws ERR_SKALEX_QUERY_CLONE for uncloneable values. */
+  /** Structured-clone returned data. Default false. Throws ERR_SKALEX_QUERY_CLONE for uncloneable values. */
   clone?: boolean;
   /** Structured pre-filter applied before cosine scoring (hybrid search). */
   filter?: Filter<T>;
@@ -516,7 +516,7 @@ export interface SearchResult<T = Document> {
   scores: number[];
 }
 
-// ─── Migration ────────────────────────────────────────────────────────────────
+// --- Migration ----------------------------------------------------------------
 
 /**
  * Migration.
@@ -529,7 +529,7 @@ export interface Migration {
   version: number;
   description?: string;
   /**
-   * Migration logic. Receives the restricted transaction handle;
+   * Migration logic. Receives the restricted transaction handle.
    * use `db.useCollection(name)` to obtain collections.
    */
   up: (db: TransactionHandle) => Promise<void>;
@@ -541,7 +541,7 @@ export interface MigrationStatus {
   pending: number[];
 }
 
-// ─── Transactions ─────────────────────────────────────────────────────────────
+// --- Transactions -------------------------------------------------------------
 
 /**
  * Document/query capabilities available during a transaction callback.
@@ -562,7 +562,7 @@ export interface TransactionHandle {
    * Get an owned collection handle. Await operations inside the callback.
    * @param name - Collection name.
    * @returns The scoped document/query handle.
-   * @throws ValidationError for invalid names; TransactionError after expiry.
+   * @throws ValidationError for invalid names. TransactionError after expiry.
    * @example
    * await db.transaction(async tx => {
    *   await tx.useCollection("notes").insertOne({ text: "hello" });
@@ -574,7 +574,7 @@ export interface TransactionHandle {
    * @param name - New collection name.
    * @param options - Schema, indexes and collection behavior.
    * @returns The scoped document/query handle.
-   * @throws ValidationError for invalid definitions; TransactionError for an
+   * @throws ValidationError for invalid definitions. TransactionError for an
    * existing definition or expired callback.
    * @example
    * await db.transaction(async tx => {
@@ -596,7 +596,7 @@ export interface TransactionOptions {
   deferredEffectErrors?: 'throw' | 'warn' | 'ignore';
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
+// --- Stats --------------------------------------------------------------------
 
 export interface CollectionStats {
   collection: string;
@@ -627,7 +627,7 @@ export interface SlowQueryEntry {
   timestamp: Date;
 }
 
-// ─── Collection ───────────────────────────────────────────────────────────────
+// --- Collection ---------------------------------------------------------------
 
 export interface UpsertManyOptions extends InsertManyOptions {
   save?: boolean;
@@ -653,7 +653,7 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   upsert(filter: Filter<T>, doc: Partial<T>, options?: UpdateOptions): Promise<DocOf<T>>;
   /**
    * Batch upsert: match each doc on matchKey, update if found, insert otherwise.
-   * Earlier completed items remain applied if a later item fails; their normal
+   * Earlier completed items remain applied if a later item fails. Their normal
    * pipeline effects finish before the original error is rethrown.
    * An uncaught error inside transaction() rolls back the enclosing transaction.
    * If finalization also fails, throws SkalexError with code ERR_SKALEX_MUTATION_FINALIZE
@@ -663,7 +663,7 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
 
   /**
    * Apply an update descriptor (`$set`, `$inc`, `$push`, or direct assignment)
-   * to a document in place. Used internally by update/upsert paths; exposed
+   * to a document in place. Used internally by update/upsert paths. Exposed
    * primarily for advanced plugin authors. System fields (`_id`, `createdAt`,
    * `updatedAt`) and prototype-polluting keys are silently skipped.
    */
@@ -696,7 +696,7 @@ export declare class Collection<T extends Record<string, unknown> = Record<strin
   export(filter?: Filter<T>, options?: ExportOptions): Promise<void>;
 }
 
-// ─── Memory ───────────────────────────────────────────────────────────────────
+// --- Memory -------------------------------------------------------------------
 
 export declare class Memory {
   readonly sessionId: string;
@@ -708,11 +708,11 @@ export declare class Memory {
   forget(id: string): Promise<Document | null>;
   tokenCount(): Promise<{ tokens: number; count: number }>;
   context(options?: { tokens?: number }): Promise<string>;
-  /** Embed and insert a summary before deleting originals. Not atomic; failed cleanup can leave redundant entries. Honors autoSave. */
+  /** Embed and insert a summary before deleting originals. Not atomic. Failed cleanup can leave redundant entries. Honors autoSave. */
   compress(options?: { threshold?: number; keepRecent?: number }): Promise<void>;
 }
 
-// ─── ChangeLog ────────────────────────────────────────────────────────────────
+// --- ChangeLog ----------------------------------------------------------------
 
 export interface ChangeLogEntry {
   _id: string;
@@ -739,13 +739,13 @@ export declare class ChangeLog {
    * Replay archived state, preserving system fields. Rejects transaction-locked
    * targets and saves before emitting restore transitions. Does not record
    * replay in the changelog or invoke mutation hooks.
-   * @throws TransactionError for a locked target; index errors for conflicts.
+   * @throws TransactionError for a locked target. Index errors for conflicts.
    * Save failures leave restored memory dirty and emit no restore events.
    */
   restore(collection: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
 }
 
-// ─── MCP Server ───────────────────────────────────────────────────────────────
+// --- MCP Server ---------------------------------------------------------------
 
 export declare class SkalexMCPServer {
   private constructor(db: Skalex, options?: MCPOptions);
@@ -759,7 +759,7 @@ export declare class SkalexMCPServer {
   close(): Promise<void>;
 }
 
-// ─── Skalex ───────────────────────────────────────────────────────────────────
+// --- Skalex -------------------------------------------------------------------
 
 export declare class Skalex {
   constructor(config?: SkalexConfig);
@@ -783,9 +783,9 @@ export declare class Skalex {
   renameCollection(from: string, to: string): Promise<void>;
 
   // Persistence
-  /** Persist via the shared adapter-write queue; multi-collection saves remain best-effort. */
+  /** Persist via the shared adapter-write queue. Multi-collection saves remain best-effort. */
   saveData(collectionName?: string): Promise<void>;
-  /** Clear an inspected incomplete-flush warning without repairing or saving data. Connect first; unavailable during transactions. */
+  /** Clear an inspected incomplete-flush warning without repairing or saving data. Connect first. Unavailable during transactions. */
   acknowledgeIncompleteFlush(): Promise<void>;
   loadData(): Promise<void>;
   buildIndex<T = Record<string, unknown>>(data: T[], keyField: string): Map<unknown, T>;
@@ -800,11 +800,11 @@ export declare class Skalex {
   /**
    * Run owned collection writes with lazy snapshots and rollback.
    * Use the callback's collection handles and await every operation inside it.
-   * Handles and captured methods expire when the callback ends; reacquire from
+   * Handles and captured methods expire when the callback ends. Reacquire from
    * the original database for later work. Independent writes keep their effects.
    * Timeout bounds the callback, not persistence or after-commit hooks.
    */
-  /** Incomplete adapter batches retain a warning on reconnect; detection does not repair partial data. */
+  /** Incomplete adapter batches retain a warning on reconnect. Detection does not repair partial data. */
   transaction<R = unknown>(fn: (db: TransactionHandle) => Promise<R>, options?: TransactionOptions): Promise<R>;
 
   // Seeding
@@ -836,7 +836,7 @@ export declare class Skalex {
    * Replay archived state, preserving system fields. Rejects transaction-locked
    * targets and saves before emitting restore transitions. Does not record
    * replay in the changelog or invoke mutation hooks.
-   * @throws TransactionError for a locked target; index errors for conflicts.
+   * @throws TransactionError for a locked target. Index errors for conflicts.
    * Save failures leave restored memory dirty and emit no restore events.
    */
   restore(collectionName: string, timestamp: string | Date, options?: { _id?: string }): Promise<void>;
@@ -866,7 +866,7 @@ export declare class Skalex {
 
 export default Skalex;
 
-// ─── Error hierarchy ──────────────────────────────────────────────────────────
+// --- Error hierarchy ----------------------------------------------------------
 
 /**
  * Base error for all Skalex engine errors.
@@ -876,7 +876,7 @@ export default Skalex;
 /**
  * ERR_SKALEX_MUTATION_RECOVERY reports failed commit recovery. Details contain
  * collection, mutationError and recoveryError. Further pipeline writes and
- * collection serialization reject; discard the instance and reopen verified storage.
+ * collection serialization reject. Discard the instance and reopen verified storage.
  */
 export declare class SkalexError extends Error {
   constructor(code: string, message: string, details?: Record<string, unknown>);

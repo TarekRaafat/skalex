@@ -6,7 +6,7 @@ const CHARS_PER_TOKEN = 4;
 /**
  * Session IDs become part of an internal `_memory_<sessionId>` collection
  * name. The collection registry enforces a 64-char limit with a restricted
- * character set; we validate against a compatible subset here so failures
+ * character set. We validate against a compatible subset here so failures
  * surface at `useMemory()` / `new Memory()` instead of at the first method
  * call, with a message that names the right parameter.
  *
@@ -33,7 +33,7 @@ const _SESSION_ID_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,55}$/;
 class Memory {
   /**
    * @param {string} sessionId - 1-56 characters. Must start with a letter,
-   *   digit, or underscore; subsequent characters may be letters, digits,
+   *   digit, or underscore. Subsequent characters may be letters, digits,
    *   or `_ . : -`. The underlying `_memory_<sessionId>` collection name
    *   must satisfy the registry's 64-char limit.
    * @param {object} db  - Skalex instance
@@ -139,10 +139,10 @@ class Memory {
 
   /**
    * Summarise and compact old memories when total tokens exceed a threshold.
-   * Keeps the most recent `keepRecent` entries intact; summarises the rest
+   * Keeps the most recent `keepRecent` entries intact. Summarises the rest
    * into one embedded entry via the configured language model adapter.
    * Insert the summary before deleting originals. Failures may leave redundant
-   * entries; replacement is not atomic and preserves the normal autoSave policy.
+   * entries. Replacement is not atomic and preserves the normal autoSave policy.
    * @param {{ threshold?: number, keepRecent?: number }} [opts]
    * @returns {Promise<void>}
    * @throws {AdapterError} If a required model adapter is unavailable.
@@ -180,7 +180,7 @@ class Memory {
     await this._col.deleteMany({ _id: { $in: toCompress.map(d => d._id) } });
   }
 
-  // ─── Private helpers ──────────────────────────────────────────────────────
+  // --- Private helpers ------------------------------------------------------
 
   /** Estimate token count for a single memory doc (chars / CHARS_PER_TOKEN heuristic). */
   _docTokens(doc) {

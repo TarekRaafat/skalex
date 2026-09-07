@@ -21,7 +21,7 @@ async function readMetaDoc(adapter) {
   return payload?.data?.[0] ?? null;
 }
 
-// ─── Rollback + clean retry ───────────────────────────────────────────────
+// --- Rollback + clean retry -----------------------------------------------
 
 describe("migrations  -  transaction rollback", () => {
   test("partial writes roll back when up() throws; retry starts clean", async () => {
@@ -84,7 +84,7 @@ describe("migrations  -  transaction rollback", () => {
   });
 });
 
-// ─── Atomic _meta bookkeeping ─────────────────────────────────────────────
+// --- Atomic _meta bookkeeping ---------------------------------------------
 
 describe("migrations  -  atomic _meta bookkeeping", () => {
   test("applied version reaches disk atomically with migration data", async () => {
@@ -158,7 +158,7 @@ describe("migrations  -  atomic _meta bookkeeping", () => {
     expect(await adapter.read("items")).toBe(null);
     const metaDoc = await readMetaDoc(adapter);
     // Meta may or may not exist depending on whether a prior connect wrote
-    // the flush sentinel; either way, appliedVersions must not include 1.
+    // the flush sentinel. Either way, appliedVersions must not include 1.
     if (metaDoc) {
       expect(metaDoc.appliedVersions ?? []).not.toContain(1);
     }
@@ -193,7 +193,7 @@ describe("migrations  -  atomic _meta bookkeeping", () => {
     await db1.connect();
     await db1.disconnect();
 
-    // New instance with BOTH migrations; only 2 should actually execute.
+    // New instance with BOTH migrations. Only 2 should actually execute.
     const ran = [];
     const db2 = new Skalex({ adapter });
     db2.addMigration({
@@ -246,7 +246,7 @@ describe("migrations  -  atomic _meta bookkeeping", () => {
   });
 });
 
-// ─── Defensive invariant ──────────────────────────────────────────────────
+// --- Defensive invariant --------------------------------------------------
 
 describe("migrations  -  _recordAppliedVersions invariant", () => {
   test("throws when called outside an active transaction", async () => {

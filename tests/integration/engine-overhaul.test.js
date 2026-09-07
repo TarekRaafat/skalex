@@ -16,7 +16,7 @@ function makeDb(opts = {}) {
   return { db, adapter };
 }
 
-// ─── Transaction timeout + abort ────────────────────────────────────────────
+// --- Transaction timeout + abort --------------------------------------------
 
 describe("transaction timeout", () => {
   test("timed-out transaction rejects with ERR_SKALEX_TX_TIMEOUT", async () => {
@@ -130,7 +130,7 @@ describe("transaction timeout", () => {
   });
 });
 
-// ─── Dirty-save selectivity ─────────────────────────────────────────────────
+// --- Dirty-save selectivity -------------------------------------------------
 
 describe("dirty tracking", () => {
   test("markDirty is set after mutation", async () => {
@@ -195,7 +195,7 @@ describe("dirty tracking", () => {
   });
 });
 
-// ─── Flush sentinel ─────────────────────────────────────────────────────────
+// --- Flush sentinel ---------------------------------------------------------
 
 describe("flush sentinel", () => {
   test("incomplete flush is detected on reload", async () => {
@@ -227,7 +227,7 @@ describe("flush sentinel", () => {
   });
 });
 
-// ─── Compound index candidate selection ─────────────────────────────────────
+// --- Compound index candidate selection -------------------------------------
 
 describe("compound index candidate selection", () => {
   test("find uses compound index for multi-field equality", async () => {
@@ -270,7 +270,7 @@ describe("compound index candidate selection", () => {
   });
 });
 
-// ─── Logical operators edge cases ───────────────────────────────────────────
+// --- Logical operators edge cases -------------------------------------------
 
 describe("logical operators edge cases", () => {
   test("$or with indexed predicates", async () => {
@@ -408,7 +408,7 @@ describe("logical operators edge cases", () => {
   });
 });
 
-// ─── Typed errors ───────────────────────────────────────────────────────────
+// --- Typed errors -----------------------------------------------------------
 
 describe("typed errors", () => {
   test("validation error has code and details", async () => {
@@ -461,7 +461,7 @@ describe("typed errors", () => {
   });
 });
 
-// ─── Fault injection ────────────────────────────────────────────────────────
+// --- Fault injection --------------------------------------------------------
 
 describe("fault injection: adapter write failures", () => {
   test("saveData rejects when adapter.write fails", async () => {
@@ -643,7 +643,7 @@ describe("collection instance poisoning after aborted transaction", () => {
   });
 });
 
-// ─── applyUpdate correctness ────────────────────────────────────────────────
+// --- applyUpdate correctness ------------------------------------------------
 
 describe("applyUpdate operator correctness", () => {
   test("$inc increments a numeric field", async () => {
@@ -719,7 +719,7 @@ describe("applyUpdate operator correctness", () => {
   });
 });
 
-// ─── Transaction rollback for update/delete ─────────────────────────────────
+// --- Transaction rollback for update/delete ---------------------------------
 
 describe("transaction rollback for update and delete", () => {
   test("updateOne is rolled back on transaction failure", async () => {
@@ -793,7 +793,7 @@ describe("transaction rollback for update and delete", () => {
   });
 });
 
-// ─── Capped collection (maxDocs) ────────────────────────────────────────────
+// --- Capped collection (maxDocs) --------------------------------------------
 
 describe("maxDocs capped collection", () => {
   test("insertOne evicts oldest when at capacity", async () => {

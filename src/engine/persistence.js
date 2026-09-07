@@ -52,7 +52,7 @@ class PersistenceManager {
     return next;
   }
 
-  // ─── Load ──────────────────────────────────────────────────────────────
+  // --- Load --------------------------------------------------------------
 
   /**
    * Load all collections from the storage adapter.
@@ -177,7 +177,7 @@ class PersistenceManager {
     }
   }
 
-  // ─── Save ──────────────────────────────────────────────────────────────
+  // --- Save --------------------------------------------------------------
 
   /**
    * Persist one or all collections via the storage adapter.
@@ -223,7 +223,7 @@ class PersistenceManager {
    * Persist an incomplete marker over previously committed metadata before
    * writing any batch data. The batch still includes current _meta last, so
    * pending migration versions are not published by the preflight write.
-   * Clear only this batch's marker on success; retain earlier uncertainty.
+   * Clear only this batch's marker on success. Retain earlier uncertainty.
    * A marker or data-write failure rejects. A clear failure logs a warning
    * and leaves committed data intact. Detection is not automatic recovery.
    *
@@ -319,7 +319,7 @@ class PersistenceManager {
     });
   }
 
-  // ─── Serialization ─────────────────────────────────────────────────────
+  // --- Serialization -----------------------------------------------------
 
   /**
    * Serialize a collection store into a persistable string.
@@ -329,7 +329,7 @@ class PersistenceManager {
   _serializeCollection(col) {
     if (col._recoveryError) throw col._recoveryError;
     let data = col.data;
-    // Rollback may restore older metadata; never erase an unresolved warning.
+    // Rollback may restore older metadata. Never erase an unresolved warning.
     if (col.collectionName === "_meta" && this._pendingFlush) {
       data = col.data.map(doc => doc._id === META_DOC_ID ? { ...doc, [FLUSH_META_KEY]: this._pendingFlush } : doc);
       if (!data.some(doc => doc._id === META_DOC_ID)) data.push({ _id: META_DOC_ID, [FLUSH_META_KEY]: this._pendingFlush });
@@ -347,7 +347,7 @@ class PersistenceManager {
     return this._serializer(payload);
   }
 
-  // ─── Private ───────────────────────────────────────────────────────────
+  // --- Private -----------------------------------------------------------
 
   /**
    * Persist a single collection. Implements per-collection write coalescing:

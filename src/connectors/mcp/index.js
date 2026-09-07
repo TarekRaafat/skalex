@@ -22,8 +22,8 @@
  * await server.listen();
  *
  * // HTTP + SSE
- * const server = db.mcp({ transport: 'http', port: 3456 });
- * await server.listen();
+ * const httpServer = db.mcp({ transport: 'http', port: 3456 });
+ * await httpServer.listen();
  */
 import { TOOL_DEFS, callTool, _validateCollection } from "./tools.js";
 import { ok, error, parse, toolResult, toolError, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./protocol.js";
@@ -43,7 +43,7 @@ class SkalexMCPServer {
    * @param {string|null} [opts.allowedOrigin]    - Exact browser origin for HTTP transport; "*" permits valid HTTP(S) origins. Default: null (native clients only).
    * @param {number}  [opts.maxBodySize]          - Max POST body size in bytes for HTTP transport. Default: 1 MiB.
    * @param {Record<string, Function>} [opts.predicates] - Named predicate allowlist
-   *   for `$fn` in agent-supplied filters. Agents reference predicates by name;
+   *   for `$fn` in agent-supplied filters. Agents reference predicates by name.
    *   the MCP handler resolves the name to the real function. No code crosses
    *   the wire. When omitted, all `$fn` keys are stripped (alpha.3 default).
    */
@@ -59,7 +59,7 @@ class SkalexMCPServer {
     this._t             = null; // active transport instance
   }
 
-  // ─── Public API ────────────────────────────────────────────────────────────
+  // --- Public API ------------------------------------------------------------
 
   /**
    * Start listening on the configured transport.
@@ -100,7 +100,7 @@ class SkalexMCPServer {
   /** @returns {string|undefined} HTTP URL (http transport only). */
   get url() { return this._t?.url; }
 
-  // ─── Message router ────────────────────────────────────────────────────────
+  // --- Message router --------------------------------------------------------
 
   async _handleMessage(raw) {
     const { msg, parseError } = typeof raw === "string" ? parse(raw) : { msg: raw };
@@ -175,7 +175,7 @@ class SkalexMCPServer {
     }
   }
 
-  // ─── Access control ────────────────────────────────────────────────────────
+  // --- Access control --------------------------------------------------------
 
   /**
    * Return tool definitions visible to the current scope configuration.
@@ -215,7 +215,7 @@ class SkalexMCPServer {
     return false;
   }
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
+  // --- Helpers ---------------------------------------------------------------
 
   _send(msg) {
     this._t?.send(msg);

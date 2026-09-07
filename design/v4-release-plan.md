@@ -21,7 +21,7 @@ These hold for every release on the path to 4.0.0.
 1. **Every release is safer than the last.** No test-count regressions, no new skipped tests. P0 findings against shipped versions trigger out-of-band patch releases per section 1.5.
 2. **Zero runtime dependencies.** Every feature is reachable with `node:*` builtins and `fetch`. Enforced by `npm run deps:zero` in the mandatory gate: the install-causing `package.json` fields (`dependencies`, `optionalDependencies`, `bundledDependencies`) stay empty. External integrations ship as optional, user-installed, dynamically imported adapters - never as dependencies.
 3. **Isomorphic.** Every release passes the Node, Bun, Deno, and browser smoke suites. One runtime red blocks the release.
-3a. **Minimal footprint.** The published bundle stays within the byte budget in `size-budget.json`. `npm run size` is part of the mandatory gate; a release over budget does not ship. Raising the budget is a deliberate, reviewed act with a rationale in the PR - never a silent bump to pass CI. The budget is tiered per the core/AI split (ADR-003): "core" is what a `new Skalex()` + CRUD + indexes + persistence needs; AI-native features that most data-path consumers do not call at runtime (MCP from alpha.10; vector, quantization, and hybrid retrieval from 4.1) ship behind on-demand subpath entries with their own budget entries, never in the core default import. AI-native means one import away, not in every consumer's bundle.
+3a. **Minimal footprint.** The published bundle stays within the byte budget in `size-budget.json`. `npm run size` is part of the mandatory gate. A release over budget does not ship. Raising the budget is a deliberate, reviewed act with a rationale in the PR - never a silent bump to pass CI. The budget is tiered per the core/AI split (ADR-003): "core" is what a `new Skalex()` + CRUD + indexes + persistence needs. AI-native features that most data-path consumers do not call at runtime (MCP from alpha.10. Vector, quantization, and hybrid retrieval from 4.1) ship behind on-demand subpath entries with their own budget entries, never in the core default import. AI-native means one import away, not in every consumer's bundle.
 4. **Breaking changes live in alpha and early beta.** alpha.10 is the last window for breaking public API changes. beta.1 is the last window for breaking on-disk format changes. After beta.2 the release is additive-only.
 5. **Every release ships a `MIGRATION.md` section**, even a pure refactor.
 6. **Docs and code move together.** A behavior change without matching JSDoc, `.d.ts`, `ARCHITECTURE.md`, and `README.md` updates is incomplete.
@@ -40,7 +40,7 @@ Before publication, verify an installed tarball, alpha.6 data compatibility, con
 
 Alpha.7 preserves existing shallow document reads and live `groupBy()` references. Detachment is explicit through `clone: true`, with structured-clone costs and compatibility limits documented at the read APIs.
 
-This resolves F16 as an opt-in detachment contract, not safe-by-default reads. Mutating shared values can bypass validation, versioning, dirty tracking and transaction checks; callers must use collection mutations for stored changes. Inputs, mutation results, hooks and event payloads retain their existing ownership behavior.
+This resolves F16 as an opt-in detachment contract, not safe-by-default reads. Mutating shared values can bypass validation, versioning, dirty tracking and transaction checks. Callers must use collection mutations for stored changes. Inputs, mutation results, hooks and event payloads retain their existing ownership behavior.
 
 Default detachment and development-time freezing are not part of this change. Freezing requires separate compatibility and performance evaluation. F04 now has bounded synchronous commit-stage recovery, verified with one-shot faults and a separate recovery-failure guard. Neither this guarantee nor the revised F16 diagnostic establishes release readiness or arbitrary failure atomicity.
 
@@ -57,13 +57,13 @@ What this looks like in practice:
 - The patch release ships out-of-band, in parallel with whatever in-flight planned release is open. The planned release is not delayed to absorb the fix.
 - The patch release carries only the P0 fix and its regression test - no scope creep, no opportunistic refactors.
 - If the next planned release inherits the P0 fix, it cherry-picks from the patch release rather than re-implementing.
-- A P0 found during an in-flight release blocks that release until fixed; the verification matrix would fail anyway.
+- A P0 found during an in-flight release blocks that release until fixed. The verification matrix would fail anyway.
 
 What does NOT preempt the train:
 
 - P1, P2, and P3 findings queue against the next planned release whose scope fits, or against 4.1 when no fit exists.
 - Performance regressions short of correctness failure wait for the beta.3 hot-path benchmark gate.
-- Architecture opinions are not findings; they queue against the relevant design milestone.
+- Architecture opinions are not findings. They queue against the relevant design milestone.
 
 The cutting order in section 7 does NOT apply to P0 fixes. Section 7 is for scope pressure on planned releases, not for triaging confirmed defects.
 
@@ -138,14 +138,14 @@ Nothing in the release train depends on `beta.3`. rc.1 branches off `beta.3` cle
 | Store-split regressions drift sub-records | alpha.8 | Field-count assertion per sub-record. CI fails if a new field lands in one without its sibling. |
 | On-disk format lock-in | alpha.8 | Fixture file per format version (`tests/fixtures/format-v1.dat`, `v2`, `v3`). Loader tests round-trip each. |
 | `applyUpdate` strictness breaks users relying on lenient behavior | alpha.9 | One release of warning mode before throwing. `MIGRATION.md` documents the migration path. |
-| Bulk-insert stack overflow in `InMemoryDataStore.push(...arr)` (reproduced on Node 24 at 70K+ docs) | alpha.9 | alpha.9 item #13 replaces the spread with a for-loop; regression test at 100K / 500K pins the fix. Must land before alpha.10 freezes the API surface so input-size expectations stay truthful. |
-| Type-precision gaps surface beyond `UpdateDescriptor<T>` | alpha.10 | Walk every public method with `tsd`; fixes land in alpha.10 if narrow, defer to 4.1 with a tracked issue otherwise. |
+| Bulk-insert stack overflow in `InMemoryDataStore.push(...arr)` (reproduced on Node 24 at 70K+ docs) | alpha.9 | alpha.9 item #13 replaces the spread with a for-loop. Regression test at 100K / 500K pins the fix. Must land before alpha.10 freezes the API surface so input-size expectations stay truthful. |
+| Type-precision gaps surface beyond `UpdateDescriptor<T>` | alpha.10 | Walk every public method with `tsd`. Fixes land in alpha.10 if narrow, defer to 4.1 with a tracked issue otherwise. |
 | Hybrid DataStore regresses hot-path perf | beta.1 | Publish `insertOne` / `find` / `search` p50/p95/p99 from alpha.6 as a baseline. Gate beta.1 on `p95 ≤ alpha.6 × 1.05`. |
 | WAL corruption under crash | beta.1 | Randomized crash fault injection, 1000 runs minimum. Invariant: post-recovery state equals last successfully committed state. |
-| Per-tx wrapper drift (wrapper lifetime vs tx lifetime) | beta.2 | Tests cover: wrapper captured outside `fn` throws `ERR_SKALEX_TX_STALE_PROXY`; wrapper state does not bleed between transactions; bare `Collection` never participates in tx dispatch. Identical transaction suite runs on Node, Bun, Deno, and browser. |
-| Rollback fails mid-sweep | beta.2 | `Promise.allSettled` per collection; typed `ERR_SKALEX_TX_ROLLBACK_PARTIAL` with `details.failed`. Fault-injection test required. |
+| Per-tx wrapper drift (wrapper lifetime vs tx lifetime) | beta.2 | Tests cover: wrapper captured outside `fn` throws `ERR_SKALEX_TX_STALE_PROXY`. Wrapper state does not bleed between transactions. Bare `Collection` never participates in tx dispatch. Identical transaction suite runs on Node, Bun, Deno, and browser. |
+| Rollback fails mid-sweep | beta.2 | `Promise.allSettled` per collection. Typed `ERR_SKALEX_TX_ROLLBACK_PARTIAL` with `details.failed`. Fault-injection test required. |
 | Write throughput degrades as data grows (full-collection rewrite on every flush) | beta.3 | Dirty-page incremental flush (beta.3 #24): `_flush` writes only pages changed since the last flush, reusing the WAL's touched-page set. Gated by the flat-flush benchmark - a one-doc update on a 1M-doc collection flushes within 2× of the same op on a 1K-doc collection. |
-| Hot-path perf regression slips into beta.3 | beta.3 | Benchmark gate in CI; regression ≥ 5% fails the release. |
+| Hot-path perf regression slips into beta.3 | beta.3 | Benchmark gate in CI. Regression ≥ 5% fails the release. |
 | Delete-path benchmark regression remains after beta.3 | beta.3 | Gate beta.3 on `deleteOne({ _id })` being ≥100× faster than alpha.6 baseline on a 100K-doc collection. |
 | RC cycle too short | rc.1 | Tag 4.0.0 only when no open P0 issues exist and the maintainer is satisfied with rc.1 field exposure. No fixed soak length. Extend exposure on any P0 finding. |
 
@@ -174,11 +174,11 @@ Additional gates by release:
 | Release | Extra gate |
 |---|---|
 | alpha.8 | Format fixture round-trip tests pass for v1 and v2 |
-| alpha.10 | `tsd` positive and negative cases green; `api-surface.md` snapshot committed |
-| beta.1 | 1000-run crash fault injection passes; hot-path benchmark within 1.05× alpha.6 |
+| alpha.10 | `tsd` positive and negative cases green. `api-surface.md` snapshot committed |
+| beta.1 | 1000-run crash fault injection passes. Hot-path benchmark within 1.05× alpha.6 |
 | beta.2 | Fire-and-forget + nested async tx tests green on every runtime (including browser) |
-| beta.3 | Hot-path benchmark no worse than beta.1; `deleteOne({ _id })` ≥100× faster than alpha.6; one-doc-update flush scales with pages touched, not collection size |
-| rc.1 | Zero code changes vs beta.3 in `src/*.js`; docs coverage is 100% on the public surface |
+| beta.3 | Hot-path benchmark no worse than beta.1. `deleteOne({ _id })` ≥100× faster than alpha.6. One-doc-update flush scales with pages touched, not collection size |
+| rc.1 | Zero code changes vs beta.3 in `src/*.js`. Docs coverage is 100% on the public surface |
 
 ---
 
@@ -190,7 +190,7 @@ Additional gates by release:
 
 - Vector side-store and quantization
 - Range / B-tree index for `$gt` / `$lt` - the "real query for user data" lever: turns range/inequality filters over user collections (subscribers by signup date, per-user prefs by tier) from full scans into indexed lookups, in RAM
-- Lazy collection load - opt-in; `connect()` reads the manifest only and hydrates a collection on first access, with optional idle eviction. Reduces resident memory for the "many collections, one hot path" case without leaving the in-memory model
+- Lazy collection load - opt-in. `connect()` reads the manifest only and hydrates a collection on first access, with optional idle eviction. Reduces resident memory for the "many collections, one hot path" case without leaving the in-memory model
 - Network adapter
 - Schema DSL helper
 - Tokenizer hook for Memory (extended to also accept a summarizer hook)
@@ -220,8 +220,8 @@ The deferred list is firm. Scope creep into the 4.0 window is the single biggest
 
 Some asks recur because they sound reasonable but sit outside what Skalex is. Writing the boundary down here gives every future request a fixed answer, so the moat is not eroded one "reasonable" exception at a time.
 
-- **Querying data that does not fit in RAM (out-of-core).** Skalex is in-memory by charter: a resident collection is fully in memory and queried there. Where users want this, the underlying need is usually (a) faster per-user filters - addressed in RAM by the range/B-tree index (4.1), (b) lower resident memory for cold collections - addressed by lazy collection load (4.1), or (c) not rewriting the whole file on every write - addressed by dirty-page incremental flush (beta.3 #24). True out-of-core querying requires the async-native disk-backed DataStore, and is v5 at the earliest. The beta.1 DataStore boundary is the seam that keeps it *possible* later without a rewrite; it is not a commitment to build it in v4 or 4.1.
-- **Many parallel writers via transactions.** Transactions provide safe *isolation* (per-collection locking, atomic rollback - beta.2), not parallel write throughput: transactions are serialised. Within one process this is the intended model. Across processes it is a documented non-goal - two Skalex processes on the same directory are unsupported. The `multiProcessGuard` lockfile (beta.3 #15) turns that from silent corruption into a loud error; it is a guard, not multi-process support. Distributed or multi-process concurrency is not on any v4.x roadmap.
+- **Querying data that does not fit in RAM (out-of-core).** Skalex is in-memory by charter: a resident collection is fully in memory and queried there. Where users want this, the underlying need is usually (a) faster per-user filters - addressed in RAM by the range/B-tree index (4.1), (b) lower resident memory for cold collections - addressed by lazy collection load (4.1), or (c) not rewriting the whole file on every write - addressed by dirty-page incremental flush (beta.3 #24). True out-of-core querying requires the async-native disk-backed DataStore, and is v5 at the earliest. The beta.1 DataStore boundary is the seam that keeps it *possible* later without a rewrite. It is not a commitment to build it in v4 or 4.1.
+- **Many parallel writers via transactions.** Transactions provide safe *isolation* (per-collection locking, atomic rollback - beta.2), not parallel write throughput: transactions are serialised. Within one process this is the intended model. Across processes it is a documented non-goal - two Skalex processes on the same directory are unsupported. The `multiProcessGuard` lockfile (beta.3 #15) turns that from silent corruption into a loud error. It is a guard, not multi-process support. Distributed or multi-process concurrency is not on any v4.x roadmap.
 
 ---
 
@@ -248,7 +248,7 @@ Do NOT cut:
 - MCP sanitization (alpha.9) - security hardening
 - Package exports (alpha.10) - users following the `.d.ts` hit runtime errors today
 - Delete-path perf (beta.3) - required to meet the fastest-in-category benchmark target
-- FsAdapter lockfile / `multiProcessGuard` (beta.3 #15) - reliability is the top project priority, and silent cross-process corruption is a correctness defect, not a nicety. The guard turns it into a loud error. Do not cut it to 4.1; ship the safety net in the same release that ships the transaction isolation story
+- FsAdapter lockfile / `multiProcessGuard` (beta.3 #15) - reliability is the top project priority, and silent cross-process corruption is a correctness defect, not a nicety. The guard turns it into a loud error. Do not cut it to 4.1. Ship the safety net in the same release that ships the transaction isolation story
 - Dirty-page incremental flush (beta.3 #24) - the measured guarantee behind "write throughput does not degrade as data grows." Cutting it reintroduces full-collection rewrite on every flush
 
 ---
@@ -263,7 +263,7 @@ What this means in practice:
 - **No minimum soak periods on a calendar.** Stability gates are state-based ("no open P0 issues", "two consecutive clean CI runs", "satisfied with field exposure of the rc.1 build"), not date-based. A release that has been stable in the wild for two days under heavy real-world use is no less ready than one that has been stable for a month under light use.
 - **Order is dictated by the dependency graph in section 3. Pace is dictated by readiness against the verification matrix.** Releases land when they meet their gates, not when a clock says they should.
 - **Scope is the lever, not pace.** If a release feels too big to land in one pass, drop items in the cutting order in section 7 - never compress correctness or skip the verification matrix to ship faster.
-- **Effort labels in per-release docs ("Trivial", "Small", "Medium", "Large") are sizings relative to each other.** They help order work within a release; they do not represent wall-clock estimates.
+- **Effort labels in per-release docs ("Trivial", "Small", "Medium", "Large") are sizings relative to each other.** They help order work within a release. They do not represent wall-clock estimates.
 
 The only ordering that matters is the dependency graph in section 3.
 

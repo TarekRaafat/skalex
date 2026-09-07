@@ -14,7 +14,7 @@ function makeDb(opts = {}) {
   return new Skalex({ adapter: new MemoryAdapter(), ...opts });
 }
 
-// ─── Read-committed isolation ─────────────────────────────────────────────
+// --- Read-committed isolation ---------------------------------------------
 
 describe("transactions  -  read-committed isolation", () => {
   test("reads on un-written collections see external mutations inside a tx", async () => {
@@ -40,7 +40,7 @@ describe("transactions  -  read-committed isolation", () => {
   });
 });
 
-// ─── Collection-level locking during transactions ─────────────────────────
+// --- Collection-level locking during transactions -------------------------
 
 describe("transactions - collection-level locking", () => {
   test("non-tx write to a tx-touched collection is rejected", async () => {

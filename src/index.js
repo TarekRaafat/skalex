@@ -65,7 +65,7 @@ const _serialize = (value) => {
  *     class instances with enumerable own properties) walk their own keys.
  *
  * @param {any} v
- * @param {Array<string|number>} path - mutated during traversal; captured per hit
+ * @param {Array<string|number>} path - mutated during traversal. Captured per hit
  * @param {{ bigint: Array<Array<string|number>>, Date: Array<Array<string|number>> }} types
  * @returns {any}
  */
@@ -305,7 +305,7 @@ class Skalex {
       for (const p of plugins) this._plugins.register(p);
     }
 
-    // ── Extracted subsystems ──────────────────────────────────────────────
+    // -- Extracted subsystems ----------------------------------------------
     this._ai = new SkalexAI({
       aiAdapter: llmAdapter ?? (ai ? createLLMAdapter(ai) : null),
       embeddingAdapter: embeddingAdapter ?? (ai ? createEmbeddingAdapter(ai) : null),
@@ -328,7 +328,7 @@ class Skalex {
     });
   }
 
-  // ─── Connection ──────────────────────────────────────────────────────────
+  // --- Connection ----------------------------------------------------------
 
   /**
    * Connect to the database: load data, run pending migrations, sweep TTL docs.
@@ -417,7 +417,7 @@ class Skalex {
     return this.connect();
   }
 
-  // ─── Collections ─────────────────────────────────────────────────────────
+  // --- Collections ---------------------------------------------------------
 
   /**
    * Get (or lazily create) a Collection instance by name.
@@ -457,7 +457,7 @@ class Skalex {
     await this.fs.delete(from);
   }
 
-  // ─── Persistence ─────────────────────────────────────────────────────────
+  // --- Persistence ---------------------------------------------------------
 
   /**
    * Load all collections from the storage adapter.
@@ -485,7 +485,7 @@ class Skalex {
    * Persist one or all collections via the storage adapter.
    *
    * Best-effort: each collection is written independently. If one fails,
-   * others may already be committed. transaction() coordinates owned writes;
+   * others may already be committed. transaction() coordinates owned writes.
    * its disk atomicity depends on the adapter batch implementation.
    * Ordinary writes and transaction batches share one adapter-write queue.
    * Snapshots are serialized when their queued write begins.
@@ -523,7 +523,7 @@ class Skalex {
     return this._registry.buildIndex(data, keyField);
   }
 
-  // ─── Migrations ──────────────────────────────────────────────────────────
+  // --- Migrations ----------------------------------------------------------
 
   /**
    * Register a migration to run on next connect().
@@ -542,7 +542,7 @@ class Skalex {
     return this._migrations.status(meta.appliedVersions || []);
   }
 
-  // ─── Namespace ───────────────────────────────────────────────────────────
+  // --- Namespace -----------------------------------------------------------
 
   /**
    * Create a scoped Skalex instance that stores data under a sub-directory.
@@ -568,7 +568,7 @@ class Skalex {
     });
   }
 
-  // ─── Plugins ──────────────────────────────────────────────────────────────
+  // --- Plugins --------------------------------------------------------------
 
   /**
    * Register a plugin. Plugins are plain objects with optional async hook
@@ -581,7 +581,7 @@ class Skalex {
     this._plugins.register(plugin);
   }
 
-  // ─── Global Watch ─────────────────────────────────────────────────────────
+  // --- Global Watch ---------------------------------------------------------
 
   /**
    * Subscribe to all mutation events across every collection.
@@ -594,7 +594,7 @@ class Skalex {
     return this._eventBus.on("*", callback);
   }
 
-  // ─── Session Stats ────────────────────────────────────────────────────────
+  // --- Session Stats --------------------------------------------------------
 
   /**
    * Return per-session read/write stats.
@@ -611,7 +611,7 @@ class Skalex {
   /** Whether a transaction is currently active. */
   get _inTransaction() { return this._txManager.active; }
 
-  // ─── Transaction helpers ─────────────────────────────────────────────────
+  // --- Transaction helpers -------------------------------------------------
 
   /**
    * Emit a collection event. Owned writes defer through their scoped context.
@@ -646,7 +646,7 @@ class Skalex {
   /**
    * Record the applied-migrations list into `_meta` in the same batch as the
    * active transaction. Called by the migration runner inside `up()`'s
-   * transaction callback; must NOT be called outside a transaction.
+   * transaction callback. Must NOT be called outside a transaction.
    *
    * Ensures `_meta` exists, snapshots it into the active tx so rollback
    * reverts the version record on failure, and mutates it via the
@@ -690,17 +690,17 @@ class Skalex {
     this._persistence.updateMeta(this.collections, { appliedVersions: versions });
   }
 
-  // ─── Transaction ─────────────────────────────────────────────────────────
+  // --- Transaction ---------------------------------------------------------
 
   /**
    * Run a callback inside a transaction.
    *
    * The callback receives TransactionHandle: useCollection and createCollection
-   * only. Returned handles expose document/query capabilities; persistence,
+   * only. Returned handles expose document/query capabilities. Persistence,
    * lifecycle, export, subscriptions and internal state are unavailable.
    * Ownership: use the callback's collection handles and await each operation
    * inside it. Handles and captured methods expire when the callback ends.
-   * Writes lock collections and take lazy rollback snapshots; ordinary reads
+   * Writes lock collections and take lazy rollback snapshots. Ordinary reads
    * still observe live data, including uncommitted transactional changes.
    * Independently created collections and writes remain outside rollback.
    *
@@ -739,7 +739,7 @@ class Skalex {
     return this._txManager.run(fn, this, opts);
   }
 
-  // ─── Seed ────────────────────────────────────────────────────────────────
+  // --- Seed ----------------------------------------------------------------
 
   /**
    * Seed collections with fixture data.
@@ -759,7 +759,7 @@ class Skalex {
     await this.saveData();
   }
 
-  // ─── Dump ────────────────────────────────────────────────────────────────
+  // --- Dump ----------------------------------------------------------------
 
   /**
    * Return a snapshot of all collection data.
@@ -769,7 +769,7 @@ class Skalex {
     return this._registry.dump();
   }
 
-  // ─── Inspect ─────────────────────────────────────────────────────────────
+  // --- Inspect -------------------------------------------------------------
 
   /**
    * Return metadata about one or all collections.
@@ -780,7 +780,7 @@ class Skalex {
     return this._registry.inspect(collectionName);
   }
 
-  // ─── Import ──────────────────────────────────────────────────────────────
+  // --- Import --------------------------------------------------------------
 
   /**
    * Import documents from a JSON file into a collection.
@@ -793,7 +793,7 @@ class Skalex {
     return this._importer.import(filePath);
   }
 
-  // ─── Embedding ───────────────────────────────────────────────────────────
+  // --- Embedding -----------------------------------------------------------
 
   /**
    * Embed a text string using the configured embedding adapter.
@@ -804,7 +804,7 @@ class Skalex {
     return this._ai.embed(text);
   }
 
-  // ─── AI Query ─────────────────────────────────────────────────────────────
+  // --- AI Query -------------------------------------------------------------
 
   /**
    * Natural-language query: translate `nlQuery` into a filter via the language
@@ -819,7 +819,7 @@ class Skalex {
     return this._ai.ask(collectionName, nlQuery, opts);
   }
 
-  // ─── Schema ──────────────────────────────────────────────────────────────
+  // --- Schema --------------------------------------------------------------
 
   /**
    * Return the schema for a collection as a plain `{ field: type }` object.
@@ -833,7 +833,7 @@ class Skalex {
     return this._registry.schema(collectionName);
   }
 
-  // ─── Agent Memory ─────────────────────────────────────────────────────────
+  // --- Agent Memory ---------------------------------------------------------
 
   /**
    * Get (or create) an episodic Memory store for a session.
@@ -844,7 +844,7 @@ class Skalex {
     return new Memory(sessionId, this);
   }
 
-  // ─── ChangeLog ────────────────────────────────────────────────────────────
+  // --- ChangeLog ------------------------------------------------------------
 
   /**
    * Return the shared ChangeLog instance.
@@ -865,7 +865,7 @@ class Skalex {
     return this._changeLog.restore(collectionName, timestamp, opts);
   }
 
-  // ─── Stats ────────────────────────────────────────────────────────────────
+  // --- Stats ----------------------------------------------------------------
 
   /**
    * Return size statistics for one or all collections.
@@ -876,7 +876,7 @@ class Skalex {
     return this._registry.stats(collectionName);
   }
 
-  // ─── Slow Query Log ───────────────────────────────────────────────────────
+  // --- Slow Query Log -------------------------------------------------------
 
   /**
    * Return recorded slow queries (requires slowQueryLog config).
@@ -903,7 +903,7 @@ class Skalex {
     this._queryLog?.clear();
   }
 
-  // ─── MCP Server ───────────────────────────────────────────────────────────
+  // --- MCP Server -----------------------------------------------------------
 
   /**
    * Create a Skalex MCP server that exposes this database as MCP tools.
@@ -919,7 +919,7 @@ class Skalex {
     return new SkalexMCPServer(this, opts);
   }
 
-  // ─── Private ─────────────────────────────────────────────────────────────
+  // --- Private -------------------------------------------------------------
 
   /**
    * Build a lazy context that resolves properties at call time.
@@ -964,7 +964,7 @@ class Skalex {
     if (this.debug) this._logger(msg, "info");
   }
 
-  // ── Backward-compatible accessors for extracted subsystem internals ────
+  // -- Backward-compatible accessors for extracted subsystem internals ----
   //
   // @deprecated These getters/setters proxy to the alpha.4-extracted
   // subsystems (`_ai`, `_ttlScheduler`). They exist only to avoid breaking

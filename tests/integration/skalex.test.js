@@ -15,7 +15,7 @@ function makeDb(opts = {}) {
   return { db, adapter };
 }
 
-// ─── connect / disconnect ────────────────────────────────────────────────────
+// --- connect / disconnect ----------------------------------------------------
 
 describe("connect / disconnect", () => {
   test("connect() sets isConnected = true", async () => {
@@ -44,7 +44,7 @@ describe("connect / disconnect", () => {
   });
 });
 
-// ─── CRUD ────────────────────────────────────────────────────────────────────
+// --- CRUD --------------------------------------------------------------------
 
 describe("insertOne / findOne", () => {
   test("inserts document with auto _id, createdAt, updatedAt", async () => {
@@ -336,7 +336,7 @@ describe("deleteMany", () => {
   });
 });
 
-// ─── Upsert / ifNotExists ────────────────────────────────────────────────────
+// --- Upsert / ifNotExists ----------------------------------------------------
 
 describe("upsert", () => {
   test("inserts when no match", async () => {
@@ -377,7 +377,7 @@ describe("insertOne ifNotExists", () => {
   });
 });
 
-// ─── Schema validation ───────────────────────────────────────────────────────
+// --- Schema validation -------------------------------------------------------
 
 describe("schema validation", () => {
   test("throws on required field missing", async () => {
@@ -403,7 +403,7 @@ describe("schema validation", () => {
   });
 });
 
-// ─── Unique constraints ──────────────────────────────────────────────────────
+// --- Unique constraints ------------------------------------------------------
 
 describe("unique index constraints", () => {
   test("throws on duplicate unique field", async () => {
@@ -506,7 +506,7 @@ describe("unique index constraints", () => {
   });
 });
 
-// ─── TTL ─────────────────────────────────────────────────────────────────────
+// --- TTL ---------------------------------------------------------------------
 
 describe("TTL documents", () => {
   test("insertOne with ttl sets _expiresAt", async () => {
@@ -538,7 +538,7 @@ describe("TTL documents", () => {
   });
 });
 
-// ─── Persistence ─────────────────────────────────────────────────────────────
+// --- Persistence -------------------------------------------------------------
 
 describe("persistence", () => {
   test("save and reload preserves documents", async () => {
@@ -599,7 +599,7 @@ describe("persistence", () => {
   });
 });
 
-// ─── Transaction ─────────────────────────────────────────────────────────────
+// --- Transaction -------------------------------------------------------------
 
 describe("transaction", () => {
   test("commits on success", async () => {
@@ -649,7 +649,7 @@ describe("transaction", () => {
   });
 });
 
-// ─── Seed ────────────────────────────────────────────────────────────────────
+// --- Seed --------------------------------------------------------------------
 
 describe("seed", () => {
   test("seeds collections with fixture data", async () => {
@@ -678,7 +678,7 @@ describe("seed", () => {
   });
 });
 
-// ─── Dump / Inspect ──────────────────────────────────────────────────────────
+// --- Dump / Inspect ----------------------------------------------------------
 
 describe("dump", () => {
   test("returns snapshot of all collections", async () => {
@@ -724,7 +724,7 @@ describe("inspect", () => {
   });
 });
 
-// ─── Namespace ───────────────────────────────────────────────────────────────
+// --- Namespace ---------------------------------------------------------------
 
 describe("namespace", () => {
   test("returns a Skalex instance scoped to a sub-path", () => {
@@ -746,7 +746,7 @@ describe("namespace", () => {
   });
 });
 
-// ─── Migrations ──────────────────────────────────────────────────────────────
+// --- Migrations --------------------------------------------------------------
 
 describe("migrations", () => {
   test("runs pending migrations on connect", async () => {
@@ -856,7 +856,7 @@ describe("migrations", () => {
   });
 });
 
-// ─── _id integrity ──────────────────────────────────────────────────────────
+// --- _id integrity ----------------------------------------------------------
 
 describe("_id integrity", () => {
   test("insertOne with duplicate _id throws", async () => {
@@ -922,7 +922,7 @@ describe("_id integrity", () => {
   });
 });
 
-// ─── Date round-trip ────────────────────────────────────────────────────────
+// --- Date round-trip --------------------------------------------------------
 
 describe("Date round-trip", () => {
   test("Date fields survive save/load round-trip", async () => {
@@ -998,7 +998,7 @@ describe("Date round-trip", () => {
   });
 });
 
-// ─── Export ──────────────────────────────────────────────────────────────────
+// --- Export ------------------------------------------------------------------
 
 describe("export", () => {
   test("exports JSON via writeRaw", async () => {
@@ -1040,7 +1040,7 @@ describe("export", () => {
   });
 });
 
-// ─── Import ──────────────────────────────────────────────────────────────────
+// --- Import ------------------------------------------------------------------
 
 describe("import", () => {
   test("imports JSON from a file path", async () => {
@@ -1063,7 +1063,7 @@ describe("import", () => {
 
 });
 
-// ─── collection.js does not import native fs/path ────────────────────────────
+// --- collection.js does not import native fs/path ----------------------------
 
 describe("architectural constraints", () => {
   test("collection.js does not require native fs or path", async () => {
@@ -1086,7 +1086,7 @@ describe("architectural constraints", () => {
   });
 });
 
-// ─── Vector search ───────────────────────────────────────────────────────────
+// --- Vector search -----------------------------------------------------------
 
 function makeVectorDb(responses = {}) {
   const adapter = new MemoryAdapter();
@@ -1430,7 +1430,7 @@ describe("db.embed()", () => {
   });
 });
 
-// ─── db.ask() ────────────────────────────────────────────────────────────────
+// --- db.ask() ----------------------------------------------------------------
 
 function makeAskDbWith(responses) {
   const adapter = new MemoryAdapter();
@@ -1496,7 +1496,7 @@ describe("db.ask()", () => {
   });
 });
 
-// ─── db.schema() ─────────────────────────────────────────────────────────────
+// --- db.schema() -------------------------------------------------------------
 
 describe("db.schema()", () => {
   test("returns null for unknown collection", () => {

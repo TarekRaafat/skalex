@@ -26,7 +26,7 @@
 - **Zero dependencies**: install the package, nothing else. No driver, no ORM, no server process.
 - **Lightweight, and staying that way**: the full core bundle is ~28 KB gzipped. That is a promise, not a snapshot - a hard byte budget is enforced in CI on every push and PR, so Skalex will not quietly bloat.
 - **Full build matrix**: ESM, ESM minified, CJS, CJS minified, browser ESM (`dist/skalex.browser.js`, no `node:*` imports), UMD/IIFE (`dist/skalex.umd.min.js`, CDN default)
-- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes; verified by **1,164 tests** (935 unit/integration + 229 cross-runtime smoke) gated by CI on every push and PR
+- **Runs everywhere**: Node.js ≥18, Bun, Deno 2.x, browser (Chrome/Firefox/Safari), edge runtimes. Verified by **1,164 tests** (935 unit/integration + 229 cross-runtime smoke) gated by CI on every push and PR
 - **Pluggable storage**: `FsAdapter` (Node), `LocalStorageAdapter` (browser), `EncryptedAdapter` (AES-256-GCM), or bring your own
 
 **Queries that scale with your data.**
@@ -39,9 +39,9 @@
 
 **Your data stays clean.**
 - Zero-dependency schema validation: `type`, `required`, `unique`, `enum`
-- Strict mode: `createCollection(name, { strict: true })` rejects unknown fields; `onSchemaError: "warn" | "strip"` for softer handling
+- Strict mode: `createCollection(name, { strict: true })` rejects unknown fields. `onSchemaError: "warn" | "strip"` for softer handling
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
-- TTL documents: `insertOne(doc, { ttl: "30m" })`, swept on connect; `defaultTtl` per collection; `ttlSweepInterval` for live processes
+- TTL documents: `insertOne(doc, { ttl: "30m" })`, swept on connect. `defaultTtl` per collection. `ttlSweepInterval` for live processes
 - Transactions: explicit collection/query handles, lazy copy-on-first-write snapshots, configurable timeout, serialised execution, stale proxy detection, collection locking (non-tx writes to tx-touched collections throw `ERR_SKALEX_TX_COLLECTION_LOCKED`), configurable deferred-effect error strategy
 - Change log: `createCollection(name, { changelog: true })`, point-in-time restore
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
@@ -56,7 +56,7 @@
 - Built-in adapters: **OpenAI** (`text-embedding-3-small`) and **Ollama** (local, zero cost)
 
 **Your database speaks English.**
-- `db.ask(collection, nlQuery)`: translate natural language to a filter via LLM; results cached
+- `db.ask(collection, nlQuery)`: translate natural language to a filter via LLM. Results cached
 - `db.useMemory(sessionId)`: episodic agent memory with `remember`, `recall`, `context`, `compress`
 - Built-in language model adapters: **OpenAI**, **Anthropic**, **Ollama**
 - `db.schema(collection)`: infer or return declared schema as a plain object
@@ -67,9 +67,9 @@
 - `slowQueryLog` option + `db.slowQueries()`: capture slow `find` and `search` calls
 
 **React to every change.**
-- `collection.watch(filter?, callback?)`: observe mutations; callback or `AsyncIterableIterator`
-- `collection.watch(filter, { maxBufferSize })`: iterator backpressure; oldest events dropped when buffer is full, `iter.dropped` reports the count
-- `db.watch(callback)`: cross-collection global observer; fires for every mutation across all collections
+- `collection.watch(filter?, callback?)`: observe mutations. Callback or `AsyncIterableIterator`
+- `collection.watch(filter, { maxBufferSize })`: iterator backpressure. Oldest events dropped when buffer is full, `iter.dropped` reports the count
+- `db.watch(callback)`: cross-collection global observer. Fires for every mutation across all collections
 - Events: `{ op, collection, doc, prev? }` emitted after every insert, update, delete, restore
 
 **AI agents, natively wired.**
@@ -77,13 +77,13 @@
 - Compatible with **Claude Desktop**, **Cursor**, and any MCP client
 - `stdio` transport (default) and `http + SSE` transport
 - Tools: `find`, `insert`, `update`, `delete`, `search`, `ask`, `schema`, `collections`
-- Access control: `scopes` map per collection; `read` / `write` / `admin`
+- Access control: `scopes` map per collection. `read` / `write` / `admin`
 - Named-predicate allowlist: `db.mcp({ predicates: { isHighValue: (doc) => ... } })` lets agents reference server-side `$fn` predicates by name without code crossing the wire
 
 **Extend anything.**
 - `db.use(plugin)`: register pre/post hooks on all operations
 - Hooks: `beforeInsert`, `afterInsert`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `afterRestore`, `beforeFind`, `afterFind`, `beforeSearch`, `afterSearch`
-- All hooks awaited in order; errors propagate to the caller per the `deferredEffectErrors` strategy
+- All hooks awaited in order. Errors propagate to the caller per the `deferredEffectErrors` strategy
 
 **Full visibility per session.**
 - `db.sessionStats(sessionId?)`: reads, writes, lastActive per session
@@ -91,15 +91,15 @@
 
 **Deploy anywhere.**
 - `D1Adapter`: Cloudflare D1 / Workers edge SQLite
-- `BunSQLiteAdapter`: Bun-native `bun:sqlite`; `:memory:` or file path
+- `BunSQLiteAdapter`: Bun-native `bun:sqlite`. `:memory:` or file path
 - `LibSQLAdapter`: LibSQL / Turso client adapter
 
 **Built for developers who value their time.**
-- `db.transaction(fn)`: owned in-memory snapshot/rollback; transaction writes deferred until commit, with adapter-dependent disk atomicity
+- `db.transaction(fn)`: owned in-memory snapshot/rollback. Transaction writes deferred until commit, with adapter-dependent disk atomicity
 - `db.seed(fixtures)`: idempotent fixture seeding
 - `db.dump()` / `db.inspect()`: snapshot and metadata
 - `db.namespace(id)`: isolated sub-instances per tenant / user
-- `db.import(path)`: JSON import; collection name derived from filename
+- `db.import(path)`: JSON import. Collection name derived from filename
 - `db.renameCollection(from, to)`: in-memory + on-disk rename
 - `collection.upsert()`, `collection.upsertMany(docs, matchKey)`, `insertOne({ ifNotExists })`: safe idempotent writes
 - `autoSave: true`: persist after every write without `{ save: true }` on every call
@@ -117,13 +117,13 @@
 npm install skalex@alpha
 ```
 
-> **These docs target v4.0.0-alpha.7.** This is a prerelease; pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **These docs target v4.0.0-alpha.7.** This is a prerelease. Pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 Requires **Node.js ≥ 18**.
 
 **Or via CDN** (no bundler, no npm - browser direct):
 
-**ESM** - recommended for real browser apps; connectors import alongside Skalex:
+**ESM** - recommended for real browser apps. Connectors import alongside Skalex:
 
 ```html
 <script type="module">
@@ -249,9 +249,11 @@ See what's shipping next: **[Roadmap](https://tarekraafat.github.io/skalex/#/roa
 
 ### Upgrading to alpha.7
 
-Transaction and migration callbacks now receive restricted collection handles. Use their collection methods and await each write; commit owns saving. HTTP clients must satisfy Origin and Host validation. See the [migration guide](MIGRATION.md) for upgrade requirements and failure behavior.
+For a manual or LLM-assisted upgrade, follow the [migration checklist](https://tarekraafat.github.io/skalex/#/migration) and apply every change required by your starting version.
 
-Reads remain shallow by default. Use collection mutations to change stored data; use `clone: true` before editing a returned nested value independently:
+Transaction and migration callbacks now receive restricted collection handles. Use their collection methods and await each write. Commit owns saving. HTTP clients must satisfy Origin and Host validation. See the [migration guide](MIGRATION.md) for upgrade requirements and failure behavior.
+
+Reads remain shallow by default. Use collection mutations to change stored data. Use `clone: true` before editing a returned nested value independently:
 
 ```javascript
 const draft = await users.findOne({ _id: id }, { clone: true });
@@ -262,7 +264,7 @@ Cloning is optional and may reject uncloneable values. Failed upsert batches can
 
 ### Incomplete persistence batches
 
-Transaction commits persist a recovery marker before batch data. If a batch is interrupted, reconnect reports an incomplete-flush warning and still loads the stored data. This detects possible inconsistency; it does not automatically repair partial writes. After inspection or repair, call `await db.acknowledgeIncompleteFlush()` outside transactions to clear the warning. See the [persistence documentation](docs/documentation.md#incomplete-transaction-batches) before recovering storage.
+Transaction commits persist a recovery marker before batch data. If a batch is interrupted, reconnect reports an incomplete-flush warning and still loads the stored data. This detects possible inconsistency. It does not automatically repair partial writes. After inspection or repair, call `await db.acknowledgeIncompleteFlush()` outside transactions to clear the warning. See the [persistence documentation](docs/documentation.md#incomplete-transaction-batches) before recovering storage.
 
 ## License
 

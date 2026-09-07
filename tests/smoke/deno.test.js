@@ -13,7 +13,7 @@
 
 import Skalex from "../../dist/skalex.esm.js";
 
-// ─── In-memory adapter (no fs permissions needed) ────────────────────────────
+// --- In-memory adapter (no fs permissions needed) ----------------------------
 
 class MemoryAdapter {
   constructor() { this._store = new Map(); }
@@ -32,7 +32,7 @@ class MemoryAdapter {
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// --- Helpers -----------------------------------------------------------------
 
 let passed = 0;
 let failed = 0;
@@ -57,13 +57,13 @@ async function section(name, fn) {
   }
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// --- Tests -------------------------------------------------------------------
 
 async function run() {
   const db = new Skalex({ adapter: new MemoryAdapter() });
   await db.connect();
 
-  // ─── Core CRUD ─────────────────────────────────────────────────────────────
+  // --- Core CRUD -------------------------------------------------------------
 
   await section("insertOne / find / findOne", async () => {
     const col = db.useCollection("users");
@@ -97,7 +97,7 @@ async function run() {
     assert("deleteMany removes all matching",       (await col.count()) === 0);
   });
 
-  // ─── Query operators ───────────────────────────────────────────────────────
+  // --- Query operators -------------------------------------------------------
 
   await section("query operators", async () => {
     const col = db.useCollection("qops");
@@ -124,7 +124,7 @@ async function run() {
     assert("RegExp works",                          regex.length === 2);
   });
 
-  // ─── Aggregation ───────────────────────────────────────────────────────────
+  // --- Aggregation -----------------------------------------------------------
 
   await section("count / sum / avg / groupBy", async () => {
     const col = db.useCollection("orders");
@@ -141,7 +141,7 @@ async function run() {
     assert("groupBy()",                             groups.A?.length === 2);
   });
 
-  // ─── Transaction ───────────────────────────────────────────────────────────
+  // --- Transaction -----------------------------------------------------------
 
   await section("HTTP origin validation", async () => {
     const { default: httpOrigin } = await import("./http-origin.js");
@@ -210,7 +210,7 @@ async function run() {
     assert("transaction rollback",                  rolled && (await col.findOne({ name: "A" }))?.bal === 75);
   });
 
-  // ─── Watch ─────────────────────────────────────────────────────────────────
+  // --- Watch -----------------------------------------------------------------
 
   await section("collection.watch()", async () => {
     const col = db.useCollection("events");
@@ -226,7 +226,7 @@ async function run() {
     assert("watch fires correct count",             ops.length === 3);
   });
 
-  // ─── Plugin system ─────────────────────────────────────────────────────────
+  // --- Plugin system ---------------------------------------------------------
 
   await section("plugin system", async () => {
     const log = [];
@@ -245,7 +245,7 @@ async function run() {
     assert("afterFind fired",                       log.some(l => l.startsWith("find:")));
   });
 
-  // ─── Session stats ─────────────────────────────────────────────────────────
+  // --- Session stats ---------------------------------------------------------
 
   await section("session stats", async () => {
     const col = db.useCollection("ss");
@@ -260,7 +260,7 @@ async function run() {
     assert("sessionStats: lastActive is Date",      s?.lastActive instanceof Date);
   });
 
-  // ─── db.stats() ────────────────────────────────────────────────────────────
+  // --- db.stats() ------------------------------------------------------------
 
   await section("db.stats()", async () => {
     const s = db.stats("users");
@@ -270,7 +270,7 @@ async function run() {
     assert("stats() returns array",                 Array.isArray(all));
   });
 
-  // ─── MCP factory ───────────────────────────────────────────────────────────
+  // --- MCP factory -----------------------------------------------------------
 
   await section("db.mcp() factory", async () => {
     const server = db.mcp({ transport: "stdio" });
@@ -278,7 +278,7 @@ async function run() {
     assert("mcp() transport is stdio",              server.transport === "stdio");
   });
 
-  // ─── Connector barrels ─────────────────────────────────────────────────────
+  // --- Connector barrels -----------------------------------------------------
 
   await section("connector barrels", async () => {
     const storage   = await import("../../src/connectors/storage/index.js");
@@ -302,7 +302,7 @@ async function run() {
                                                          typeof root.OpenAILLMAdapter === "function");
   });
 
-  // ─── Upsert / ifNotExists ──────────────────────────────────────────────────
+  // --- Upsert / ifNotExists --------------------------------------------------
 
   await section("upsert / ifNotExists", async () => {
     const col = db.useCollection("settings");
@@ -316,11 +316,11 @@ async function run() {
     assert("ifNotExists does not duplicate",        first._id === second._id);
   });
 
-  // ─── Disconnect ────────────────────────────────────────────────────────────
+  // --- Disconnect ------------------------------------------------------------
 
   await db.disconnect();
 
-  // ─── Summary ───────────────────────────────────────────────────────────────
+  // --- Summary ---------------------------------------------------------------
 
   const denoVersion = typeof Deno !== "undefined" ? Deno.version.deno : "unknown";
   console.log(`\n${"─".repeat(50)}`);

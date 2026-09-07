@@ -101,7 +101,7 @@ describe("EventBus  -  on / emit / off", () => {
   });
 });
 
-// ─── Wildcard "*" channel ────────────────────────────────────────────────────
+// --- Wildcard "*" channel ----------------------------------------------------
 
 describe("EventBus  -  wildcard '*' listener", () => {
   test("'*' listener fires for every emitted event regardless of channel name", () => {
@@ -152,7 +152,7 @@ describe("EventBus  -  wildcard '*' listener", () => {
   });
 });
 
-// ─── Integration: collection.watch() ─────────────────────────────────────────
+// --- Integration: collection.watch() -----------------------------------------
 
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";

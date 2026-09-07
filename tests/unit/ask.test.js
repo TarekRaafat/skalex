@@ -4,7 +4,7 @@
 import { describe, test, expect } from "vitest";
 import { QueryCache, processLLMFilter, validateLLMFilter } from "../../src/features/ask.js";
 
-// ─── QueryCache ──────────────────────────────────────────────────────────────
+// --- QueryCache --------------------------------------------------------------
 
 describe("QueryCache", () => {
   test("get returns undefined for missing key", () => {
@@ -71,7 +71,7 @@ describe("QueryCache", () => {
   });
 });
 
-// ─── processLLMFilter ────────────────────────────────────────────────────────
+// --- processLLMFilter --------------------------------------------------------
 
 describe("processLLMFilter", () => {
   test("passes through simple equality filter unchanged", () => {
@@ -125,7 +125,7 @@ describe("processLLMFilter", () => {
   });
 });
 
-// ─── validateLLMFilter ───────────────────────────────────────────────────────
+// --- validateLLMFilter -------------------------------------------------------
 
 describe("validateLLMFilter", () => {
   const schema = { name: "string", age: "number", active: "boolean" };

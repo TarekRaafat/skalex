@@ -9,7 +9,7 @@
  * numbers across refactors. Record results in commit messages or a tracking doc.
  */
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// --- Helpers ----------------------------------------------------------------
 
 class MemoryAdapter {
   constructor() { this._store = new Map(); }
@@ -31,7 +31,7 @@ function fmt(ms) {
   return ms < 1 ? `${(ms * 1000).toFixed(0)}µs` : `${ms.toFixed(2)}ms`;
 }
 
-// ─── Benchmark ──────────────────────────────────────────────────────────────
+// --- Benchmark --------------------------------------------------------------
 
 const { default: Skalex } = await import("../../src/index.js");
 
@@ -148,7 +148,7 @@ const results = [];
   await db.disconnect();
 }
 
-// ─── Report ─────────────────────────────────────────────────────────────────
+// --- Report -----------------------------------------------------------------
 
 console.log("\n=== Skalex Engine Benchmark ===\n");
 console.log("Operation".padEnd(50), "Time".padStart(10), "Extra".padStart(15));

@@ -179,7 +179,7 @@ describe("presortFilter", () => {
   });
 });
 
-// ─── Plain-object filter value (structural equality) ─────────────────────
+// --- Plain-object filter value (structural equality) ---------------------
 
 describe("plain-object filter value (structural equality)", () => {
   test("matches identical nested object (different reference)", () => {
@@ -223,7 +223,7 @@ describe("plain-object filter value (structural equality)", () => {
   });
 });
 
-// ─── $regex security hardening ─────────────────────────────────────────────
+// --- $regex security hardening ---------------------------------------------
 
 describe("matchesFilter  -  $regex security", () => {
   const doc = { msg: "hello" };

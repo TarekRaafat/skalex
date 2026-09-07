@@ -7,7 +7,7 @@
  *
  * Uses Node's built-in `http` module  -  zero extra dependencies.
  *
- * Multiple simultaneous SSE clients are supported; each receives all
+ * Multiple simultaneous SSE clients are supported. Each receives all
  * server-sent messages (broadcast model).
  */
 import http from "node:http";
@@ -18,7 +18,7 @@ class HttpTransport {
    * @param {{ port?: number, host?: string, allowedOrigin?: string | null, maxBodySize?: number }} [opts]
    *   allowedOrigin  -  exact serialized HTTP(S) origin permitted before dispatch.
    *   Set to a specific origin (e.g. "http://localhost:5173") or "*" for all origins.
-   *   Defaults to null: reject requests with Origin; permit origin-less native clients.
+   *   Defaults to null: reject requests with Origin. Permit origin-less native clients.
    *   Only set to "*" or a broad origin if you explicitly need browser client access.
    *
    *   maxBodySize  -  maximum POST body size in bytes (default: 1 MiB).
@@ -110,7 +110,7 @@ class HttpTransport {
     });
   }
 
-  // ─── Private ───────────────────────────────────────────────────────────────
+  // --- Private ---------------------------------------------------------------
 
   /** Reject untrusted origins and rebinding authorities before every route. */
   _isAllowed(req) {

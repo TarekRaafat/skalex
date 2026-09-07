@@ -16,7 +16,7 @@
 import Skalex from "../../dist/skalex.esm.js";
 import BunSQLiteAdapter from "../../src/connectors/storage/bun-sqlite.js";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// --- Helpers -----------------------------------------------------------------
 
 let passed = 0;
 let failed = 0;
@@ -41,11 +41,11 @@ async function section(name, fn) {
   }
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// --- Tests -------------------------------------------------------------------
 
 async function run() {
 
-  // ─── Adapter conformance ───────────────────────────────────────────────────
+  // --- Adapter conformance ---------------------------------------------------
 
   await section("BunSQLiteAdapter  -  raw adapter interface", async () => {
     const adapter = new BunSQLiteAdapter(":memory:");
@@ -81,7 +81,7 @@ async function run() {
     assert("close() does not throw",                true);
   });
 
-  // ─── File-based SQLite database ────────────────────────────────────────────
+  // --- File-based SQLite database --------------------------------------------
 
   await section("BunSQLiteAdapter  -  file-based database", async () => {
     const path = `/tmp/skalex-bun-sqlite-smoke-${Date.now()}.db`;
@@ -101,7 +101,7 @@ async function run() {
     try { Bun.file(path).exists().then(() => {}); } catch (_) {}
   });
 
-  // ─── Full Skalex integration via BunSQLiteAdapter ─────────────────────────
+  // --- Full Skalex integration via BunSQLiteAdapter -------------------------
 
   await section("Skalex + BunSQLiteAdapter integration", async () => {
     const db = new Skalex({ adapter: new BunSQLiteAdapter(":memory:") });
@@ -132,7 +132,7 @@ async function run() {
     assert("disconnect completes",                  true);
   });
 
-  // ─── Summary ───────────────────────────────────────────────────────────────
+  // --- Summary ---------------------------------------------------------------
 
   console.log(`\n${"─".repeat(50)}`);
   console.log(`Bun ${Bun.version}  -  BunSQLiteAdapter smoke test`);

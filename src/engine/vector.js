@@ -9,7 +9,7 @@ import { QueryError } from "./errors.js";
 
 /**
  * Compute cosine similarity between two numeric vectors.
- * Returns a value in [-1, 1]; 1 = identical direction, 0 = orthogonal.
+ * Returns a value in [-1, 1]. 1 = identical direction, 0 = orthogonal.
  * @param {number[]} a
  * @param {number[]} b
  * @returns {number}

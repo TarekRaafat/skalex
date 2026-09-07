@@ -3,7 +3,7 @@
  */
 import { QueryError } from "../engine/errors.js";
 
-// ─── Hash ─────────────────────────────────────────────────────────────────────
+// --- Hash ---------------------------------------------------------------------
 
 /**
  * Deterministic djb2-style hash of a string.
@@ -18,7 +18,7 @@ function _djb2(str) {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-// ─── QueryCache ───────────────────────────────────────────────────────────────
+// --- QueryCache ---------------------------------------------------------------
 
 /**
  * QueryCache  -  maps hash(collection + schema + query) → filter object.
@@ -79,7 +79,7 @@ class QueryCache {
   }
 }
 
-// ─── Filter helpers ───────────────────────────────────────────────────────────
+// --- Filter helpers -----------------------------------------------------------
 
 /**
  * Convert an LLM-generated filter into a form matchesFilter() can execute.

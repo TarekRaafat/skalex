@@ -16,7 +16,7 @@ function makeDb(opts = {}) {
   return { db, adapter };
 }
 
-// ─── autoSave ────────────────────────────────────────────────────────────────
+// --- autoSave ----------------------------------------------------------------
 
 describe("autoSave", () => {
   test("persists data automatically after insertOne when autoSave: true", async () => {
@@ -78,7 +78,7 @@ describe("autoSave", () => {
   });
 });
 
-// ─── upsertMany ──────────────────────────────────────────────────────────────
+// --- upsertMany --------------------------------------------------------------
 
 describe("upsertMany", () => {
   test("inserts new documents when no match exists", async () => {
@@ -132,7 +132,7 @@ describe("upsertMany", () => {
   });
 });
 
-// ─── defaultTtl ──────────────────────────────────────────────────────────────
+// --- defaultTtl --------------------------------------------------------------
 
 describe("defaultTtl per collection", () => {
   test("inserts set _expiresAt automatically when defaultTtl is configured", async () => {
@@ -169,7 +169,7 @@ describe("defaultTtl per collection", () => {
   });
 });
 
-// ─── defaultEmbed ────────────────────────────────────────────────────────────
+// --- defaultEmbed ------------------------------------------------------------
 
 describe("defaultEmbed per collection", () => {
   test("auto-embeds the specified field on every insertOne", async () => {
@@ -214,7 +214,7 @@ describe("defaultEmbed per collection", () => {
   });
 });
 
-// ─── Soft Deletes ────────────────────────────────────────────────────────────
+// --- Soft Deletes ------------------------------------------------------------
 
 describe("soft deletes", () => {
   test("deleteOne stamps _deletedAt instead of removing the document", async () => {
@@ -324,7 +324,7 @@ describe("soft deletes", () => {
   });
 });
 
-// ─── Capped Collections ───────────────────────────────────────────────────────
+// --- Capped Collections -------------------------------------------------------
 
 describe("capped collections (maxDocs)", () => {
   test("evicts oldest documents FIFO when maxDocs is exceeded", async () => {
@@ -378,7 +378,7 @@ describe("capped collections (maxDocs)", () => {
   });
 });
 
-// ─── Document Versioning ─────────────────────────────────────────────────────
+// --- Document Versioning -----------------------------------------------------
 
 describe("document versioning", () => {
   test("insertOne sets _version: 1 when versioning: true", async () => {
@@ -434,7 +434,7 @@ describe("document versioning", () => {
   });
 });
 
-// ─── renameCollection ────────────────────────────────────────────────────────
+// --- renameCollection --------------------------------------------------------
 
 describe("renameCollection", () => {
   test("data is accessible under the new name", async () => {
@@ -471,7 +471,7 @@ describe("renameCollection", () => {
   });
 });
 
-// ─── onSchemaError strategies ────────────────────────────────────────────────
+// --- onSchemaError strategies ------------------------------------------------
 
 describe("onSchemaError strategies", () => {
   test("'throw' (default) rejects documents with type mismatch", async () => {
@@ -545,7 +545,7 @@ describe("onSchemaError strategies", () => {
   });
 });
 
-// ─── Strict mode ─────────────────────────────────────────────────────────────
+// --- Strict mode -------------------------------------------------------------
 
 describe("strict mode", () => {
   test("throws on unknown fields when strict: true and onSchemaError: 'throw'", async () => {
@@ -608,7 +608,7 @@ describe("strict mode", () => {
   });
 });
 
-// ─── ttlSweepInterval ────────────────────────────────────────────────────────
+// --- ttlSweepInterval --------------------------------------------------------
 
 describe("ttlSweepInterval", () => {
   test("connect() starts a sweep timer when ttlSweepInterval is configured", async () => {
@@ -668,7 +668,7 @@ describe("ttlSweepInterval", () => {
   });
 });
 
-// ─── db.watch()  -  global cross-collection observer ───────────────────────────
+// --- db.watch()  -  global cross-collection observer ---------------------------
 
 describe("db.watch()", () => {
   test("fires for insertOne on any collection", async () => {
@@ -753,7 +753,7 @@ describe("db.watch()", () => {
   });
 });
 
-// ─── Write queue ─────────────────────────────────────────────────────────────
+// --- Write queue -------------------------------------------------------------
 
 describe("write queue", () => {
   test("concurrent saves do not corrupt data", async () => {
@@ -791,7 +791,7 @@ describe("write queue", () => {
   });
 });
 
-// ─── Schema enforcement on updates ──────────────────────────────────────────
+// --- Schema enforcement on updates ------------------------------------------
 
 describe("schema enforcement on updates", () => {
   test("updateOne rejects invalid type when onSchemaError: 'throw'", async () => {
@@ -906,7 +906,7 @@ describe("schema enforcement on updates", () => {
     const col = db.useCollection("items");
     const a = await col.insertOne({ tags: ["a"], score: 1 });
     const b = await col.insertOne({ tags: ["b"], score: 2 });
-    // $push mutates the array in place; score: "bad" will fail validation
+    // $push mutates the array in place. Score: "bad" will fail validation
     await expect(col.updateMany({}, { tags: { $push: "new" }, score: "bad" })).rejects.toThrow(/validation/i);
     const foundA = await col.findOne({ _id: a._id });
     const foundB = await col.findOne({ _id: b._id });
@@ -964,7 +964,7 @@ describe("schema enforcement on updates", () => {
   });
 });
 
-// ─── capped collection FIFO eviction emits delete events ────────────────────
+// --- capped collection FIFO eviction emits delete events --------------------
 
 describe("capped collection  -  eviction events", () => {
   test("emits delete event for FIFO-evicted documents", async () => {
@@ -987,7 +987,7 @@ describe("capped collection  -  eviction events", () => {
   });
 });
 
-// ─── shared collection context ─────────────────────────────────────────────
+// --- shared collection context ---------------------------------------------
 
 describe("Collection  -  shared _ctx reference", () => {
   test("all collection instances share the same ctx reference", async () => {
@@ -1007,7 +1007,7 @@ describe("Collection  -  shared _ctx reference", () => {
   });
 });
 
-// ─── applyUpdate ignores system-managed fields ─────────────────────────────
+// --- applyUpdate ignores system-managed fields -----------------------------
 
 describe("Collection  -  applyUpdate discards user-provided updatedAt", () => {
   test("updateOne ignores user-provided updatedAt", async () => {
@@ -1022,7 +1022,7 @@ describe("Collection  -  applyUpdate discards user-provided updatedAt", () => {
   });
 });
 
-// ─── Public API argument validation ────────────────────────────────────────
+// --- Public API argument validation ----------------------------------------
 
 describe("Collection  -  argument validation", () => {
   test("insertOne rejects null / primitive / array", async () => {
@@ -1064,7 +1064,7 @@ describe("Collection  -  argument validation", () => {
   });
 });
 
-// ─── watch-before-after-hook event ordering contract ──────────────────────
+// --- watch-before-after-hook event ordering contract ----------------------
 
 describe("Collection - watch event / after-hook ordering", () => {
   test("watch event fires before the after-insert plugin hook", async () => {
@@ -1081,7 +1081,7 @@ describe("Collection - watch event / after-hook ordering", () => {
   });
 });
 
-// ─── watch iterator backpressure ──────────────────────────────────────────
+// --- watch iterator backpressure ------------------------------------------
 
 describe("Collection - watch iterator backpressure", () => {
   test("default buffer holds up to 1000 events", async () => {
@@ -1197,7 +1197,7 @@ describe("Collection - watch iterator backpressure", () => {
   });
 });
 
-// ─── afterRestore plugin hook ───────────────────────────────────────────────
+// --- afterRestore plugin hook -----------------------------------------------
 
 describe("Collection - afterRestore plugin hook", () => {
   test("plugin with afterRestore receives { collection, filter, docs } after restore()", async () => {
@@ -1251,7 +1251,7 @@ describe("Collection - afterRestore plugin hook", () => {
   });
 });
 
-// ─── find() early stop fast path ────────────────────────────────────────────
+// --- find() early stop fast path --------------------------------------------
 
 describe("Collection - find() early stop fast path", () => {
   test("find({}, { limit: 3 }) on 10 docs returns exactly 3 docs", async () => {
@@ -1311,7 +1311,7 @@ describe("Collection - find() early stop fast path", () => {
   });
 });
 
-// ─── _precompileRegex (tested indirectly via find) ──────────────────────────
+// --- _precompileRegex (tested indirectly via find) --------------------------
 
 describe("Collection - _precompileRegex via find()", () => {
   test("find with $regex string filter matches correctly", async () => {
@@ -1376,7 +1376,7 @@ describe("Collection - _precompileRegex via find()", () => {
   });
 });
 
-// ─── needsPrev optimization ─────────────────────────────────────────────────
+// --- needsPrev optimization -------------------------------------------------
 
 describe("Collection - needsPrev optimization", () => {
   test("updateOne works correctly when changelog is disabled (needsPrev=false path)", async () => {

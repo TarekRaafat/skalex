@@ -729,7 +729,7 @@ db.createCollection("users", {
 await db.connect();
 const users = db.useCollection("users");
 
-// ── Schema validation errors ───────────────────────────────────────────────
+// -- Schema validation errors -----------------------------------------------
 try {
   await users.insertOne({ email: "alice@example.com" }); // missing required: role
 } catch (err) {
@@ -742,7 +742,7 @@ try {
   console.error(err.message); // "Validation error: 'role' must be one of [admin, user]"
 }
 
-// ── Unique constraint violations ───────────────────────────────────────────
+// -- Unique constraint violations -------------------------------------------
 await users.insertOne({ email: "alice@example.com", role: "admin" });
 
 try {
@@ -751,7 +751,7 @@ try {
   console.error(err.message); // "Unique constraint violated: 'email' already exists"
 }
 
-// ── Transaction rollback ───────────────────────────────────────────────────
+// -- Transaction rollback ---------------------------------------------------
 const accounts = db.useCollection("accounts");
 await accounts.insertMany([
   { name: "Alice", balance: 100 },
@@ -782,7 +782,7 @@ await db.disconnect();
 import Skalex from "skalex";
 import { writeFile, appendFile } from "node:fs/promises";
 
-// ── Audit plugin - logs every write to a file ──────────────────────────────
+// -- Audit plugin - logs every write to a file ------------------------------
 const auditPlugin = {
   async afterInsert({ collection, doc }) {
     const line = `${new Date().toISOString()} INSERT ${collection} ${doc._id}\n`;
@@ -798,7 +798,7 @@ const auditPlugin = {
   },
 };
 
-// ── Validation plugin - block inserts that fail a business rule ────────────
+// -- Validation plugin - block inserts that fail a business rule ------------
 const validationPlugin = {
   async beforeInsert({ collection, doc }) {
     if (collection === "orders" && doc.amount <= 0) {
@@ -807,7 +807,7 @@ const validationPlugin = {
   },
 };
 
-// ── Read-only plugin - log all finds for debugging ─────────────────────────
+// -- Read-only plugin - log all finds for debugging -------------------------
 const debugPlugin = {
   async afterFind({ collection, filter, docs }) {
     console.log(`[find] ${collection} matched ${docs.length} doc(s)`, filter);
@@ -950,7 +950,7 @@ Cloning costs scale with returned data and can reject uncloneable values. It doe
 
 ### 28. Reuse a helper inside a transaction or migration
 
-Helpers can depend only on the collection capabilities they need. Transaction and migration handles expose useCollection/createCollection; persistence is performed by commit.
+Helpers can depend only on the collection capabilities they need. Transaction and migration handles expose useCollection/createCollection. Persistence is performed by commit.
 
 ```javascript
 import Skalex from "skalex";
@@ -975,7 +975,7 @@ await db.transaction(async tx => {
 await db.disconnect();
 ```
 
-Await owned operations before the callback returns; do not retain its handles for later use. Database lifecycle, save, export and subscription capabilities are unavailable through the transaction handle. Callback failures roll back owned in-memory writes; reads remain live and disk atomicity depends on the adapter. See [transactions](documentation.md#transactionfn-options).
+Await owned operations before the callback returns. Do not retain its handles for later use. Database lifecycle, save, export and subscription capabilities are unavailable through the transaction handle. Callback failures roll back owned in-memory writes. Reads remain live and disk atomicity depends on the adapter. See [transactions](documentation.md#transactionfn-options).
 
 ### 29. Configure an HTTP origin
 
@@ -1009,4 +1009,4 @@ An incomplete-flush warning means persisted collections may disagree. Preserve a
 await db.acknowledgeIncompleteFlush();
 ```
 
-This call clears the warning; it neither repairs nor saves collection data. A queued state change or storage failure rejects with ERR_SKALEX_PERSISTENCE_ACK_FAILED. See [incomplete transaction batches](documentation.md#incomplete-transaction-batches).
+This call clears the warning. It neither repairs nor saves collection data. A queued state change or storage failure rejects with ERR_SKALEX_PERSISTENCE_ACK_FAILED. See [incomplete transaction batches](documentation.md#incomplete-transaction-batches).

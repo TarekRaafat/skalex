@@ -20,7 +20,7 @@ import Skalex from "../src/index.js";
 import { fileURLToPath } from "node:url";
 import { join, dirname }  from "node:path";
 
-// ─── Connect ─────────────────────────────────────────────────────────────────
+// --- Connect -----------------------------------------------------------------
 
 // Use an absolute path so the server works regardless of what directory
 // Claude Desktop / Cursor sets as the working directory when spawning this process.
@@ -28,7 +28,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const db = new Skalex({ path: join(__dirname, "../mcp-data"), format: "json" });
 await db.connect();
 
-// ─── Seed demo data (first run only) ─────────────────────────────────────────
+// --- Seed demo data (first run only) -----------------------------------------
 
 const products = db.useCollection("products");
 if ((await products.count()) === 0) {
@@ -48,7 +48,7 @@ if ((await users.count()) === 0) {
   ]);
 }
 
-// ─── Start MCP server ────────────────────────────────────────────────────────
+// --- Start MCP server --------------------------------------------------------
 
 const server = db.mcp({
   transport: "stdio",

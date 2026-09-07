@@ -8,34 +8,34 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) for callback restrictions, HTTP configuration and failure behavior.
 
-- [x] Filesystem cleanup preserves legal collection names; collection scopes use canonical identifiers; HTTP Origin and Host checks precede dispatch.
+- [x] Filesystem cleanup preserves legal collection names. Collection scopes use canonical identifiers. HTTP Origin and Host checks precede dispatch.
 - [x] Consistent primary IDs, index updates and bounded synchronous commit recovery, with persistence blocked after failed recovery.
-- [x] Ordered persistence and protected historical restore; completed upsert prefixes receive normal bookkeeping.
+- [x] Ordered persistence and protected historical restore. Completed upsert prefixes receive normal bookkeeping.
 - [x] Correct ID operators, missing-field queries, sorted projections, strict-schema timestamps and embedded memory summaries.
-- [x] Opt-in cloned reads; existing shallow/live defaults remain documented.
+- [x] Opt-in cloned reads. Existing shallow/live defaults remain documented.
 - [x] Shared mutation preparation and pipeline entry, plus consumer Symbol.asyncDispose declaration support.
 
 - [x] Durable incomplete-batch warnings with explicit `acknowledgeIncompleteFlush()` after inspection or repair.
 
-- [x] Restricted transaction and migration handles: explicit collection/query capabilities, no forwarding of database persistence or lifecycle methods; narrow TypeScript interfaces and runtime regression coverage.
+- [x] Restricted transaction and migration handles: explicit collection/query capabilities, no forwarding of database persistence or lifecycle methods. Narrow TypeScript interfaces and runtime regression coverage.
 - [x] Transaction ownership and captured-handle lifetime checks across Node, Bun, Deno and browsers.
 
 #### Todo
 
 **Sync & multi-device**
-- [ ] Pluggable sync engine: push/pull replication with last-write-wins and custom conflict resolution; built-in adapters for REST, WebSocket, CouchDB/PouchDB, Supabase, and Firebase
+- [ ] Pluggable sync engine: push/pull replication with last-write-wins and custom conflict resolution. Built-in adapters for REST, WebSocket, CouchDB/PouchDB, Supabase, and Firebase
 - [ ] Multi-tab sync: BroadcastChannel-based cross-tab reactivity in browsers - writes in one tab reflect instantly in all others, zero extra dependencies
 - [ ] Partial/filtered replication: sync only the documents matching a per-session or per-user filter
-- [ ] Real-time collaboration: CRDT-based field-level merging for conflict-free multi-user writes; presence tracking API
+- [ ] Real-time collaboration: CRDT-based field-level merging for conflict-free multi-user writes. Presence tracking API
 
 **Query & schema**
 - [ ] Additional query operators: `$exists`, `$type`, `$size`, `$all`, `$elemMatch` for deeper document filtering
 - [ ] Additional update operators: `$set`, `$unset`, `$setOnInsert`, `$addToSet`, `$pull` - field-level mutation parity with the existing `$inc` / `$push` so callers can express partial updates without read-modify-write
 - [ ] Aggregation pipeline: `$group`, `$project`, `$unwind`, `$lookup` stages (MongoDB-style)
-- [ ] Full-text search: tokenized inverted index for text fields; `$text` operator with ranking
+- [ ] Full-text search: tokenized inverted index for text fields. `$text` operator with ranking
 - [ ] Cursor-based pagination: `after` cursor complement to existing `page`/`limit`
 - [ ] `db.stream(query, options)`: async generator for streaming large result sets without loading the full collection into memory
-- [ ] Schema change safety: detect breaking schema changes before applying; `addMigration({ dryRun: true })` for safe previewing
+- [ ] Schema change safety: detect breaking schema changes before applying. `addMigration({ dryRun: true })` for safe previewing
 - [ ] Zod schema integration: pass a Zod schema to `createCollection` for validation and inference
 - [ ] Query cache invalidation on schema change: automatically clear cached natural-language filter translations when a collection's schema is modified - prevents stale filters from referencing removed or renamed fields
 - [ ] Configurable timestamp format: `createCollection(name, { timestamps: 'date' | 'iso' | 'epoch' })`, and allow schemas to declare `createdAt` / `updatedAt` as managed-but-declarable fields without a validation failure - removes the Date-to-ISO conversion boilerplate for apps whose domain types use string timestamps
@@ -50,7 +50,7 @@ See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRA
 - [ ] `db.summarize(collection, options)`: AI-powered collection or result-set summarization
 - [ ] `db.rag(query, options)`: RAG pipeline in one call - vector search → context assembly → LLM answer
 - [ ] Embedding cache: deduplicate embedding API calls for repeated or similar text inputs - reduces cost and latency on AI workloads
-- [ ] Strict LLM response validation: type-check and operator-validate AI-generated filters before execution; throw on malformed responses instead of silently returning empty results
+- [ ] Strict LLM response validation: type-check and operator-validate AI-generated filters before execution. Throw on malformed responses instead of silently returning empty results
 
 **Graph**
 - [ ] `collection.traverse(startId, options)`: multi-hop relationship traversal with depth, direction, and filter control - powers knowledge graphs, recommendations, and social graphs
@@ -65,7 +65,7 @@ See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRA
 - [ ] Row-level security: per-collection access control functions evaluated at query time
 - [ ] Native key rotation (`db.rekey(newKey, options)`): atomically re-encrypt the entire database under a new key, with the old key valid until the rotation fully lands and automatic rollback on failure - replaces the hand-rolled dump/wipe/restore and its data-loss window
 - [ ] MCP HTTP authentication: optional API key or bearer token authentication for the HTTP transport - CORS origin checking alone is insufficient for production deployments
-- [ ] Linear-time ReDoS-safe `$regex` engine: Skalex currently defends against catastrophic backtracking with a length cap and a nested-quantifier heuristic in `compileRegexFilter()`. The heuristic catches common footguns like `(a+)+` but not all pathological patterns (e.g. `(a|a|a)+`, certain lookahead traps). A full guarantee would require a linear-time regex engine (RE2-style NFA or similar), which cannot be achieved with JavaScript's built-in `RegExp`. Would require a runtime dependency or a pure-JS NFA implementation; both are significant and at odds with the zero-dep constraint, so this is a long-horizon item rather than a near-term fix.
+- [ ] Linear-time ReDoS-safe `$regex` engine: Skalex currently defends against catastrophic backtracking with a length cap and a nested-quantifier heuristic in `compileRegexFilter()`. The heuristic catches common footguns like `(a+)+` but not all pathological patterns (e.g. `(a|a|a)+`, certain lookahead traps). A full guarantee would require a linear-time regex engine (RE2-style NFA or similar), which cannot be achieved with JavaScript's built-in `RegExp`. Would require a runtime dependency or a pure-JS NFA implementation. Both are significant and at odds with the zero-dep constraint, so this is a long-horizon item rather than a near-term fix.
 
 **MCP**
 - [ ] Request schema validation: validate incoming JSON-RPC messages against the MCP protocol schema before dispatching - reject malformed requests at the transport level
@@ -86,23 +86,23 @@ See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRA
 
 **Resilience & memory**
 - [ ] Plugin hook timeouts: configurable timeout for `beforeHook`/`afterHook` execution in the mutation pipeline - a slow or hanging plugin should not block all database operations indefinitely
-- [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit; SIGTERM / `beforeunload` handler built-in
+- [ ] Graceful shutdown: `db.close()` flushes all pending writes before process exit. SIGTERM / `beforeunload` handler built-in
 - [ ] Write-Ahead Log (WAL): journal mutations before applying so a hard kill or OOM crash never loses committed data
-- [ ] Debounced / coalesced `autoSave`: `autoSave: { debounceMs }` batches rapid mutations into a single whole-collection flush instead of re-encrypting the file on every write - cuts write amplification on hot paths (config reads, task polling); pairs with the graceful-shutdown flush so the in-flight window is not lost on exit
-- [ ] Multi-process `FsAdapter` safety: file-lock (`O_EXCL` sentinel + PID-based stale-lock detection) so multiple Node.js / Bun processes targeting the same data directory serialize writes without data loss; single-writer-per-directory remains the default, this is an opt-in `{ multiProcess: true }` flag
-- [ ] `FsAdapter { durable: true }`: call `F_FULLFSYNC` (macOS) or `fsync` + directory-sync (Linux) after every rename so writes survive a sudden power failure on SSDs with write caching; off by default to preserve current performance characteristics
+- [ ] Debounced / coalesced `autoSave`: `autoSave: { debounceMs }` batches rapid mutations into a single whole-collection flush instead of re-encrypting the file on every write - cuts write amplification on hot paths (config reads, task polling). Pairs with the graceful-shutdown flush so the in-flight window is not lost on exit
+- [ ] Multi-process `FsAdapter` safety: file-lock (`O_EXCL` sentinel + PID-based stale-lock detection) so multiple Node.js / Bun processes targeting the same data directory serialize writes without data loss. Single-writer-per-directory remains the default, this is an opt-in `{ multiProcess: true }` flag
+- [ ] `FsAdapter { durable: true }`: call `F_FULLFSYNC` (macOS) or `fsync` + directory-sync (Linux) after every rename so writes survive a sudden power failure on SSDs with write caching. Off by default to preserve current performance characteristics
 - [ ] `db.size(collection?)`: report per-collection and total in-memory footprint in bytes
 - [ ] Memory pressure events: `db.on('memoryWarning', cb)` fires when heap usage crosses a configurable threshold - lets apps shed load before OOM
 - [ ] Memory budgets with LRU eviction: configurable per-collection memory limit with least-recently-used eviction policy for long-running processes - complements `maxDocs` FIFO cap with a memory-aware alternative
 - [ ] Per-collection transaction locking: replace global serialization with per-collection locks so transactions touching disjoint collections can run concurrently - significantly improves write throughput for multi-collection workloads
 - [ ] Optimistic concurrency guard: `updateOne(filter, update, { ifVersion: n })` compare-and-set on `_version` - rejects the write with a typed error if the document changed since it was read, closing read-modify-write races durably (not just inside the in-memory transaction proxy) without holding a lock
-- [ ] Copy-on-write transaction isolation: transactional writes operate on a cloned copy; commit merges back, rollback discards - eliminates full-collection deep clone cost for large datasets
+- [ ] Copy-on-write transaction isolation: transactional writes operate on a cloned copy. Commit merges back, rollback discards - eliminates full-collection deep clone cost for large datasets
 - [ ] Crash recovery beyond sentinel warning: auto-rollback to last-known-good state or programmatic recovery callback when an incomplete flush is detected on load - currently only logs a warning
 - [ ] Error recoverability classification: a documented and machine-readable mapping of which `PersistenceError` / `ValidationError` codes mean data is recoverable vs lost, so consumers drive retry-vs-quarantine recovery off error codes instead of string matching - distinguishes "file absent / first boot", "present but undecryptable", and "structurally corrupt" as separate, typed outcomes
 - [ ] Persistence state encapsulation: move per-collection write-tracking state out of the collection store and into the persistence manager - cleaner separation of concerns
 
 **DX & tooling**
-- [ ] Normalize connector subpath exports - add `require` / CJS bundles for all connector subpaths (alpha.6 shipped `types` entries; CJS deferred because it requires per-connector rollup outputs)
+- [ ] Normalize connector subpath exports - add `require` / CJS bundles for all connector subpaths (alpha.6 shipped `types` entries. CJS deferred because it requires per-connector rollup outputs)
 - [ ] `create-skalex`: scaffolding CLI - `npm create skalex@latest` for instant project setup with runtime-specific templates
 - [ ] Interactive playground: browser-based sandbox hosted on the docs site - try Skalex with zero installation
 - [ ] Test utilities: `createTestDb(options?)` helper pre-configured with MemoryAdapter for frictionless unit and integration testing
@@ -160,7 +160,7 @@ See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRA
 - [x] Extract shared `fetchWithRetry()` utility from all AI adapters (6 duplicated copies)
 - [x] Convert `FsAdapter` from sync to async zlib (`deflateSync` blocks event loop)
 - [x] Formalize tiered adapter capability interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`)
-- [x] Document D1's per-chunk atomicity limit; cross-chunk rollback is not implemented.
+- [x] Document D1's per-chunk atomicity limit. Cross-chunk rollback is not implemented.
 - [x] Tighten transaction isolation: block non-tx writes to tx-touched collections (rollback can clobber outside writes)
 - [x] Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
 - [x] Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
@@ -175,9 +175,9 @@ See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRA
 **[alpha.3] - 2026-04-11 - Runtime safety, adapter consistency, code quality, platform hardening**
 - [x] Prune `_abortedIds` in `TransactionManager` with bounded pruning window (1000) - fixes unbounded memory growth on repeated timeouts
 - [x] Per-instance `_idCounter` in `TransactionManager` - fixes latent cross-instance transaction ID bleed from the module-level counter
-- [x] Make `_enforceCapAfterInsert()` atomic with per-doc state tracking; evicted docs emit `delete` watch events
-- [x] Migration atomicity: each migration runs inside a transaction; `_meta.appliedVersions` is included in the migration-data batch (disk atomicity remains adapter-dependent) via a new `recordApplied` callback and `_txManager.snapshotIfNeeded("_meta", ...)` path
-- [x] Migration API: `up(collection)` → `up(db)` (breaking change; `db.useCollection(name)` inside migration callbacks)
+- [x] Make `_enforceCapAfterInsert()` atomic with per-doc state tracking. Evicted docs emit `delete` watch events
+- [x] Migration atomicity: each migration runs inside a transaction. `_meta.appliedVersions` is included in the migration-data batch (disk atomicity remains adapter-dependent) via a new `recordApplied` callback and `_txManager.snapshotIfNeeded("_meta", ...)` path
+- [x] Migration API: `up(collection)` → `up(db)` (breaking change. `db.useCollection(name)` inside migration callbacks)
 - [x] Fix `Memory.tokenCount()` / `context()` bypassing `ensureConnected` - now async, reads through public `find()` API
 - [x] Memory session ID fail-fast validation at `useMemory(sessionId)` construction
 - [x] Unify `_meta` store creation across `PersistenceManager` and `CollectionRegistry` via single `createStore()` path
@@ -273,7 +273,7 @@ See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRA
 - [x] `OpenAILLMAdapter`: chat completions, default `gpt-4o-mini`
 - [x] `AnthropicLLMAdapter`: messages API, default `claude-haiku-4-5`
 - [x] `OllamaLLMAdapter`: local `/api/generate`, default `llama3.2`
-- [x] `db.ask()`: natural language → structured filter via LLM; results cached
+- [x] `db.ask()`: natural language → structured filter via LLM. Results cached
 - [x] `db.useMemory()`: episodic agent memory (`remember`, `recall`, `context`, `compress`)
 - [x] `collection.similar(id, options)`: find nearest-neighbour documents by cosine similarity
 

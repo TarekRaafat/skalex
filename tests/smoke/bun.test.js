@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// --- Helpers -----------------------------------------------------------------
 
 let passed = 0;
 let failed = 0;
@@ -40,7 +40,7 @@ async function section(name, fn) {
   }
 }
 
-// ─── Setup ───────────────────────────────────────────────────────────────────
+// --- Setup -------------------------------------------------------------------
 
 const tmpDir = mkdtempSync(join(tmpdir(), "skalex-bun-smoke-"));
 
@@ -48,7 +48,7 @@ async function run() {
   const db = new Skalex({ path: tmpDir, format: "json" });
   await db.connect();
 
-  // ─── Core CRUD ─────────────────────────────────────────────────────────────
+  // --- Core CRUD -------------------------------------------------------------
 
   await section("insertOne / find / findOne", async () => {
     const col = db.useCollection("users");
@@ -78,7 +78,7 @@ async function run() {
     assert("deleteOne removes the doc",             remaining.length === 2);
   });
 
-  // ─── Aggregation ───────────────────────────────────────────────────────────
+  // --- Aggregation -----------------------------------------------------------
 
   await section("count / sum / avg / groupBy", async () => {
     const col = db.useCollection("orders");
@@ -95,7 +95,7 @@ async function run() {
     assert("groupBy()",                             groups.A?.length === 2);
   });
 
-  // ─── Sort & Pagination ─────────────────────────────────────────────────────
+  // --- Sort & Pagination -----------------------------------------------------
 
   await section("sort / pagination", async () => {
     const col = db.useCollection("nums");
@@ -109,7 +109,7 @@ async function run() {
     assert("pagination docs on page",               page.docs.length === 2);
   });
 
-  // ─── Transaction ───────────────────────────────────────────────────────────
+  // --- Transaction -----------------------------------------------------------
 
   await section("HTTP origin validation", async () => {
     const { default: httpOrigin } = await import("./http-origin.js");
@@ -169,7 +169,7 @@ async function run() {
     assert("transaction commit applied",            a.bal === 90 && b.bal === 60);
   });
 
-  // ─── Watch ─────────────────────────────────────────────────────────────────
+  // --- Watch -----------------------------------------------------------------
 
   await section("collection.watch()", async () => {
     const col = db.useCollection("events");
@@ -184,7 +184,7 @@ async function run() {
     assert("watch fires insert/update/delete",      ops.join(",") === "insert,update,delete");
   });
 
-  // ─── Plugin system ─────────────────────────────────────────────────────────
+  // --- Plugin system ---------------------------------------------------------
 
   await section("plugin system", async () => {
     const log = [];
@@ -200,7 +200,7 @@ async function run() {
     assert("afterInsert fired with _id set",        log[1] === "after:true");
   });
 
-  // ─── Session stats ─────────────────────────────────────────────────────────
+  // --- Session stats ---------------------------------------------------------
 
   await section("session stats", async () => {
     const col = db.useCollection("ss");
@@ -214,7 +214,7 @@ async function run() {
     assert("sessionStats: lastActive is Date",      s?.lastActive instanceof Date);
   });
 
-  // ─── MCP factory ───────────────────────────────────────────────────────────
+  // --- MCP factory -----------------------------------------------------------
 
   await section("db.mcp() factory", async () => {
     const server = db.mcp({ transport: "stdio" });
@@ -222,7 +222,7 @@ async function run() {
     assert("mcp() has listen()",                    typeof server.listen === "function");
   });
 
-  // ─── Connector barrels ─────────────────────────────────────────────────────
+  // --- Connector barrels -----------------------------------------------------
 
   await section("connector barrels", async () => {
     const storage   = await import("../../src/connectors/storage/index.js");
@@ -246,11 +246,11 @@ async function run() {
                                                          typeof root.OpenAILLMAdapter === "function");
   });
 
-  // ─── Disconnect ────────────────────────────────────────────────────────────
+  // --- Disconnect ------------------------------------------------------------
 
   await db.disconnect();
 
-  // ─── Summary ───────────────────────────────────────────────────────────────
+  // --- Summary ---------------------------------------------------------------
 
   console.log(`\n${"─".repeat(50)}`);
   console.log(`Bun ${Bun.version} smoke test`);

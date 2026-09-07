@@ -1,5 +1,9 @@
 # Skalex Migration Guide
 
+Start with the [upgrade checklist](https://tarekraafat.github.io/skalex/#/migration) for manual and LLM-assisted upgrades. Identify your installed version and apply all intervening sections in chronological order. Preserve storage before upgrading and test on an isolated copy.
+
+For alpha.6 to alpha.7, use the next section. Earlier prereleases and v3 also require the relevant historical sections below.
+
 ## 4.0.0-alpha.7 reliability fixes
 
 Persisted collection payloads are unchanged. Transaction and migration callback types now describe a restricted capability surface.
@@ -9,9 +13,9 @@ Persisted collection payloads are unchanged. Transaction and migration callback 
 The callback receives `TransactionHandle`, not a full `Skalex` instance. Only `useCollection()` and `createCollection()` are exposed. Returned `TransactionCollection` handles retain insert, update, upsert, delete, soft-delete restore, query, vector search and aggregation methods. They are readonly capability objects, not instances of the original database or Collection classes.
 
 - Remove `tx.saveData()`: successful transaction completion performs the commit.
-- Replace `tx.seed()` with `await tx.useCollection(name).insertMany(docs)` so writes participate in rollback.
+- For simple fixtures, replace `tx.seed()` with `await tx.useCollection(name).insertMany(docs)` so writes participate in rollback. Review `reset: true`, soft-delete behavior and retries separately. Do not introduce deletion or claim idempotence through a mechanical replacement.
 - Lifecycle, import, historical restore, memory/changelog factories, database inspection and subscriptions are unavailable on the transaction handle. Collection export, watch, `applyUpdate()` and private members are also blocked. Unsupported access throws `ERR_SKALEX_TX_DIRECT_ACCESS` before dispatch.
-- Use ordinary database handles for independent inspection or subscriptions. Keep persistence and lifecycle operations outside the active transaction; switching `tx.saveData()` to `db.saveData()` inside the callback is not a safe migration.
+- Use ordinary database handles for independent inspection or subscriptions. Keep persistence and lifecycle operations outside the active transaction. Switching `tx.saveData()` to `db.saveData()` inside the callback is not a safe migration.
 - Migration `up()` callbacks receive this same restricted handle. Update explicit `Skalex` callback annotations to `TransactionHandle`.
 
 Helpers can retain reuse with a minimal shared type:
@@ -29,19 +33,19 @@ await db.transaction(addNote);
 
 ### Historical restore coordination
 
-Both `db.restore()` and `db.changelog().restore()` now reject replay into transaction-locked collections, including when a transaction acquires the lock while history is being read. Retry after that transaction completes. Historical restore remains unavailable on the restricted transaction handle; `collection.restore()` continues to undo soft deletion.
+Both `db.restore()` and `db.changelog().restore()` now reject replay into transaction-locked collections, including when a transaction acquires the lock while history is being read. Retry after that transaction completes. Historical restore remains unavailable on the restricted transaction handle. `collection.restore()` continues to undo soft deletion.
 
-Restore events now follow a successful save. A save failure leaves restored data in memory, marked dirty, and emits no restore events; handle the error and retry saving rather than assuming memory was rolled back. Replay preserves archived fields, skips mutation hooks/schema transformations/caps/changelog recording, and rejects conflicts with current unique or compound indexes before changing data.
+Restore events now follow a successful save. A save failure leaves restored data in memory, marked dirty, and emits no restore events. Handle the error and retry saving rather than assuming memory was rolled back. Replay preserves archived fields, skips mutation hooks/schema transformations/caps/changelog recording, and rejects conflicts with current unique or compound indexes before changing data.
 
 ### Persistence write ordering
 
-Ordinary saves and transaction batches now share one adapter-write queue per database instance. Saves of different collections also wait their turn, which can increase latency with slow adapters. Same-collection coalescing remains active. Failed writes release the queue for later work; edits made during an ordinary save remain dirty for retry. This change orders writes without adding transaction read isolation or partial-batch crash recovery.
+Ordinary saves and transaction batches now share one adapter-write queue per database instance. Saves of different collections also wait their turn, which can increase latency with slow adapters. Same-collection coalescing remains active. Failed writes release the queue for later work. Edits made during an ordinary save remain dirty for retry. This change orders writes without adding transaction read isolation or partial-batch crash recovery.
 
 ### Incomplete transaction batches
 
-Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data; this is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage; repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
+Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data. This is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage. Repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
 
-After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
+After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only. It does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
 
 ### ID filter consistency
 
@@ -49,13 +53,13 @@ After inspecting storage and repairing it if needed, call `await db.acknowledgeI
 
 ### MCP HTTP request validation
 
-Origin-bearing requests now require an exact `allowedOrigin` or explicit `"*"`; default/null accepts native clients without Origin. Invalid or opaque origins reject with HTTP 403 before tool dispatch or SSE subscription. Host must match the backend hostname/interface and port; reverse proxies must rewrite Host, and forwarded headers do not bypass checks. These controls do not replace authentication.
+Origin-bearing requests now require an exact `allowedOrigin` or explicit `"*"`. Default/null accepts native clients without Origin. Invalid or opaque origins reject with HTTP 403 before tool dispatch or SSE subscription. Host must match the backend hostname/interface and port. Reverse proxies must rewrite Host, and forwarded headers do not bypass checks. These controls do not replace authentication.
 
 The HTTP server loads lazily from the package's existing `src/connectors/mcp/transports/http.js`. Deploy the full package rather than copying a dist file alone when using HTTP transport. `port: 0` selects an available port, exposed in `server.url` after listening.
 
 ### Strict-schema timestamps
 
-Strict collections now accept their generated `createdAt` and `updatedAt` fields during updates and upserts. These fields need no schema declaration; explicit definitions still enforce their constraints. Unknown user fields remain subject to strict validation.
+Strict collections now accept their generated `createdAt` and `updatedAt` fields during updates and upserts. These fields need no schema declaration. Explicit definitions still enforce their constraints. Unknown user fields remain subject to strict validation.
 
 ### Memory compression
 
@@ -67,34 +71,34 @@ Compression now embeds its summary before deleting originals, adding one embeddi
 
 ### Missing indexed fields
 
-Equality queries for `undefined` now match omitted and explicitly undefined fields consistently with scans, including mutations and aggregates. Single-field indexes omit those values, so these queries use another usable index or a scan. Null remains distinct; stored index and uniqueness rules are unchanged.
+Equality queries for `undefined` now match omitted and explicitly undefined fields consistently with scans, including mutations and aggregates. Single-field indexes omit those values, so these queries use another usable index or a scan. Null remains distinct. Stored index and uniqueness rules are unchanged.
 
 ### Document ownership and cloned reads
 
-Read defaults remain unchanged. Use `{ clone: true }` with `findOne`, `find`, `search`, `similar`, memory `history`/`recall`, or the third argument to `groupBy(field, filter, options)` when you need a structured-clone copy of returned data. Cloning runs after projection/population and read hooks, and costs time proportional to returned data. Uncloneable values throw `ERR_SKALEX_QUERY_CLONE`; selecting only cloneable fields can avoid the error.
+Read defaults remain unchanged. Use `{ clone: true }` with `findOne`, `find`, `search`, `similar`, memory `history`/`recall`, or the third argument to `groupBy(field, filter, options)` when you need a structured-clone copy of returned data. Cloning runs after projection/population and read hooks, and costs time proportional to returned data. Uncloneable values throw `ERR_SKALEX_QUERY_CLONE`. Selecting only cloneable fields can avoid the error.
 
 Default document reads return shallow copies, while groupBy retains live document references. Mutating shared nested values changes in-memory data without running validation, versioning, dirty tracking or transaction checks. Persistence may therefore diverge from memory. Use collection mutation methods to change stored data, or request `clone: true` before editing a read result. Nested input values, mutation results, hooks and event payloads may still share stored data. This option does not provide transaction snapshot isolation. Structured-clone semantics apply: SharedArrayBuffer backing memory remains shared, and custom prototypes/accessor descriptors are not preserved.
 
 ### Commit-stage recovery
 
-A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay; it does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
+A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay. It does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
 
-For upsertMany, only the failing item is recovered; completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
+For upsertMany, only the failing item is recovered. Completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
 
-If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage; there is no supported reset of this failure state.
+If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage. There is no supported reset of this failure state.
 
-Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives; it is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
+Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives. It is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
 
 ### Other reliability changes
 
 
-- Transaction handles belong only to their callback. Await all operations before returning; using a captured handle, method, or collection factory afterward throws `ERR_SKALEX_TX_STALE_PROXY` (or `ERR_SKALEX_TX_ABORTED` after rollback). Reacquire handles from the original database for later work, including after-hook cascades. Bare writes to locked collections reject even while an owned hook awaits. Collections created through the transaction are locked immediately; independently created collections and their writes survive rollback. Define existing collection schemas before the transaction: replacing a definition with `tx.createCollection()` now rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`. The timeout bounds the callback, not persistence or after-commit hooks.
+- Transaction handles belong only to their callback. Await all operations before returning. Using a captured handle, method, or collection factory afterward throws `ERR_SKALEX_TX_STALE_PROXY` (or `ERR_SKALEX_TX_ABORTED` after rollback). Reacquire handles from the original database for later work, including after-hook cascades. Bare writes to locked collections reject even while an owned hook awaits. Collections created through the transaction are locked immediately. Independently created collections and their writes survive rollback. Define existing collection schemas before the transaction: replacing a definition with `tx.createCollection()` now rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`. The timeout bounds the callback, not persistence or after-commit hooks.
 
 
-- Filesystem temporary writes now use `.skalex-<uuid>.tmp.<format>`. These names cannot collide with valid collection names. Cleanup recognizes both supported json and gz temporary extensions regardless of the current format; listing still selects only the configured collection format. Files in the old temporary-name shape are preserved because their names alone cannot distinguish an abandoned write from a real collection. A payload whose collection name differs from its storage key is rejected as corrupt under the default strict loader. If a legacy partial or mismatched file prevents loading, preserve a backup and inspect its contents before removing it; do not bulk-delete files containing `.tmp.`.
-- Failed `upsertMany()` calls retain the already-applied prefix, as in alpha.6, but now finalize its normal effects before rethrowing the original item error. Earlier items can therefore be persisted, logged, and observed even when the call rejects. Saving honors `save` / `autoSave`; later items are not attempted. An uncaught error still triggers enclosing transaction rollback. If finalization also fails, `ERR_SKALEX_MUTATION_FINALIZE` exposes both errors in `details.mutationError` and `details.finalizationError`; remaining effects may be incomplete. Review retry logic rather than assuming rejection means no changes were applied.
+- Filesystem temporary writes now use `.skalex-<uuid>.tmp.<format>`. These names cannot collide with valid collection names. Cleanup recognizes both supported json and gz temporary extensions regardless of the current format. Listing still selects only the configured collection format. Files in the old temporary-name shape are preserved because their names alone cannot distinguish an abandoned write from a real collection. A payload whose collection name differs from its storage key is rejected as corrupt under the default strict loader. If a legacy partial or mismatched file prevents loading, preserve a backup and inspect its contents before removing it. Do not bulk-delete files containing `.tmp.`.
+- Failed `upsertMany()` calls retain the already-applied prefix, as in alpha.6, but now finalize its normal effects before rethrowing the original item error. Earlier items can therefore be persisted, logged, and observed even when the call rejects. Saving honors `save` / `autoSave`. Later items are not attempted. An uncaught error still triggers enclosing transaction rollback. If finalization also fails, `ERR_SKALEX_MUTATION_FINALIZE` exposes both errors in `details.mutationError` and `details.finalizationError`. Remaining effects may be incomplete. Review retry logic rather than assuming rejection means no changes were applied.
 - MCP validates and trims collection names before authorization. Configure scopes using canonical collection names. A collection-specific denial applies equally to padded names.
-- Concurrent inserts claiming an existing ID reject with `ERR_SKALEX_UNIQUE_DUPLICATE_ID`. Before-insert hooks can run before the final live-ID check; a rejected insert does not undo external hook effects. This fix does not repair duplicate IDs already stored by an older version.
+- Concurrent inserts claiming an existing ID reject with `ERR_SKALEX_UNIQUE_DUPLICATE_ID`. Before-insert hooks can run before the final live-ID check. A rejected insert does not undo external hook effects. This fix does not repair duplicate IDs already stored by an older version.
 
 This file collects every upgrade guide Skalex v4 has shipped. Start with the section matching the version you are upgrading from.
 
@@ -301,9 +305,9 @@ paged.totalPages; // 100
 
 ## 4.0.0-alpha.2.x → 4.0.0-alpha.3
 
-alpha.3 is a runtime-safety and hardening release. It introduces no new user-facing features, but it tightens several public API boundaries so that previously silent failures now throw loudly. Every break below has a mechanical fix; none require rethinking data shapes.
+alpha.3 is a runtime-safety and hardening release. It introduces no new user-facing features, but it tightens several public API boundaries so that previously silent failures now throw loudly. Every break below has a mechanical fix. None require rethinking data shapes.
 
-Work through each section in order. Most codebases will need changes in sections 1, 2, and 3; the rest are narrower.
+Work through each section in order. Most codebases will need changes in sections 1, 2, and 3. The rest are narrower.
 
 ### 1. `Migration.up()` receives the Skalex proxy
 
@@ -429,12 +433,12 @@ await db.transaction(async (tx) => {
 }, { deferredEffectErrors: "throw" });
 ```
 
-The `"throw"` strategy raises an `AggregateError` *after* the commit has landed. The data is still on disk; the error only surfaces the fact that a post-commit effect failed.
+The `"throw"` strategy raises an `AggregateError` *after* the commit has landed. The data is still on disk. The error only surfaces the fact that a post-commit effect failed.
 
 #### Migration steps
 
 1. Decide which strategy matches your app. If you treat after-hooks as advisory (audit logs, cache warming, metrics), keep `"warn"` - you don't need to change anything.
-2. If you rely on after-hook errors to abort the caller's operation, pass `deferredEffectErrors: "throw"` and catch `AggregateError` at the call site. Remember the data is already committed; rolling back is your responsibility.
+2. If you rely on after-hook errors to abort the caller's operation, pass `deferredEffectErrors: "throw"` and catch `AggregateError` at the call site. Remember the data is already committed. Rolling back is your responsibility.
 3. A third option, `"ignore"`, silently swallows all deferred errors. Use it only for background cleanup transactions where you explicitly don't want noise.
 
 ### 6. Nested transactions throw instead of deadlocking
@@ -487,7 +491,7 @@ If you expose Skalex to an LLM agent over MCP, filters from the agent are saniti
 
 Direct `find()` calls from your own server-side code are **not** affected - only the MCP tool handlers sanitise. `$fn` remains fully supported for direct callers.
 
-> **Coming in alpha.4:** `db.mcp({ predicates })` will let developers register named server-side predicates that agents invoke by name, restoring `$fn` expressiveness over MCP without letting code cross the wire. Tracked as item #22 in `design/alpha-4.md`. If you are on alpha.3 and need the agent to express a `$fn`-style predicate today, register it as a dedicated MCP tool or a server-side plugin; move to the allowlist model when alpha.4 ships.
+> **Coming in alpha.4:** `db.mcp({ predicates })` will let developers register named server-side predicates that agents invoke by name, restoring `$fn` expressiveness over MCP without letting code cross the wire. Tracked as item #22 in `design/alpha-4.md`. If you are on alpha.3 and need the agent to express a `$fn`-style predicate today, register it as a dedicated MCP tool or a server-side plugin. Move to the allowlist model when alpha.4 ships.
 
 #### Migration steps
 

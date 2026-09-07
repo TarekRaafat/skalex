@@ -176,8 +176,8 @@ scripts/
 | Skalex | `src/index.js` | Lifecycle (`connect`/`disconnect`), collection facade, migrations, transactions, seeding, namespaces, debug logging, serialization (BigInt/Date-safe), `Symbol.asyncDispose` |
 | SkalexAI | `src/engine/ai.js` | AI facade extracted from Skalex: `ask()`, `embed()`, `useMemory()`, `schema()` |
 | Collection | `src/engine/collection.js` | CRUD operations, upsert, find with sort/pagination/populate/select, delegates to extracted modules |
-| CollectionContext | `src/engine/collection-context.js` | `ICollectionContext` interface - narrow dependency surface for Collection; enables isolated testing |
-| DataStore | `src/engine/datastore.js` | Abstraction between Collection and raw `_data` array; prerequisite for disk-backed engines |
+| CollectionContext | `src/engine/collection-context.js` | `ICollectionContext` interface - narrow dependency surface for Collection. Enables isolated testing |
+| DataStore | `src/engine/datastore.js` | Abstraction between Collection and raw `_data` array. Prerequisite for disk-backed engines |
 | DocumentBuilder | `src/engine/document-builder.js` | Document creation, system field assignment (`_id`, `createdAt`, `updatedAt`), TTL, embedding |
 | QueryPlanner | `src/engine/query-planner.js` | Index-aware candidate selection, filter optimization, compound index routing |
 | VectorSearch | `src/engine/vector-search.js` | `search()` and `similar()` extracted from Collection |
@@ -289,7 +289,7 @@ class StorageAdapter {
 
 ### `writeAll(entries)`
 
-Batch write method. The base class provides a sequential fallback (`for...of write()`). Adapters can override this with native batch transactions; D1 provides atomicity within each chunk, not across chunks. Used by `PersistenceManager.saveAtomic()` during transaction commit.
+Batch write method. The base class provides a sequential fallback (`for...of write()`). Adapters can override this with native batch transactions. D1 provides atomicity within each chunk, not across chunks. Used by `PersistenceManager.saveAtomic()` during transaction commit.
 
 ### FsAdapter extras
 
@@ -302,7 +302,7 @@ async writeRaw(path, data)  // write raw string to an arbitrary path
 async readRaw(path)         // read raw string from an arbitrary path
 ```
 
-These are not part of the `StorageAdapter` contract; they are `FsAdapter`-specific and guarded by duck-typing at the call site.
+These are not part of the `StorageAdapter` contract. They are `FsAdapter`-specific and guarded by duck-typing at the call site.
 
 ### Writing a custom adapter
 
@@ -353,7 +353,7 @@ const db = new Skalex({ adapter: new MyAdapter() });
 }
 ```
 
-`Collection` instances hold a reference to this object (`this._store`) and expose it via getters. Multiple `Collection` instances for the same name share the same store object; mutations are immediately visible across references.
+`Collection` instances hold a reference to this object (`this._store`) and expose it via getters. Multiple `Collection` instances for the same name share the same store object. Mutations are immediately visible across references.
 
 The `rawSchema` field preserves the original schema definition so it can be round-tripped through persistence. The `_dirty` flag is set by `PersistenceManager.markDirty()` after every mutation and cleared after a successful save.
 
@@ -399,13 +399,13 @@ ensureConnected
 
 ### Historical replay
 
-Historical rehydration calls `MutationPipeline.execute()` with `replay: true`, explicit saving and transition-event emission. It preserves archived fields and skips mutation hooks, schema transformations, caps and changelog recording. Replay validates current index candidates before synchronous mutation, and checks transaction locks after asynchronous history reads. Transition events run after saving; a save failure leaves restored memory dirty without emitting those events. This does not resolve cross-path persistence ordering or partial-write recovery.
+Historical rehydration calls `MutationPipeline.execute()` with `replay: true`, explicit saving and transition-event emission. It preserves archived fields and skips mutation hooks, schema transformations, caps and changelog recording. Replay validates current index candidates before synchronous mutation, and checks transaction locks after asynchronous history reads. Transition events run after saving. A save failure leaves restored memory dirty without emitting those events. This does not resolve cross-path persistence ordering or partial-write recovery.
 
 ### Transaction awareness
 
 Transaction-scoped Collection instances share the registry's store but carry their own `_transaction` context. Ordinary cached instances never inherit ownership. The pipeline checks explicit owner liveness and rechecks bare-write locks immediately before mutation, including after asynchronous preparation.
 
-Owned effects use `txManager.defer(effect, owner)`; ordinary effects execute immediately. A context remains attached to captured handles after it closes, so lifetime enforcement does not depend on bounded diagnostic ID history.
+Owned effects use `txManager.defer(effect, owner)`. Ordinary effects execute immediately. A context remains attached to captured handles after it closes, so lifetime enforcement does not depend on bounded diagnostic ID history.
 
 ---
 
@@ -422,7 +422,7 @@ Owns all load/save orchestration, dirty tracking, write-queue coalescing, flush 
 3. Merges persisted config with pre-existing `createCollection` config (in-memory config takes precedence).
 4. Builds the `_id` index and field indexes from loaded data.
 5. Detects incomplete flushes via the flush sentinel.
-6. Cleans reserved `.skalex-<uuid>.tmp.json` and `.skalex-<uuid>.tmp.gz` files left by interrupted writes, regardless of the active storage format. The leading dot prevents collisions with collection names; ambiguous legacy temporary-looking filenames are preserved.
+6. Cleans reserved `.skalex-<uuid>.tmp.json` and `.skalex-<uuid>.tmp.gz` files left by interrupted writes, regardless of the active storage format. The leading dot prevents collisions with collection names. Ambiguous legacy temporary-looking filenames are preserved.
 
 The `lenientLoad` option allows skipping corrupt collections instead of throwing.
 
@@ -438,23 +438,23 @@ Three save strategies:
 
 ### Dirty tracking
 
-`markDirty(collections, name)` sets `_dirty = true` on the store. Ordinary saves clear the flag immediately before serialization; edits during the adapter await mark it dirty again. A failed write restores the dirty flag so a dirty-only retry includes the collection.
+`markDirty(collections, name)` sets `_dirty = true` on the store. Ordinary saves clear the flag immediately before serialization. Edits during the adapter await mark it dirty again. A failed write restores the dirty flag so a dirty-only retry includes the collection.
 
 ### Write coalescing
 
-Concurrent saves for the same collection are serialised by the per-collection `isSaving` / `_pendingSave` mechanism. The second caller sets `_pendingSave = true`; when the first writer finishes, it re-runs `_saveOne` with the latest data. Callers can await the `_saveWaiters` promise to know their data has been flushed.
+Concurrent saves for the same collection are serialised by the per-collection `isSaving` / `_pendingSave` mechanism. The second caller sets `_pendingSave = true`. When the first writer finishes, it re-runs `_saveOne` with the latest data. Callers can await the `_saveWaiters` promise to know their data has been flushed.
 
 ### Save mutex (`_saveLock`)
 
-Ordinary adapter writes and `saveAtomic()` batches share the instance-level `_saveLock` promise chain. Each ordinary write serializes current data when its turn begins. A transaction retains the queue through its batch and sentinel-clear write, so an older ordinary write cannot complete after that commit. Rejection releases the queue for later work. Coalescing remains per collection; even writes to different collections use the shared queue. This orders writes within one instance, without adding snapshot isolation or cross-collection crash recovery.
+Ordinary adapter writes and `saveAtomic()` batches share the instance-level `_saveLock` promise chain. Each ordinary write serializes current data when its turn begins. A transaction retains the queue through its batch and sentinel-clear write, so an older ordinary write cannot complete after that commit. Rejection releases the queue for later work. Coalescing remains per collection. Even writes to different collections use the shared queue. This orders writes within one instance, without adding snapshot isolation or cross-collection crash recovery.
 
 ### Flush acknowledgement
 
-After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
+After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only. It does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
 
 ### Flush sentinel
 
-Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data; this is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage; repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
+Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data. This is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage. Repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
 
 The persistence manager retains unresolved flush state independently of transaction snapshots. Metadata serialization overlays that state, preventing rollback or unrelated saves from erasing the durable warning. The shared save queue covers preflight, data writes and marker completion.
 
@@ -636,11 +636,11 @@ File: `src/engine/transaction.js`
 
 1. **Lock**: transactions are serialised via `_txLock` (promise chain). No concurrent transactions.
 2. **Context creation**: allocates a `TransactionContext` with a unique `id`, `snapshots` Map, `touchedCollections` Set, `deferredEffects` array, and `aborted` flag. Tracks explicitly owned collection creations in a Map.
-3. **Capabilities**: transactions and migrations receive a readonly `TransactionHandle` with only `useCollection` and `createCollection`. Returned `TransactionCollection` handles expose an explicit document/query allowlist. Null-prototype facade targets contain no backing database or Collection instance. Method wrappers are created lazily and retain call-time lifetime guards, including functions obtained through property descriptors. Unknown access and handle mutation throw `ERR_SKALEX_TX_DIRECT_ACCESS`; there is no catch-all forwarding to the database.
+3. **Capabilities**: transactions and migrations receive a readonly `TransactionHandle` with only `useCollection` and `createCollection`. Returned `TransactionCollection` handles expose an explicit document/query allowlist. Null-prototype facade targets contain no backing database or Collection instance. Method wrappers are created lazily and retain call-time lifetime guards, including functions obtained through property descriptors. Unknown access and handle mutation throw `ERR_SKALEX_TX_DIRECT_ACCESS`. There is no catch-all forwarding to the database.
 4. **Lazy snapshots**: only collections that receive a write are snapshotted, on first mutation (via `_txSnapshotIfNeeded()` in the pipeline). Uses `structuredClone` for deep copy of the data array. Snapshot includes the `_dirty` flag state.
 5. **Timeout**: if `timeout > 0`, a `setTimeout` races against `fn`. On timeout, `ctx.aborted = true` and the transaction is rolled back.
-6. **Commit**: persists only touched collections via `PersistenceManager.saveAtomic()`. Callback ownership closes before persistence; locks release after successful persistence, before flushing deferred side effects (events, after-hooks, changelog entries).
-7. **Rollback**: on error, restores snapshotted collections via `_applySnapshot()` (which rebuilds `_id` index and field indexes from the cloned data). Only collections created through the transaction are deleted; independent creation survives. The `_dirty` flag is restored to its pre-transaction state.
+6. **Commit**: persists only touched collections via `PersistenceManager.saveAtomic()`. Callback ownership closes before persistence. Locks release after successful persistence, before flushing deferred side effects (events, after-hooks, changelog entries).
+7. **Rollback**: on error, restores snapshotted collections via `_applySnapshot()` (which rebuilds `_id` index and field indexes from the cloned data). Only collections created through the transaction are deleted. Independent creation survives. The `_dirty` flag is restored to its pre-transaction state.
 
 ### Deferred side effects
 
@@ -648,7 +648,7 @@ Scoped context callbacks defer owned events, after-hooks and changelog entries. 
 
 ### Stale continuation detection
 
-Every transaction handle retains its context. The callback's completion closes that context before commit starts; rollback marks it aborted. Captured methods check lifetime at invocation, and pending mutations recheck before changing data. Aborted IDs are retained only as bounded diagnostic history. Timeout bounds the callback, not persistence or after-commit effects.
+Every transaction handle retains its context. The callback's completion closes that context before commit starts. Rollback marks it aborted. Captured methods check lifetime at invocation, and pending mutations recheck before changing data. Aborted IDs are retained only as bounded diagnostic history. Timeout bounds the callback, not persistence or after-commit effects.
 
 ---
 
@@ -672,14 +672,14 @@ File: `src/engine/migrations.js`
 Migrations are registered via `db.addMigration({ version, description?, up })` and stored sorted by version. On `connect()`:
 
 1. `PersistenceManager.getMeta(collections)` reads applied versions from the `_meta` collection.
-2. `MigrationEngine.run({ runInTx, recordApplied }, appliedVersions)` filters to pending versions and runs each migration inside its own transaction. `runInTx(fn)` is bound to `(fn) => skalex.transaction(fn)`; `fn` receives the restricted TransactionHandle and calls `migration.up(tx)`. After `up` returns successfully (but before the transaction commits), the runner calls `recordApplied(nextVersions)` which:
+2. `MigrationEngine.run({ runInTx, recordApplied }, appliedVersions)` filters to pending versions and runs each migration inside its own transaction. `runInTx(fn)` is bound to `(fn) => skalex.transaction(fn)`. `fn` receives the restricted TransactionHandle and calls `migration.up(tx)`. After `up` returns successfully (but before the transaction commits), the runner calls `recordApplied(nextVersions)` which:
     - snapshots `_meta` into the active transaction via `_txManager.snapshotIfNeeded()` so the version record participates in rollback, and
     - mutates `_meta.appliedVersions` through `PersistenceManager.updateMeta()`.
-3. `saveAtomic()` flushes the migration's touched collections **and** `_meta` in a single `writeAll` batch, so the version record and migration data share a batch; the adapter determines its atomicity.
+3. `saveAtomic()` flushes the migration's touched collections **and** `_meta` in a single `writeAll` batch, so the version record and migration data share a batch. The adapter determines its atomicity.
 
 If `up()` throws, the transaction rolls back owned in-memory writes **and** the `_meta` version bump - the migration re-runs from a clean slate on the next `connect()`. Migrations that committed before a later failure are preserved.
 
-**Atomicity guarantee** depends on the adapter's `writeAll` semantics: fully atomic on `BunSQLiteAdapter` / `LibSQLAdapter` / `D1Adapter`-within-chunk; narrowed failure window on `FsAdapter` (sequential renames, `_meta` always renamed last, incomplete-flush sentinel detects partial commits on next load); not atomic across D1 chunks. Migrations should still be authored idempotently (`upsert`, check-before-mutate).
+**Atomicity guarantee** depends on the adapter's `writeAll` semantics: fully atomic on `BunSQLiteAdapter` / `LibSQLAdapter` / `D1Adapter`-within-chunk. Narrowed failure window on `FsAdapter` (sequential renames, `_meta` always renamed last, incomplete-flush sentinel detects partial commits on next load). Not atomic across D1 chunks. Migrations should still be authored idempotently (`upsert`, check-before-mutate).
 
 `Skalex._recordAppliedVersions` throws `TransactionError` with `ERR_SKALEX_TX_INVALID_STATE` if ever called outside an active transaction, so a future refactor that breaks the atomicity invariant surfaces as a test failure.
 
@@ -749,7 +749,7 @@ Runner: **Vitest** (kept over Bun test because `LocalStorageAdapter` tests requi
 
 ### MemoryAdapter (`tests/helpers/MemoryAdapter.js`)
 
-In-memory `StorageAdapter` for CI; no disk I/O, no temp files. Implements `read/write/delete/list` backed by `Map<name, string>`, plus stubs for `Collection.export` and `Skalex.import`. All integration tests inject a `MemoryAdapter` instance. No test touches the real file system.
+In-memory `StorageAdapter` for CI. No disk I/O, no temp files. Implements `read/write/delete/list` backed by `Map<name, string>`, plus stubs for `Collection.export` and `Skalex.import`. All integration tests inject a `MemoryAdapter` instance. No test touches the real file system.
 
 ### Test files
 
@@ -798,7 +798,7 @@ class EmbeddingAdapter {
 }
 ```
 
-`embed()` receives a plain string and returns a numeric array. Dimensionality is model-dependent (OpenAI `text-embedding-3-small` = 1536, Ollama `nomic-embed-text` = 768). Skalex itself is dimension-agnostic; `cosineSimilarity` works on any length, but all documents in a collection must use the same model to produce comparable vectors.
+`embed()` receives a plain string and returns a numeric array. Dimensionality is model-dependent (OpenAI `text-embedding-3-small` = 1536, Ollama `nomic-embed-text` = 768). Skalex itself is dimension-agnostic. `cosineSimilarity` works on any length, but all documents in a collection must use the same model to produce comparable vectors.
 
 ### Configuration
 
@@ -812,7 +812,7 @@ new Skalex({ ai: { provider: "openai", apiKey, model } })
 new Skalex({ embeddingAdapter: new MyAdapter() })
 ```
 
-Both built-in adapters use native `fetch` (Node >=18, Bun, Deno, browser; no extra dependency).
+Both built-in adapters use native `fetch` (Node >=18, Bun, Deno, browser. No extra dependency).
 
 ---
 
@@ -820,9 +820,9 @@ Both built-in adapters use native `fetch` (Node >=18, Bun, Deno, browser; no ext
 
 Vectors are stored **inline** on documents as `_vector: number[]`. This means:
 
-- No separate vector store or side-collection; one document, one file.
+- No separate vector store or side-collection. One document, one file.
 - Vectors serialise to JSON as regular arrays.
-- On load, vectors remain as plain `number[]`; no reconstruction step needed.
+- On load, vectors remain as plain `number[]`. No reconstruction step needed.
 - `_vector` is treated as a system field, parallel to `_id`, `createdAt`, `_expiresAt`.
 
 ### `stripVector(doc)` - `src/engine/vector.js`
@@ -859,13 +859,13 @@ Computed in a single loop, O(d) where d = vector dimensions. Returns `0` for zer
 ### `collection.search(query, { filter, limit, minScore })`
 
 1. `await this._ctx.embed(query)` - produce a query vector via the configured adapter (the embed function is wired through `_ctx` rather than reaching into the Skalex instance directly).
-2. Get candidates: `filter` present -> `_findAllRaw(filter)` (structured pre-filter, leverages `IndexEngine`); no filter -> `this._data`.
+2. Get candidates: `filter` present -> `_findAllRaw(filter)` (structured pre-filter, leverages `IndexEngine`). No filter -> `this._data`.
 3. For each candidate with a `_vector`, compute `cosineSimilarity(queryVector, doc._vector)`.
 4. Drop candidates below `minScore`.
 5. Sort descending by score, slice to `limit`.
 6. Return `{ docs: top.map(stripVector), scores: top.map(score) }`.
 
-This is **hybrid search** when `filter` is provided; the structured filter narrows candidates before the cosine ranking step.
+This is **hybrid search** when `filter` is provided. The structured filter narrows candidates before the cosine ranking step.
 
 ### `collection.similar(id, { limit, minScore })`
 
@@ -885,14 +885,14 @@ This is **hybrid search** when `filter` is provided; the structured filter narro
 
 ## 26. MCP HTTP Boundary
 
-Validate Origin and Host before route dispatch, SSE subscription or preflight. Explicit browser-origin permission is separate from trusted backend authority and does not authenticate native clients. HTTP transport loads dynamically from the source module shipped alongside dist; browser clients connect to a Node/Bun/Deno HTTP server. Origin and rebinding regressions include real Chromium requests.
+Validate Origin and Host before route dispatch, SSE subscription or preflight. Explicit browser-origin permission is separate from trusted backend authority and does not authenticate native clients. HTTP transport loads dynamically from the source module shipped alongside dist. Browser clients connect to a Node/Bun/Deno HTTP server. Origin and rebinding regressions include real Chromium requests.
 
 ## 27. Read Ownership
 
-Document reads preserve shallow-copy defaults; groupBy retains live document references. Explicit clone: true applies structuredClone to returned data after projection/population and read hooks. Collection owns clone-error translation to ERR_SKALEX_QUERY_CLONE. Memory history/recall forward the option. This does not isolate inputs, mutation returns, hooks or shared-memory buffers, and it does not provide transaction snapshot isolation.
+Document reads preserve shallow-copy defaults. GroupBy retains live document references. Explicit clone: true applies structuredClone to returned data after projection/population and read hooks. Collection owns clone-error translation to ERR_SKALEX_QUERY_CLONE. Memory history/recall forward the option. This does not isolate inputs, mutation returns, hooks or shared-memory buffers, and it does not provide transaction snapshot isolation.
 
 ## 28. Commit Recovery
 
-Collection shares synchronous insert/update/delete commit primitives across ordinary writes, upserts, soft-delete/restore and historical replay. Known validation failures remain preflighted. A commit exception reconstructs the pre-commit document array and rebuilds primary and secondary indexes; success paths retain document references and only potential FIFO victims rather than cloning whole collections. Recovery is O(n) in collection size plus index construction, paid on failure.
+Collection shares synchronous insert/update/delete commit primitives across ordinary writes, upserts, soft-delete/restore and historical replay. Known validation failures remain preflighted. A commit exception reconstructs the pre-commit document array and rebuilds primary and secondary indexes. Success paths retain document references and only potential FIFO victims rather than cloning whole collections. Recovery is O(n) in collection size plus index construction, paid on failure.
 
-The pipeline owns subsequent effects. A recovered atomic commit rethrows before dirty/save/hooks/events; upsert batches finalize their completed prefix. If recovery itself fails, the store retains ERR_SKALEX_MUTATION_RECOVERY with both errors. Pipeline entry and persistence serialization reject that state. Reads are not protected; discard the instance and reopen verified storage. This does not provide crash recovery, snapshot isolation or rollback of post-commit effects.
+The pipeline owns subsequent effects. A recovered atomic commit rethrows before dirty/save/hooks/events. Upsert batches finalize their completed prefix. If recovery itself fails, the store retains ERR_SKALEX_MUTATION_RECOVERY with both errors. Pipeline entry and persistence serialization reject that state. Reads are not protected. Discard the instance and reopen verified storage. This does not provide crash recovery, snapshot isolation or rollback of post-commit effects.

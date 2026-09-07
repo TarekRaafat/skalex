@@ -37,7 +37,7 @@ async function makeServer(opts = {}) {
   return { db, server, transport };
 }
 
-// ─── MCP protocol ─────────────────────────────────────────────────────────────
+// --- MCP protocol -------------------------------------------------------------
 
 describe("MCP protocol  -  initialize", () => {
   test("responds to initialize with protocolVersion and capabilities", async () => {
@@ -113,7 +113,7 @@ describe("MCP protocol  -  tools/list", () => {
   });
 });
 
-// ─── MCP tools  -  skalex_collections ──────────────────────────────────────────
+// --- MCP tools  -  skalex_collections ------------------------------------------
 
 describe("skalex_collections tool", () => {
   test("returns collection names", async () => {
@@ -134,7 +134,7 @@ describe("skalex_collections tool", () => {
   });
 });
 
-// ─── MCP tools  -  skalex_schema ────────────────────────────────────────────────
+// --- MCP tools  -  skalex_schema ------------------------------------------------
 
 describe("skalex_schema tool", () => {
   test("returns schema for a collection with data", async () => {
@@ -166,7 +166,7 @@ describe("skalex_schema tool", () => {
   });
 });
 
-// ─── MCP tools  -  skalex_find ─────────────────────────────────────────────────
+// --- MCP tools  -  skalex_find -------------------------------------------------
 
 describe("skalex_find tool", () => {
   test("returns matching documents", async () => {
@@ -200,7 +200,7 @@ describe("skalex_find tool", () => {
   });
 });
 
-// ─── MCP tools  -  skalex_insert ───────────────────────────────────────────────
+// --- MCP tools  -  skalex_insert -----------------------------------------------
 
 describe("skalex_insert tool", () => {
   test("inserts a document and returns it", async () => {
@@ -218,7 +218,7 @@ describe("skalex_insert tool", () => {
   });
 });
 
-// ─── MCP tools  -  skalex_update ───────────────────────────────────────────────
+// --- MCP tools  -  skalex_update -----------------------------------------------
 
 describe("skalex_update tool", () => {
   test("updates the first matching document", async () => {
@@ -239,7 +239,7 @@ describe("skalex_update tool", () => {
   });
 });
 
-// ─── MCP tools  -  skalex_delete ───────────────────────────────────────────────
+// --- MCP tools  -  skalex_delete -----------------------------------------------
 
 describe("skalex_delete tool", () => {
   test("deletes the first matching document", async () => {
@@ -258,7 +258,7 @@ describe("skalex_delete tool", () => {
   });
 });
 
-// ─── Access control ───────────────────────────────────────────────────────────
+// --- Access control -----------------------------------------------------------
 
 describe("MCP access control", () => {
   test("denies write tool when scope is read-only", async () => {
@@ -309,7 +309,7 @@ describe("MCP access control", () => {
   });
 });
 
-// ─── db.mcp() factory ────────────────────────────────────────────────────────
+// --- db.mcp() factory --------------------------------------------------------
 
 describe("db.mcp() factory", () => {
   test("returns a SkalexMCPServer instance", () => {
@@ -333,7 +333,7 @@ describe("db.mcp() factory", () => {
   });
 });
 
-// ─── sanitizeFilter ────────────────────────────────────────────────────────
+// --- sanitizeFilter --------------------------------------------------------
 
 describe("sanitizeFilter", () => {
   test("strips $fn recursively from agent-supplied filters", () => {
@@ -412,7 +412,7 @@ describe("sanitizeFilter", () => {
   });
 });
 
-// ─── StdioTransport ────────────────────────────────────────────────────────
+// --- StdioTransport --------------------------------------------------------
 
 describe("StdioTransport", () => {
   let stdinBackup;
@@ -512,7 +512,7 @@ describe("StdioTransport", () => {
   });
 });
 
-// ─── HttpTransport ─────────────────────────────────────────────────────────
+// --- HttpTransport ---------------------------------------------------------
 
 describe("HttpTransport", () => {
   /** Helper: POST a string body to the transport and return { status, body }. */

@@ -18,9 +18,9 @@ new Skalex(config?)
 | `format` | `"gz" \| "json"` | `"gz"` | Storage format. `"gz"` = compressed, `"json"` = plain |
 | `debug` | `boolean` | `false` | Log connect/disconnect output |
 | `adapter` | `StorageAdapter` | `FsAdapter` | Custom storage backend |
-| `ai` | `object` | - | AI / embedding config; see [Embedding Adapters](#embedding-adapters) and [Language Model Adapters](#language-model-adapters) |
-| `encrypt` | `object` | `undefined` | At-rest encryption; see [Encryption](#encryption) |
-| `slowQueryLog` | `object` | `undefined` | Slow query recording; see [Slow Query Log](#slow-query-log) |
+| `ai` | `object` | - | AI / embedding config. See [Embedding Adapters](#embedding-adapters) and [Language Model Adapters](#language-model-adapters) |
+| `encrypt` | `object` | `undefined` | At-rest encryption. See [Encryption](#encryption) |
+| `slowQueryLog` | `object` | `undefined` | Slow query recording. See [Slow Query Log](#slow-query-log) |
 | `queryCache` | `object` | `undefined` | Query cache options: `{ maxSize?: number, ttl?: number }` |
 | `memory` | `object` | `undefined` | Global memory options: `{ compressionThreshold?, maxEntries?, keepRecent?, contextTokens? }` |
 | `logger` | `Function` | built-in | Custom logger `(message, level) => void`. Replaces the built-in `console.log/error`. |
@@ -30,7 +30,7 @@ new Skalex(config?)
 | `idGenerator` | `Function` | built-in | Custom document ID generator `() => string`. Default: built-in timestamp+random. |
 | `serializer` | `Function` | `JSON.stringify` | Custom serializer for storage writes `(data) => string`. |
 | `deserializer` | `Function` | `JSON.parse` | Custom deserializer for storage reads `(raw) => object`. |
-| `plugins` | `Plugin[]` | - | Pre-register plugins; see [Plugin System](#plugin-system) |
+| `plugins` | `Plugin[]` | - | Pre-register plugins. See [Plugin System](#plugin-system) |
 | `autoSave` | `boolean` | `false` | Automatically persist after every write without passing `{ save: true }`. Individual calls can opt out with `{ save: false }`. |
 | `ttlSweepInterval` | `number` | - | Interval in ms to periodically sweep expired TTL documents. Cleared on `disconnect()`. See [TTL Documents](#ttl-documents). |
 | `lenientLoad` | `boolean` | `false` | When `true`, corrupted collection files log a warning and load as empty instead of throwing `PersistenceError`. |
@@ -148,10 +148,10 @@ try {
 
 | Code | Error class | Thrown when | Details |
 |---|---|---|---|
-| `ERR_SKALEX_MUTATION_RECOVERY` | `SkalexError` | A synchronous mutation commit fails and restoring documents/indexes also fails; discard the instance and reopen verified storage | `collection`, `mutationError`, `recoveryError` |
+| `ERR_SKALEX_MUTATION_RECOVERY` | `SkalexError` | A synchronous mutation commit fails and restoring documents/indexes also fails. Discard the instance and reopen verified storage | `collection`, `mutationError`, `recoveryError` |
 | `ERR_SKALEX_MUTATION_FINALIZE` | `SkalexError` | An `upsertMany()` item fails, then finalizing earlier completed items also fails | `collection`, `mutationError`, `finalizationError` |
 
-Catch this code to inspect both failures. Earlier writes or effects may already have completed; the error does not imply rollback, and remaining finalization steps may not have run.
+Catch this code to inspect both failures. Earlier writes or effects may already have completed. The error does not imply rollback, and remaining finalization steps may not have run.
 
 #### `disconnect()`
 
@@ -175,7 +175,7 @@ Defines a collection with optional schema and secondary indexes. Call before `co
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `schema` | `object` | - | Schema definition; see [Schema Validation](#schema-validation) |
+| `schema` | `object` | - | Schema definition. See [Schema Validation](#schema-validation) |
 | `indexes` | `string[]` | `[]` | Fields to build secondary (non-unique) indexes on |
 | `changelog` | `boolean` | `false` | Enable append-only mutation log for this collection |
 | `softDelete` | `boolean` | `false` | Mark documents with `_deletedAt` instead of removing them. Use `col.restore()` to undo. |
@@ -241,29 +241,29 @@ Compound index fields must be scalar values (string, number, boolean, or null). 
 
 Skalex keeps all data **in memory** between operations. Writes are flushed to the storage adapter when `{ save: true }` is passed. The returned promise resolves only after the data reaches storage - concurrent callers are queued and resolved after the coalesced write completes. Writes also flush when `autoSave` is enabled, or explicitly via `saveData()`. `disconnect()` flushes all pending data.
 
-> **Important:** If the process is killed before a flush completes (e.g. `kill -9`, power loss), the in-flight write may be lost. For Node.js, the `FsAdapter` uses an atomic temp-file-then-rename strategy to prevent corrupt files; a collection is either fully written or left at its last good state. Normally call `await db.disconnect()` to flush pending data. If commit recovery failed, disconnect can reject while saving; discard that instance and reopen verified storage as described under commit-stage recovery.
+> **Important:** If the process is killed before a flush completes (e.g. `kill -9`, power loss), the in-flight write may be lost. For Node.js, the `FsAdapter` uses an atomic temp-file-then-rename strategy to prevent corrupt files. A collection is either fully written or left at its last good state. Normally call `await db.disconnect()` to flush pending data. If commit recovery failed, disconnect can reject while saving. Discard that instance and reopen verified storage as described under commit-stage recovery.
 
 #### `saveData(collectionName?)`
 
-Persists one collection (or all, if no name given) via the storage adapter. Best-effort semantics: each collection is written independently. If one write fails, others may have already committed. Use `transaction()` to coordinate owned writes; disk atomicity depends on the adapter's batch guarantees.
+Persists one collection (or all, if no name given) via the storage adapter. Best-effort semantics: each collection is written independently. If one write fails, others may have already committed. Use `transaction()` to coordinate owned writes. Disk atomicity depends on the adapter's batch guarantees.
 
-Ordinary saves and transaction batches share one adapter-write queue per database instance, including the batch sentinel-clear write. Queued writes capture current data when execution begins. Writes to different collections also wait their turn; concurrent saves of one collection remain coalesced. A failed write does not stop later queued work, and edits made during an ordinary write remain dirty for a later flush. Multi-collection ordinary saves remain best-effort, with other writes potentially finishing after a rejection. This ordering does not add read isolation or crash recovery.
+Ordinary saves and transaction batches share one adapter-write queue per database instance, including the batch sentinel-clear write. Queued writes capture current data when execution begins. Writes to different collections also wait their turn. Concurrent saves of one collection remain coalesced. A failed write does not stop later queued work, and edits made during an ordinary write remain dirty for a later flush. Multi-collection ordinary saves remain best-effort, with other writes potentially finishing after a rejection. This ordering does not add read isolation or crash recovery.
 
 **Returns:** `Promise<void>`
 
 #### Incomplete transaction batches
 
-Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data; this is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage; repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
+Before a transaction batch writes data, Skalex persists an incomplete-flush marker over the previously committed metadata. This does not publish pending migration versions. The batch writes current metadata last, then clears its marker after success. Reconnect logs an error-level warning if a marker remains and still loads the data. This is detection, not automatic repair. Earlier unresolved markers survive ordinary metadata saves and later transactions, including after reconnect. Preserve and inspect affected storage. Repair inconsistent data before acknowledging the warning. Do not treat a later successful transaction as recovery. A failed final clear can produce a conservative warning even when the data committed successfully. Each non-empty transaction adds a metadata read and marker write, including adapters with atomic batches.
 
-Marker-read, marker-write and batch-write failures reject with `ERR_SKALEX_PERSISTENCE_FLUSH_FAILED`. Native adapter transactions retain their own atomicity guarantees; sequential or chunked batches can leave partially committed data.
+Marker-read, marker-write and batch-write failures reject with `ERR_SKALEX_PERSISTENCE_FLUSH_FAILED`. Native adapter transactions retain their own atomicity guarantees. Sequential or chunked batches can leave partially committed data.
 
 #### `acknowledgeIncompleteFlush()`
 
-After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only; it does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
+After inspecting storage and repairing it if needed, call `await db.acknowledgeIncompleteFlush()` on a connected database outside transactions. This clears the observed warning only. It does not inspect, repair or save collection data. Acknowledgement shares the persistence queue and rejects if the warning changes while queued. Failure leaves the in-memory warning available for retry. No warning is an I/O-free no-op.
 
 **Returns:** `Promise<void>`.
 
-**Throws:** `PersistenceError` with `ERR_SKALEX_PERSISTENCE_ACK_FAILED` when disconnected, called during a transaction, the observed warning changes, or metadata I/O fails. `details.reason === "state_changed"` identifies an availability/concurrency rejection; `details.cause` contains a storage failure. Inspect the latest warning before retrying. The restricted transaction handle does not expose this method.
+**Throws:** `PersistenceError` with `ERR_SKALEX_PERSISTENCE_ACK_FAILED` when disconnected, called during a transaction, the observed warning changes, or metadata I/O fails. `details.reason === "state_changed"` identifies an availability/concurrency rejection. `details.cause` contains a storage failure. Inspect the latest warning before retrying. The restricted transaction handle does not expose this method.
 
 #### Persistence Guarantees by Adapter
 
@@ -274,7 +274,7 @@ After inspecting storage and repairing it if needed, call `await db.acknowledgeI
 | Incomplete Skalex batch detection | Persistent marker warning | Persistent marker warning | Persistent marker warning | Persistent marker warning |
 | Power-loss durability | No fsync guarantee | Depends on SQLite configuration/storage | Depends on service guarantees | Depends on deployment/configuration |
 
-> Match the adapter to the required guarantee. D1 atomicity is limited to each batch chunk. SQL-backed storage does not by itself establish a universal power-loss guarantee; verify the deployment and durability configuration.
+> Match the adapter to the required guarantee. D1 atomicity is limited to each batch chunk. SQL-backed storage does not by itself establish a universal power-loss guarantee. Verify the deployment and durability configuration.
 
 ---
 
@@ -282,7 +282,7 @@ After inspecting storage and repairing it if needed, call `await db.acknowledgeI
 
 #### `addMigration({ version, description?, up })`
 
-Registers a migration. Pending migrations run automatically on `connect()` in version order. Each migration runs inside its own transaction. A callback failure rolls back owned in-memory writes. The applied-version record and migration data are submitted in the same batch; disk atomicity depends on the adapter, and a failed sequential or chunked batch may leave partial data. Migrations that commit successfully are preserved even if a later migration fails.
+Registers a migration. Pending migrations run automatically on `connect()` in version order. Each migration runs inside its own transaction. A callback failure rolls back owned in-memory writes. The applied-version record and migration data are submitted in the same batch. Disk atomicity depends on the adapter, and a failed sequential or chunked batch may leave partial data. Migrations that commit successfully are preserved even if a later migration fails.
 
 The `up` callback receives a restricted `TransactionHandle`. Use `tx.useCollection(name)` or `tx.createCollection(name, options)`, await owned writes, and let the transaction perform saving. Database lifecycle, persistence and inspection methods are unavailable.
 
@@ -338,9 +338,9 @@ await db.transaction(async (tx) => { /* ... */ }, { deferredEffectErrors: "throw
 
 **Supported capabilities:** Transaction and migration callbacks receive a `TransactionHandle` with only `useCollection()` and `createCollection()`. Returned `TransactionCollection` handles expose `insertOne`, `insertMany`, `updateOne`, `updateMany`, `upsert`, `upsertMany`, `deleteOne`, `deleteMany`, `restore` (soft-delete), `findOne`, `find`, `search`, `similar`, `count`, `sum`, `avg`, `groupBy`, and readonly `name`. These are capability objects rather than full database/Collection instances.
 
-Other access throws `ERR_SKALEX_TX_DIRECT_ACCESS`. In particular, `tx.saveData()`, `tx.seed()`, historical restore, import, lifecycle, inspection and memory/changelog factories are unavailable. Collection export, watch, `applyUpdate()`, and private members are unavailable. Commit owns saving; seed through owned `insertMany()` calls. Do not replace a forbidden persistence call with a bare database call inside the transaction.
+Other access throws `ERR_SKALEX_TX_DIRECT_ACCESS`. In particular, `tx.saveData()`, `tx.seed()`, historical restore, import, lifecycle, inspection and memory/changelog factories are unavailable. Collection export, watch, `applyUpdate()`, and private members are unavailable. Commit owns saving. Seed through owned `insertMany()` calls. Do not replace a forbidden persistence call with a bare database call inside the transaction.
 
-**Ownership and lifetime:** Use `tx.useCollection()` and await every operation inside the callback. Handles and captured methods expire when the callback finishes or aborts; later calls throw `ERR_SKALEX_TX_STALE_PROXY` or `ERR_SKALEX_TX_ABORTED`. Reacquire ordinary handles from the original database for later work. `tx.createCollection()` can create a new definition, but replacing an existing definition rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`.
+**Ownership and lifetime:** Use `tx.useCollection()` and await every operation inside the callback. Handles and captured methods expire when the callback finishes or aborts. Later calls throw `ERR_SKALEX_TX_STALE_PROXY` or `ERR_SKALEX_TX_ABORTED`. Reacquire ordinary handles from the original database for later work. `tx.createCollection()` can create a new definition, but replacing an existing definition rejects with `ERR_SKALEX_TX_DIRECT_ACCESS`.
 
 **Visibility:** Snapshots support rollback, not isolated reads. Reads observe live in-memory data, including uncommitted transactional writes and independent writes to unlocked collections.
 
@@ -348,7 +348,7 @@ Other access throws `ERR_SKALEX_TX_DIRECT_ACCESS`. In particular, `tx.saveData()
 
 **Effects and timeout:** Only owned events, after-hooks, changelog entries and write statistics are deferred until commit. Independent writes execute their own effects immediately. Locks release before deferred hooks run, so hooks can write through ordinary database handles. The timeout bounds the callback, not persistence or after-commit hooks. External effects performed by before-hooks are not rolled back.
 
-Calling the original database's `transaction()` during an active transaction rejects with `ERR_SKALEX_TX_NESTED`. The restricted handle does not expose `tx.transaction()`; accessing it throws `ERR_SKALEX_TX_DIRECT_ACCESS`.
+Calling the original database's `transaction()` during an active transaction rejects with `ERR_SKALEX_TX_NESTED`. The restricted handle does not expose `tx.transaction()`. Accessing it throws `ERR_SKALEX_TX_DIRECT_ACCESS`.
 
 ---
 
@@ -587,9 +587,9 @@ Creates and returns a `SkalexMCPServer` that exposes the database as MCP tools f
 | `transport` | `"stdio" \| "http"` | `"stdio"` | Transport type |
 | `port` | `number` | `3000` | HTTP port (http transport only) |
 | `host` | `string` | `"127.0.0.1"` | HTTP host (http transport only) |
-| `scopes` | `object` | `{ "*": ["read"] }` | Access control per collection; read-only by default |
-| `allowedOrigin` | `string \| null` | `null` | Exact HTTP(S) browser origin or "*"; null rejects Origin-bearing requests |
-| `maxBodySize` | `number` | `1048576` | Maximum POST body size in bytes for HTTP transport (default 1 MiB); increase when inserting documents with large text fields via MCP |
+| `scopes` | `object` | `{ "*": ["read"] }` | Access control per collection. Read-only by default |
+| `allowedOrigin` | `string \| null` | `null` | Exact HTTP(S) browser origin or "*". Null rejects Origin-bearing requests |
+| `maxBodySize` | `number` | `1048576` | Maximum POST body size in bytes for HTTP transport (default 1 MiB). Increase when inserting documents with large text fields via MCP |
 | `predicates` | `object` | `undefined` | Named server-side predicate functions that MCP agents can invoke by name via `{ "$fn": "predicateName" }` in filters. Restores `$fn` expressiveness over MCP without letting arbitrary code cross the wire. |
 
 **Returns:** `SkalexMCPServer`
@@ -645,7 +645,7 @@ Primary IDs are checked against the live collection immediately before insertion
 | Option | Type | Description |
 |--------|------|-------------|
 | `save` | `boolean` | Immediately persist after insert |
-| `ifNotExists` | `boolean` | Return the existing doc if a match is found; no duplicate inserted |
+| `ifNotExists` | `boolean` | Return the existing doc if a match is found. No duplicate inserted |
 | `ttl` | `number \| string` | Set expiry: number = seconds, or `"30m"`, `"24h"`, `"7d"` |
 | `embed` | `string \| Function` | Field name (or selector fn) whose value is embedded and stored as `_vector` |
 | `session` | `string` | Session ID for audit trail (passed to changelog) |
@@ -706,7 +706,7 @@ All update methods accept plain field assignments and the following operators:
 | Operator | Type | Description |
 |----------|------|-------------|
 | `$inc` | `number` | Increment a numeric field by the given value (use a negative value to decrement) |
-| `$push` | `any` | Append a value to an array field; creates the array if the field does not exist |
+| `$push` | `any` | Append a value to an array field. Creates the array if the field does not exist |
 
 ```javascript
 // $inc - increment/decrement
@@ -732,11 +732,11 @@ Updates the first match, or inserts `{ ...filter, ...doc }` if no match is found
 
 Batch upsert. For each doc in `docs`, matches on `matchKey` and updates if found, inserts otherwise. Runs through a single pipeline pass: one connection check, one lock check, one snapshot, one dirty mark, one save, one session-stats increment. Per-document `beforeInsert` / `afterInsert` / `beforeUpdate` / `afterUpdate` plugin hooks, watch events, and changelog entries still fire with op-correct payloads.
 
-**Failure behavior:** Items are processed in order. If an item fails after earlier items completed, those earlier changes remain applied. Their capacity enforcement, saving (according to `save` / `autoSave`), changelog, events, session stats, and after-hooks finish before the original item error is rethrown. Later items are not attempted. A first-item rejection has no completed-item effects. This is partial-success behavior, not batch rollback; a rejection alone does not mean nothing changed. External before-hook effects are not undone.
+**Failure behavior:** Items are processed in order. If an item fails after earlier items completed, those earlier changes remain applied. Their capacity enforcement, saving (according to `save` / `autoSave`), changelog, events, session stats, and after-hooks finish before the original item error is rethrown. Later items are not attempted. A first-item rejection has no completed-item effects. This is partial-success behavior, not batch rollback. A rejection alone does not mean nothing changed. External before-hook effects are not undone.
 
 An uncaught batch error inside `transaction()` rolls back the enclosing transaction. If the transaction callback catches the error and returns successfully, the completed prefix can commit with its deferred effects. A timed-out transaction continuation cannot finalize rolled-back data.
 
-If a second error interrupts prefix finalization (for example, a save or after-hook failure), the call rejects with `SkalexError`, code `ERR_SKALEX_MUTATION_FINALIZE`. Its `details` contain `collection`, `mutationError`, and `finalizationError`. Earlier changes and effects may already have occurred, and remaining finalization steps may not run. Completed items retain their partial-success contract; see commit-stage recovery below.
+If a second error interrupts prefix finalization (for example, a save or after-hook failure), the call rejects with `SkalexError`, code `ERR_SKALEX_MUTATION_FINALIZE`. Its `details` contain `collection`, `mutationError`, and `finalizationError`. Earlier changes and effects may already have occurred, and remaining finalization steps may not run. Completed items retain their partial-success contract. See commit-stage recovery below.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -757,13 +757,13 @@ await products.upsertMany(
 
 ### Commit-stage recovery
 
-A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay; it does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
+A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay. It does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
 
-For upsertMany, only the failing item is recovered; completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
+For upsertMany, only the failing item is recovered. Completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
 
-If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage; there is no supported reset of this failure state.
+If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage. There is no supported reset of this failure state.
 
-Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives; it is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
+Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives. It is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
 
 ---
 
@@ -794,13 +794,13 @@ This is a returned-data copying option, not transaction snapshot isolation or a 
 | `populate` | `string[]` | Collection names to join on the matching field |
 | `select` | `string[]` | Fields to include in the returned document |
 | `includeDeleted` | `boolean` | Include soft-deleted documents (requires `softDelete: true`). Default: `false`. |
-| `clone` | `boolean` | Default `false`. Structured-clone returned data after projection/population; see [read ownership](#read-ownership). |
+| `clone` | `boolean` | Default `false`. Structured-clone returned data after projection/population. See [read ownership](#read-ownership). |
 
 **Returns:** `Promise<Document | null>`
 
 #### `find(filter, options?)`
 
-Sort and paginate matching stored documents before applying `select` and `populate`. Sort fields need not be selected. For sorted queries, population runs only for the returned page; sorting a populated field uses its stored foreign-key value. Equal sort keys retain matching order.
+Sort and paginate matching stored documents before applying `select` and `populate`. Sort fields need not be selected. For sorted queries, population runs only for the returned page. Sorting a populated field uses its stored foreign-key value. Equal sort keys retain matching order.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -811,7 +811,7 @@ Sort and paginate matching stored documents before applying `select` and `popula
 | `limit` | `number` | Documents per page |
 | `session` | `string` | Tag this read for session stats tracking |
 | `includeDeleted` | `boolean` | Include soft-deleted documents (requires `softDelete: true`). Default: `false`. |
-| `clone` | `boolean` | Default `false`. Structured-clone returned data after projection/population; see [read ownership](#read-ownership). |
+| `clone` | `boolean` | Default `false`. Structured-clone returned data after projection/population. See [read ownership](#read-ownership). |
 
 **Returns:** `Promise<{ docs, page?, totalDocs?, totalPages? }>`
 
@@ -923,9 +923,9 @@ Embeds `query` using the configured AI adapter and ranks all documents that have
 |--------|------|---------|-------------|
 | `filter` | `object` | `undefined` | Structured pre-filter applied before scoring (hybrid search) |
 | `limit` | `number` | `10` | Maximum number of results |
-| `minScore` | `number` | `0` | Minimum cosine similarity score; range [-1, 1] |
+| `minScore` | `number` | `0` | Minimum cosine similarity score. Range [-1, 1] |
 | `session` | `string` | | Tag this read for session stats tracking |
-| `clone` | `boolean` | `false` | Structured-clone returned data; see [read ownership](#read-ownership). |
+| `clone` | `boolean` | `false` | Structured-clone returned data. See [read ownership](#read-ownership). |
 
 **Returns:** `Promise<{ docs: Document[], scores: number[] }>`
 
@@ -945,7 +945,7 @@ Finds the nearest neighbours to an existing document by its `_vector`. The sourc
 |--------|------|---------|-------------|
 | `limit` | `number` | `10` | Maximum number of results |
 | `minScore` | `number` | `0` | Minimum cosine similarity score |
-| `clone` | `boolean` | `false` | Structured-clone returned data; see [read ownership](#read-ownership). |
+| `clone` | `boolean` | `false` | Structured-clone returned data. See [read ownership](#read-ownership). |
 
 **Returns:** `Promise<{ docs: Document[], scores: number[] }>`
 
@@ -1052,7 +1052,7 @@ for await (const event of iter) {
 
 ## Query Filters
 
-ID filters use the same operators as other fields, including `{ _id: { $in: ["a", "b"] } }` and `{ _id: /^prefix/ }`, across reads, aggregates and mutations. Direct primary-index lookup applies to literal string IDs; remaining conditions still apply.
+ID filters use the same operators as other fields, including `{ _id: { $in: ["a", "b"] } }` and `{ _id: /^prefix/ }`, across reads, aggregates and mutations. Direct primary-index lookup applies to literal string IDs. Remaining conditions still apply.
 
 Filters can be a plain object, a function, or an empty object (matches all).
 
@@ -1135,7 +1135,7 @@ By default, any validation failure throws. Use `onSchemaError` to change behavio
 |-------|-----------|
 | `"throw"` | Throws `Error`. Default. |
 | `"warn"` | Logs a warning via the configured logger and proceeds with the original document. |
-| `"strip"` | Strips unknown fields and fields with type/enum violations; inserts the cleaned document. |
+| `"strip"` | Strips unknown fields and fields with type/enum violations. Inserts the cleaned document. |
 
 ```javascript
 db.createCollection("events", {
@@ -1290,7 +1290,7 @@ import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connector
 import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors';
 ```
 
-> **Cost & availability:** The OpenAI and Anthropic adapters make outbound API calls that **incur charges** on your account and are subject to **rate limits**. Every `insertOne`/`insertMany` with `{ embed }` and every `search()` call triggers an embedding request. For zero-cost local embeddings, use the Ollama adapter. If the API provider is unavailable, the operation will throw; add appropriate error handling or retry logic in production.
+> **Cost & availability:** The OpenAI and Anthropic adapters make outbound API calls that **incur charges** on your account and are subject to **rate limits**. Every `insertOne`/`insertMany` with `{ embed }` and every `search()` call triggers an embedding request. For zero-cost local embeddings, use the Ollama adapter. If the API provider is unavailable, the operation will throw. Add appropriate error handling or retry logic in production.
 
 ### OpenAI
 
@@ -1373,7 +1373,7 @@ const db = new Skalex({
 
 ## Language Model Adapters
 
-Enable `db.ask()` and `memory.compress()` by providing a `model` in the `ai` config. The same `ai` object controls both embedding and language model; use `embedModel` to pin the embedding model separately.
+Enable `db.ask()` and `memory.compress()` by providing a `model` in the `ai` config. The same `ai` object controls both embedding and language model. Use `embedModel` to pin the embedding model separately.
 
 Import via the connectors subpackage (npm + bundler):
 
@@ -1518,7 +1518,7 @@ Returns all memories in chronological order.
 |--------|------|-------------|
 | `since` | `string \| Date` | Only entries after this time |
 | `limit` | `number` | Maximum entries |
-| `clone` | `boolean` | Default `false`. Structured-clone returned entries; see [read ownership](#read-ownership). |
+| `clone` | `boolean` | Default `false`. Structured-clone returned entries. See [read ownership](#read-ownership). |
 
 **Returns:** `Promise<Document[]>`
 
@@ -1546,7 +1546,7 @@ Returns a newline-joined string of the most recent memories within a token budge
 
 ### `compress(options?)`
 
-Summarises old memories using the language model adapter and embeds the summary for semantic recall. Recent entries are kept intact. Summary insertion completes before the selected originals are deleted, using the normal `autoSave` policy. Summarization, embedding or insertion failure does not delete the originals. Replacement is not atomic: failed cleanup or concurrent compression can leave redundant entries. A failed save can leave dirty in-memory changes; inspect history before retrying. With `autoSave: true`, insertion is saved before cleanup, so an interrupted cleanup can leave both versions in storage.
+Summarises old memories using the language model adapter and embeds the summary for semantic recall. Recent entries are kept intact. Summary insertion completes before the selected originals are deleted, using the normal `autoSave` policy. Summarization, embedding or insertion failure does not delete the originals. Replacement is not atomic: failed cleanup or concurrent compression can leave redundant entries. A failed save can leave dirty in-memory changes. Inspect history before retrying. With `autoSave: true`, insertion is saved before cleanup, so an interrupted cleanup can leave both versions in storage.
 
 Each successful compression makes one additional embedding request for the summary. Provider latency and charges apply. This does not add snapshot isolation for concurrent edits to the backing collection.
 
@@ -1585,11 +1585,11 @@ Each entry: `{ _id, op, collection, docId, doc, prev?, timestamp, session? }`
 
 Replays log entries to rebuild the collection's state at the given point in time. With `{ _id }`, restores only a single document.
 
-Archived documents are rehydrated exactly: `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp. Historical replay uses the mutation pipeline for transaction locks, dirty tracking and saving. It skips mutation hooks, schema transformations, FIFO cap enforcement and changelog recording. Current unique and compound-index constraints are checked before changing data; restoring historical values can reject if they conflict with current indexes.
+Archived documents are rehydrated exactly: `createdAt`, `updatedAt`, `_version`, `_expiresAt`, and `_vector` come back as they were at the target timestamp. Historical replay uses the mutation pipeline for transaction locks, dirty tracking and saving. It skips mutation hooks, schema transformations, FIFO cap enforcement and changelog recording. Current unique and compound-index constraints are checked before changing data. Restoring historical values can reject if they conflict with current indexes.
 
 Both entry points, `db.restore()` and `db.changelog().restore()`, reject replay into a transaction-locked collection with `ERR_SKALEX_TX_COLLECTION_LOCKED`. The lock is checked after reading history and before changing data. Restoring an unlocked collection remains an independent operation even while another collection has an active transaction.
 
-Restored state is saved regardless of `autoSave`. Watch events follow a successful save: single-document replay emits its delete/update/insert transition; whole-collection replay emits deletes followed by inserts. A save failure rejects without restore events; the restored state remains in memory and dirty for a later save retry. This is not a promise of disk rollback or crash recovery.
+Restored state is saved regardless of `autoSave`. Watch events follow a successful save: single-document replay emits its delete/update/insert transition. Whole-collection replay emits deletes followed by inserts. A save failure rejects without restore events. The restored state remains in memory and dirty for a later save retry. This is not a promise of disk rollback or crash recovery.
 
 `collection.restore()` is a different operation: it undoes soft deletion through the normal mutation pipeline.
 
@@ -1626,7 +1626,7 @@ Starts the configured transport (stdio or HTTP + SSE).
 
 #### `connect(transport)`
 
-Accepts a custom transport object; useful for testing or embedding.
+Accepts a custom transport object. Useful for testing or embedding.
 
 **Returns:** `Promise<void>`
 
@@ -1658,7 +1658,7 @@ Stops the server and releases all resources.
 
 ### Access Control
 
-Collection names are validated and trimmed before authorization and execution. Use canonical names as scope keys; surrounding whitespace cannot bypass a collection-specific denial.
+Collection names are validated and trimmed before authorization and execution. Use canonical names as scope keys. Surrounding whitespace cannot bypass a collection-specific denial.
 
 The `scopes` map grants per-collection permissions. `"*"` is the wildcard fallback. A collection-specific entry overrides the wildcard.
 
@@ -1679,11 +1679,11 @@ Read-only scopes hide write tools from `tools/list`, preventing AI agents from d
 
 > **Security note:** MCP scopes control tool visibility but do **not** authenticate the connecting client. Any process that can reach the stdio pipe or HTTP port has full access within the granted scopes. Never expose the HTTP transport on a public interface without an external authentication layer, and always use the most restrictive scopes needed.
 
-HTTP requests are validated before POST dispatch, SSE subscription or preflight handling. By default, any request with an `Origin` header is rejected with HTTP 403; native clients without Origin remain allowed. Set an exact serialized HTTP(S) origin for browser access. `"*"` explicitly allows any valid HTTP(S) origin, but malformed or opaque (`null`) origins still reject.
+HTTP requests are validated before POST dispatch, SSE subscription or preflight handling. By default, any request with an `Origin` header is rejected with HTTP 403. Native clients without Origin remain allowed. Set an exact serialized HTTP(S) origin for browser access. `"*"` explicitly allows any valid HTTP(S) origin, but malformed or opaque (`null`) origins still reject.
 
-The `Host` authority must match the configured hostname or actual local interface and listening port; loopback connections also accept `localhost`. Missing, duplicate or untrusted Host headers reject. A reverse proxy must rewrite Host to the trusted backend authority; forwarded headers are not trusted. Origin and Host checks do not authenticate native clients.
+The `Host` authority must match the configured hostname or actual local interface and listening port. Loopback connections also accept `localhost`. Missing, duplicate or untrusted Host headers reject. A reverse proxy must rewrite Host to the trusted backend authority. Forwarded headers are not trusted. Origin and Host checks do not authenticate native clients.
 
-HTTP transport code loads only when `listen()` starts an HTTP server. Keep the installed package layout, including `src/connectors/mcp/transports/http.js`, when deploying ESM or CommonJS artifacts. Use `port: 0` for an available port and read `server.url` after listening; IPv6 URLs are bracketed.
+HTTP transport code loads only when `listen()` starts an HTTP server. Keep the installed package layout, including `src/connectors/mcp/transports/http.js`, when deploying ESM or CommonJS artifacts. Use `port: 0` for an available port and read `server.url` after listening. IPv6 URLs are bracketed.
 
 Configure browser access explicitly:
 
@@ -1724,7 +1724,7 @@ await server.listen();
 
 ## Encryption
 
-At-rest encryption using AES-256-GCM via `globalThis.crypto.subtle`. Works in Node ≥ 18, Bun, Deno, and all modern browsers; zero extra dependencies.
+At-rest encryption using AES-256-GCM via `globalThis.crypto.subtle`. Works in Node ≥ 18, Bun, Deno, and all modern browsers. Zero extra dependencies.
 
 ```javascript
 const db = new Skalex({
@@ -1836,7 +1836,7 @@ db.use(cacheInvalidationPlugin);
 
 ## Session Stats
 
-Track reads and writes per session ID. Pass `session` on any operation; stats accumulate automatically.
+Track reads and writes per session ID. Pass `session` on any operation. Stats accumulate automatically.
 
 ```javascript
 const db = new Skalex({ path: "./data" });
@@ -1899,7 +1899,7 @@ const sessions = db.createCollection("sessions", { defaultTtl: "24h" });
 await sessions.insertOne({ userId: "abc" }); // auto-expires in 24h
 ```
 
-> **Timing caveat:** Documents past their `_expiresAt` timestamp are not removed in real time between sweeps; they remain in memory and are still queryable. For strict real-time expiry, set a short `ttlSweepInterval`.
+> **Timing caveat:** Documents past their `_expiresAt` timestamp are not removed in real time between sweeps. They remain in memory and are still queryable. For strict real-time expiry, set a short `ttlSweepInterval`.
 
 ---
 
@@ -1919,7 +1919,7 @@ Without an index on a queried field, every document in the collection is scanned
 | Situation | Action |
 |-----------|--------|
 | You filter by a field on every query (`role`, `status`, `userId`) | Add it to `indexes` on `createCollection` |
-| You enforce no-duplicates on a field (`email`, `slug`) | Add `unique: true` in the schema; this also creates an index |
+| You enforce no-duplicates on a field (`email`, `slug`) | Add `unique: true` in the schema. This also creates an index |
 | You sort or paginate by a field frequently | Add the field to `indexes` |
 | You only ever read the full collection (`find({})`) | No index needed |
 
@@ -1956,11 +1956,11 @@ All collections are held entirely in memory. There is no streaming or lazy-loadi
 | 100,000   | 1 KB        | ~100 MB     |
 | 100,000   | 10 KB       | ~1 GB       |
 
-For workloads exceeding ~100k documents or ~500 MB of data, consider the `BunSQLiteAdapter`, `LibSQLAdapter`, or `D1Adapter`; these keep data on disk and only load what is queried.
+For workloads exceeding ~100k documents or ~500 MB of data, consider the `BunSQLiteAdapter`, `LibSQLAdapter`, or `D1Adapter`. These keep data on disk and only load what is queried.
 
 ### Concurrency
 
-Skalex is designed for **single-process** workloads. All reads and writes share one in-memory store; there is no locking, no WAL, and no distributed coordination. For multi-process or multi-tenant deployments, run a separate Skalex instance per process, or use the namespace API to isolate tenants within a single process.
+Skalex is designed for **single-process** workloads. All reads and writes share one in-memory store. There is no locking, no WAL, and no distributed coordination. For multi-process or multi-tenant deployments, run a separate Skalex instance per process, or use the namespace API to isolate tenants within a single process.
 
 ---
 
@@ -1979,7 +1979,7 @@ Skalex ships four pre-built artifacts in `dist/`:
 
 The **browser build** inlines empty stubs for all `node:*` built-ins at build time using a Rollup plugin. This means no `import … from "node:fs"` lines appear in the bundle, so it loads cleanly in any browser without CORS errors.
 
-**npm + bundler** - recommended for production apps; full tree-shaking across all adapter types:
+**npm + bundler** - recommended for production apps. Full tree-shaking across all adapter types:
 
 ```js
 import Skalex from 'skalex';
@@ -1988,7 +1988,7 @@ import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter }   from 'skalex/connect
 import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connectors/llm';
 ```
 
-**CDN - ESM** (`<script type="module">`) - no bundler required; use the browser-specific barrel which exports only the browser-compatible adapters:
+**CDN - ESM** (`<script type="module">`) - no bundler required. Use the browser-specific barrel which exports only the browser-compatible adapters:
 
 ```html
 <script type="module">
@@ -2006,7 +2006,7 @@ import { OpenAILLMAdapter, AnthropicLLMAdapter }            from 'skalex/connect
 </script>
 ```
 
-**CDN - IIFE** (`<script src>`, no `type="module"`) - exposes `window.Skalex`, for quick demos or when ESM is not an option. Connectors are not included; bring your own adapter:
+**CDN - IIFE** (`<script src>`, no `type="module"`) - exposes `window.Skalex`, for quick demos or when ESM is not an option. Connectors are not included. Bring your own adapter:
 
 ```html
 <!-- jsDelivr (recommended) -->
@@ -2057,7 +2057,7 @@ Every document inserted by Skalex has the following system fields added automati
 | `createdAt` | `Date` | Always | Set once at insert time |
 | `updatedAt` | `Date` | Always | Set at insert time, updated on every write |
 | `_expiresAt` | `Date` | When `ttl` is set | TTL expiry timestamp |
-| `_version` | `number` | When `versioning: true` | Starts at `1`; incremented on every update |
-| `_deletedAt` | `Date` | When `softDelete: true` + deleted | Soft-delete timestamp; present only on deleted documents |
+| `_version` | `number` | When `versioning: true` | Starts at `1`. Incremented on every update |
+| `_deletedAt` | `Date` | When `softDelete: true` + deleted | Soft-delete timestamp. Present only on deleted documents |
 
-System fields `createdAt` and `updatedAt` are always set by the engine on insert - user-provided values are overwritten. User-provided `_id` values are preserved; if omitted, a 27-character hex ID (timestamp + crypto random) is generated.
+System fields `createdAt` and `updatedAt` are always set by the engine on insert - user-provided values are overwritten. User-provided `_id` values are preserved. If omitted, a 27-character hex ID (timestamp + crypto random) is generated.

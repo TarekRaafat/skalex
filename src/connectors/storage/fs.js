@@ -157,7 +157,7 @@ class FsAdapter extends StorageAdapter {
    * Delete any orphan temp files left by interrupted writes.
    * Temp files are named `.skalex-<uuid>.tmp.<format>` - a partial rename on
    * the way out of `write()` / `writeAll()` can leave them on disk. Cleanup
-   * covers json and gz regardless of the current format; listing remains
+   * covers json and gz regardless of the current format. Listing remains
    * restricted to the current format.
    * Best-effort: individual unlink failures are ignored.
    * @returns {Promise<number>} The number of temp files removed.

@@ -25,12 +25,12 @@ import MemoryAdapter    from "../helpers/MemoryAdapter.js";
 import FsAdapter        from "../../src/connectors/storage/fs.js";
 import EncryptedAdapter from "../../src/connectors/storage/encrypted.js";
 
-// ─── Test key for EncryptedAdapter ────────────────────────────────────────────
+// --- Test key for EncryptedAdapter --------------------------------------------
 
 // 32 random bytes expressed as a 64-char hex string
 const TEST_KEY = "a".repeat(64);
 
-// ─── Conformance factory ──────────────────────────────────────────────────────
+// --- Conformance factory ------------------------------------------------------
 
 /**
  * Runs the full conformance suite against `factory()`.
@@ -44,7 +44,7 @@ function adapterConformance(label, factory, cleanup = () => {}) {
     beforeEach(() => { adapter = factory(); });
     afterEach(cleanup);
 
-    // ─── read ──────────────────────────────────────────────────────────────
+    // --- read --------------------------------------------------------------
 
     test("read() returns null for a missing key", async () => {
       expect(await adapter.read("nonexistent")).toBeNull();
@@ -62,7 +62,7 @@ function adapterConformance(label, factory, cleanup = () => {}) {
       expect(await adapter.read("b")).toBe("bbb");
     });
 
-    // ─── write ────────────────────────────────────────────────────────────
+    // --- write ------------------------------------------------------------
 
     test("write() overwrites an existing value", async () => {
       await adapter.write("col1", "first");
@@ -81,7 +81,7 @@ function adapterConformance(label, factory, cleanup = () => {}) {
       expect(await adapter.read("empty")).toBe("");
     });
 
-    // ─── delete ───────────────────────────────────────────────────────────
+    // --- delete -----------------------------------------------------------
 
     test("delete() removes a stored key", async () => {
       await adapter.write("col1", "data");
@@ -101,7 +101,7 @@ function adapterConformance(label, factory, cleanup = () => {}) {
       expect(await adapter.read("b")).toBe("bbb");
     });
 
-    // ─── list ─────────────────────────────────────────────────────────────
+    // --- list -------------------------------------------------------------
 
     test("list() returns an empty array when nothing is stored", async () => {
       const names = await adapter.list();
@@ -133,7 +133,7 @@ function adapterConformance(label, factory, cleanup = () => {}) {
       expect(names.filter(n => n === "col1").length).toBe(1);
     });
 
-    // ─── round-trip ───────────────────────────────────────────────────────
+    // --- round-trip -------------------------------------------------------
 
     test("round-trip: write many, read many, list, delete all", async () => {
       const keys = ["alpha", "beta", "gamma", "delta"];
@@ -154,11 +154,11 @@ function adapterConformance(label, factory, cleanup = () => {}) {
   });
 }
 
-// ─── MemoryAdapter ────────────────────────────────────────────────────────────
+// --- MemoryAdapter ------------------------------------------------------------
 
 adapterConformance("MemoryAdapter", () => new MemoryAdapter());
 
-// ─── FsAdapter (json) ─────────────────────────────────────────────────────────
+// --- FsAdapter (json) ---------------------------------------------------------
 
 {
   let tmpDir;
@@ -177,7 +177,7 @@ adapterConformance("MemoryAdapter", () => new MemoryAdapter());
   );
 }
 
-// ─── FsAdapter (gz) ──────────────────────────────────────────────────────────
+// --- FsAdapter (gz) ----------------------------------------------------------
 
 {
   let tmpDir;
@@ -196,7 +196,7 @@ adapterConformance("MemoryAdapter", () => new MemoryAdapter());
   );
 }
 
-// ─── EncryptedAdapter (wrapping MemoryAdapter) ───────────────────────────────
+// --- EncryptedAdapter (wrapping MemoryAdapter) -------------------------------
 
 adapterConformance(
   "EncryptedAdapter(MemoryAdapter)",

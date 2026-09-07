@@ -1,1 +1,1 @@
-<script>window.location.replace('./playground.html');</script>
+<script>window.location.replace('./playground.html').</script>

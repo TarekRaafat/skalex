@@ -252,7 +252,7 @@ describe("out-of-band type serializer", () => {
     expect(found.amount.currency).toBe("USD");
     expect(typeof found.amount.microcents).toBe("bigint");
     expect(found.amount.microcents).toBe(12345678901234n);
-    // Post-toJSON representation is what lands on disk; `toJSON` itself
+    // Post-toJSON representation is what lands on disk. `toJSON` itself
     // does not survive the round-trip (same as `JSON.stringify`).
     expect(typeof found.amount.toJSON).toBe("undefined");
     await db2.disconnect();

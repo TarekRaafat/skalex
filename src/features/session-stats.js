@@ -10,7 +10,7 @@ class SessionStats {
     this._sessions = new Map();
   }
 
-  // ─── Private ─────────────────────────────────────────────────────────────
+  // --- Private -------------------------------------------------------------
 
   _ensure(sessionId) {
     if (!this._sessions.has(sessionId)) {
@@ -19,7 +19,7 @@ class SessionStats {
     return this._sessions.get(sessionId);
   }
 
-  // ─── Record ───────────────────────────────────────────────────────────────
+  // --- Record ---------------------------------------------------------------
 
   /**
    * Record a read operation for a session.
@@ -45,7 +45,7 @@ class SessionStats {
     s.lastActive = new Date();
   }
 
-  // ─── Query ────────────────────────────────────────────────────────────────
+  // --- Query ----------------------------------------------------------------
 
   /**
    * Return stats for a single session, or null if not found.

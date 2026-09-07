@@ -26,7 +26,7 @@ function findRaw(filter, data, idIndex, fieldIndex, isVisible, { includeDeleted 
     }
     return null;
   }
-  // Only literal string IDs use the direct lookup; operators use the matcher.
+  // Only literal string IDs use the direct lookup. Operators use the matcher.
   if (typeof filter._id === "string") {
     const item = idIndex.get(filter._id) || null;
     if (!item) return null;

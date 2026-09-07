@@ -1,6 +1,6 @@
 /**
  * AI Chat with Persistent Memory
- * ─────────────────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------------------
  * Demonstrates Skalex's episodic agent memory API. Exchanges from a
  * simulated multi-turn conversation are stored with semantic embeddings,
  * then recalled and formatted into an LLM-ready context string for the
@@ -50,7 +50,7 @@ await db.connect();
 
 const memory = db.useMemory(SESSION_ID);
 
-// ── Step 1: Store a simulated conversation ────────────────────────────────────
+// -- Step 1: Store a simulated conversation ------------------------------------
 
 const exchanges = [
   "User: My name is Alice and I'm building an AI customer support agent.",
@@ -71,7 +71,7 @@ for (const text of exchanges) {
   console.log(`  stored: ${text.slice(0, 72)}...`);
 }
 
-// ── Step 2: Recall relevant memories for a follow-up question ─────────────────
+// -- Step 2: Recall relevant memories for a follow-up question -----------------
 
 const question = "What products does the user sell and what does their agent need?";
 console.log(`\n─── Recalling context for: "${question}" ───\n`);
@@ -82,7 +82,7 @@ for (let i = 0; i < recalled.length; i++) {
   console.log(`  [${scores[i].toFixed(3)}] ${recalled[i].text}`);
 }
 
-// ── Step 3: Build a token-budgeted context string ─────────────────────────────
+// -- Step 3: Build a token-budgeted context string -----------------------------
 
 const ctx = await memory.context({ tokens: 300 });
 
@@ -98,14 +98,14 @@ console.log("         { role: 'user',   content: userMessage },");
 console.log("       ]");
 console.log("     })");
 
-// ── Step 4: Inspect token usage and memory size ───────────────────────────────
+// -- Step 4: Inspect token usage and memory size -------------------------------
 
 const usage = await memory.tokenCount();
 console.log(`\n─── Memory stats ───\n`);
 console.log(`  entries : ${usage.count}`);
 console.log(`  tokens  : ~${usage.tokens}`);
 
-// ── Step 5: Chronological history ─────────────────────────────────────────────
+// -- Step 5: Chronological history ---------------------------------------------
 
 const recent = await memory.history({ limit: 3 });
 console.log(`\n─── Last 3 entries (chronological) ───\n`);
@@ -113,7 +113,7 @@ for (const entry of recent) {
   console.log(`  [${entry.createdAt.toISOString()}] ${entry.text.slice(0, 70)}`);
 }
 
-// ── Step 6: Compress if memory exceeds threshold ──────────────────────────────
+// -- Step 6: Compress if memory exceeds threshold ------------------------------
 // compress() only acts when tokenCount() exceeds the threshold.
 // Here we set a low threshold to demonstrate it on the small demo dataset.
 

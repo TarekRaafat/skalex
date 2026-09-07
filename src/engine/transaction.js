@@ -53,7 +53,7 @@ function _createHandle(target, methods, assertAlive, kind, name) {
       { handle: kind, property: String(property) }
     );
   };
-  // Resolve only used methods; each captured function still checks lifetime.
+  // Resolve only used methods. Each captured function still checks lifetime.
   const resolve = property => {
     if (Object.hasOwn(surface, property)) return surface[property];
     if (!methods.includes(property)) return undefined;
@@ -236,7 +236,7 @@ class TransactionManager {
         ctx.committed = true;
 
         // Flush deferred side effects after successful commit. All effects
-        // run regardless of individual failures; the configured error
+        // run regardless of individual failures. The configured error
         // strategy decides what happens to captured errors afterwards.
         for (const effect of ctx.deferredEffects) {
           try {
@@ -285,7 +285,7 @@ class TransactionManager {
       }
 
       // Post-commit: handle deferred effect errors according to strategy.
-      // Runs only if we reached commit; rollback paths skip this.
+      // Runs only if we reached commit. Rollback paths skip this.
       if (deferredErrors.length > 0) {
         // Precedence: per-transaction option → Skalex instance default → "warn".
         const strategy = deferredEffectErrors ?? db._deferredEffectErrors ?? "warn";
@@ -398,7 +398,7 @@ class TransactionManager {
 
   /**
    * Queue a side effect for after-commit execution.
-   * Returns false without an owner; the caller then executes immediately.
+   * Returns false without an owner. The caller then executes immediately.
    * @param {Function} effect - async () => void
    * @param {object} [ctx] - Explicit transaction owner.
    * @returns {boolean} true if deferred, false if the caller should execute

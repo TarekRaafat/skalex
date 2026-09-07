@@ -154,7 +154,7 @@ describe("Compound Indexes", () => {
   });
 });
 
-// ─── Compound index non-scalar rejection ──────────────────────────────────
+// --- Compound index non-scalar rejection ----------------------------------
 
 describe("compound index non-scalar rejection", () => {
   test("rejects object value in compound-indexed field", () => {

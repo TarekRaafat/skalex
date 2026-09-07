@@ -6,7 +6,7 @@ import SessionStats from "../../src/features/session-stats.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
-// ─── Pure SessionStats ────────────────────────────────────────────────────────
+// --- Pure SessionStats --------------------------------------------------------
 
 describe("SessionStats  -  basic tracking", () => {
   let stats;
@@ -102,7 +102,7 @@ describe("SessionStats  -  clear()", () => {
   });
 });
 
-// ─── db.sessionStats() integration ───────────────────────────────────────────
+// --- db.sessionStats() integration -------------------------------------------
 
 function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });

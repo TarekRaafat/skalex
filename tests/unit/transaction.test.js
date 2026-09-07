@@ -12,7 +12,7 @@ function makeDb(opts = {}) {
   return new Skalex({ adapter: new MemoryAdapter(), ...opts });
 }
 
-// ─── aborted-id pruning ─────────────────────────────────────────────────────
+// --- aborted-id pruning -----------------------------------------------------
 
 describe("TransactionManager  -  _abortedIds pruning", () => {
   test("running many timed-out transactions does not grow _abortedIds past the window", async () => {
@@ -58,7 +58,7 @@ describe("TransactionManager  -  _abortedIds pruning", () => {
   });
 });
 
-// ─── timeout option ─────────────────────────────────────────────────────────
+// --- timeout option ---------------------------------------------------------
 
 describe("TransactionManager  -  timeout option", () => {
   test("transaction honours { timeout } option", async () => {
@@ -76,7 +76,7 @@ describe("TransactionManager  -  timeout option", () => {
   });
 });
 
-// ─── nested transaction detection ──────────────────────────────────────────
+// --- nested transaction detection ------------------------------------------
 
 describe("TransactionManager  -  nested transaction detection", () => {
   test("throws TransactionError when called inside another transaction", async () => {
@@ -92,7 +92,7 @@ describe("TransactionManager  -  nested transaction detection", () => {
   });
 });
 
-// ─── deferred-effect error strategy ────────────────────────────────────────
+// --- deferred-effect error strategy ----------------------------------------
 
 describe("TransactionManager  -  deferredEffectErrors strategy", () => {
   test("\"warn\" logs and completes the transaction", async () => {
@@ -228,7 +228,7 @@ describe("TransactionManager  -  deferredEffectErrors strategy", () => {
   });
 });
 
-// ─── isCollectionLocked ───────────────────────────────────────────────────
+// --- isCollectionLocked ---------------------------------------------------
 
 describe("TransactionManager  -  isCollectionLocked", () => {
   test("returns false when no tx active", async () => {
@@ -250,7 +250,7 @@ describe("TransactionManager  -  isCollectionLocked", () => {
   });
 });
 
-// ─── stats cache cleared on rollback ─────────────────────────────────────
+// --- stats cache cleared on rollback -------------------------------------
 
 describe("TransactionManager  -  stats cache cleared on rollback", () => {
   test("stats cache is cleared for rolled-back collections", async () => {

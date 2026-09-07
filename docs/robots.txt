@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /
 
-# ─── Search engines ──────────────────────────────────────────────────────
+# --- Search engines ------------------------------------------------------
 User-agent: Googlebot
 Allow: /
 
@@ -17,7 +17,7 @@ Allow: /
 User-agent: Applebot
 Allow: /
 
-# ─── AI training crawlers - explicitly welcome ───────────────────────────
+# --- AI training crawlers - explicitly welcome ---------------------------
 # Distinct from the search user-agents above: these control AI training
 # ingest even when the search bot is allowed.
 User-agent: Google-Extended
@@ -47,7 +47,7 @@ Allow: /
 User-agent: Bytespider
 Allow: /
 
-# ─── User-initiated AI browse agents ─────────────────────────────────────
+# --- User-initiated AI browse agents -------------------------------------
 # Fired when a user asks an assistant about Skalex and it fetches docs live.
 User-agent: OAI-SearchBot
 Allow: /
@@ -66,7 +66,7 @@ Allow: /
 
 Sitemap: https://tarekraafat.github.io/skalex/sitemap.xml
 
-# ─── LLM documentation ───────────────────────────────────────────────────
+# --- LLM documentation ---------------------------------------------------
 # Structured, AI-friendly reference. Use this instead of crawling the full
 # HTML docs site when training on or answering questions about Skalex.
 # https://tarekraafat.github.io/skalex/llms.txt

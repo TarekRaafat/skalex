@@ -10,7 +10,7 @@ function makeDb() {
   return new Skalex({ adapter });
 }
 
-// ─── log / query ─────────────────────────────────────────────────────────────
+// --- log / query -------------------------------------------------------------
 
 describe("ChangeLog  -  log / query", () => {
   test("log() records an insert entry", async () => {
@@ -101,7 +101,7 @@ describe("ChangeLog  -  log / query", () => {
   });
 });
 
-// ─── Collection changelog option ─────────────────────────────────────────────
+// --- Collection changelog option ---------------------------------------------
 
 describe("Collection changelog: true option", () => {
   test("schema is preserved after disconnect + reconnect", async () => {
@@ -198,7 +198,7 @@ describe("Collection changelog: true option", () => {
   });
 });
 
-// ─── restore ─────────────────────────────────────────────────────────────────
+// --- restore -----------------------------------------------------------------
 
 describe("ChangeLog  -  restore", () => {
   // Helper: backdate the last N changelog entries in _data to a given Date.

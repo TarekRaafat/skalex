@@ -190,7 +190,7 @@ class Collection {
   /** @returns {number|null} Maximum number of documents (capped collection). */
   get _maxDocs() { return this._store.maxDocs || null; }
 
-  // ─── Insert ──────────────────────────────────────────────────────────────
+  // --- Insert --------------------------------------------------------------
 
   /**
    * Insert a single document.
@@ -312,7 +312,7 @@ class Collection {
     });
   }
 
-  // ─── Update ──────────────────────────────────────────────────────────────
+  // --- Update --------------------------------------------------------------
 
   /**
    * Update the first matching document.
@@ -406,7 +406,7 @@ class Collection {
    * Apply an update descriptor to a document in place.
    * Supports $inc, $push, and direct assignment. Increments _version when versioning is on.
    * Skips _id, createdAt, and updatedAt - these are system-managed. A user-provided
-   * `updatedAt` value is silently discarded; the field is always set to the current
+   * `updatedAt` value is silently discarded. The field is always set to the current
    * time on every successful update. Does NOT update indexes - the caller is
    * responsible for index maintenance (see _commitUpdatedDoc).
    * @param {object} item
@@ -559,7 +559,7 @@ class Collection {
     }
   }
 
-  // ─── Upsert ──────────────────────────────────────────────────────────────
+  // --- Upsert --------------------------------------------------------------
 
   /**
    * Update the first matching document, or insert if none exists.
@@ -616,7 +616,7 @@ class Collection {
     // Route the whole batch through a single pipeline pass so `ensureConnected`,
     // lock check, `_txSnapshotIfNeeded`, `markDirty`, `_saveIfNeeded`, and the
     // session-stats increment all run once instead of once per document.
-    // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure;
+    // Per-doc plugin hooks (beforeInsert/beforeUpdate inside the closure.
     // afterInsert/afterUpdate outside) preserve the contract consumers rely on.
     let failure;
     let finalizing = false;
@@ -640,7 +640,7 @@ class Collection {
 
               if (existing) {
                 // Update path. Shares the prepare preamble and commit primitive with
-                // _updateCore; the per-doc hook and validating index commit
+                // _updateCore. The per-doc hook and validating index commit
                 // preserve upsertMany's interleaved semantics.
                 await this._ctx.plugins.run(Hooks.BEFORE_UPDATE, {
                   collection: this.name,
@@ -656,7 +656,7 @@ class Collection {
                 prevDocs.push(prev);
                 ops.push(Ops.UPDATE);
               } else {
-                // Insert path. Shares the prepare preamble with _insertCore; the
+                // Insert path. Shares the prepare preamble with _insertCore. The
                 // validating index insertion and push stay here so
                 // upsertMany keeps committing each insert as it interleaves them
                 // with updates (rather than the batch-at-once path _insertCore uses).
@@ -735,7 +735,7 @@ class Collection {
     return result.docs.map(stripVector);
   }
 
-  // ─── Soft-delete restore ──────────────────────────────────────────────────
+  // --- Soft-delete restore --------------------------------------------------
 
   /**
    * Restore a soft-deleted document (undo a soft delete).
@@ -772,7 +772,7 @@ class Collection {
     return stripVector(docs[0]);
   }
 
-  // ─── Watch ───────────────────────────────────────────────────────────────
+  // --- Watch ---------------------------------------------------------------
 
   /**
    * Watch for mutation events on this collection.
@@ -848,7 +848,7 @@ class Collection {
     };
   }
 
-  // ─── Aggregation ─────────────────────────────────────────────────────────
+  // --- Aggregation ---------------------------------------------------------
 
   /**
    * Count documents matching a filter.
@@ -900,7 +900,7 @@ class Collection {
     return clone ? this._cloneReadResult(result) : result;
   }
 
-  // ─── Find ─────────────────────────────────────────────────────────────────
+  // --- Find -----------------------------------------------------------------
 
   /**
    * Find the first matching document (returns a shallow copy with projection).
@@ -1005,7 +1005,7 @@ class Collection {
     return extra ? { docs: results, ...extra } : { docs: results };
   }
 
-  // ─── Vector Search ───────────────────────────────────────────────────────
+  // --- Vector Search -------------------------------------------------------
 
   /**
    * Semantic similarity search  -  embed a query string and rank all documents
@@ -1055,7 +1055,7 @@ class Collection {
     return clone ? this._cloneReadResult(result) : result;
   }
 
-  // ─── Delete ──────────────────────────────────────────────────────────────
+  // --- Delete --------------------------------------------------------------
 
   /**
    * Delete the first matching document.
@@ -1159,7 +1159,7 @@ class Collection {
     });
   }
 
-  // ─── Export ──────────────────────────────────────────────────────────────
+  // --- Export --------------------------------------------------------------
 
   /**
    * Export filtered data to a file via the storage adapter.
@@ -1170,7 +1170,7 @@ class Collection {
     return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
-  // ─── Private helpers ─────────────────────────────────────────────────────
+  // --- Private helpers -----------------------------------------------------
 
   /**
    * Lazy snapshot for transactions: snapshot this collection on first write.
@@ -1215,7 +1215,7 @@ class Collection {
       case "warn":
         // `warn` mode admits invalid docs silently - log the id and errors so
         // schema drift is auditable. Callers should prefer `throw` in strict
-        // pipelines; `warn` does NOT prevent invalid data from being persisted.
+        // pipelines. `warn` does NOT prevent invalid data from being persisted.
         this._ctx.logger(
           `[${this.name}] Validation warning for doc "${item._id ?? "(new)"}": ${errors.join("; ")}`,
           "warn"
@@ -1283,12 +1283,12 @@ class Collection {
     return findIndex(filter, this._ds.data);
   }
 
-  // ─── Rehydrate (changelog restore) ───────────────────────────────────────
+  // --- Rehydrate (changelog restore) ---------------------------------------
 
   /**
    * Restore archived documents through the mutation pipeline. Preserve system
    * fields without schema coercion, embedding, hooks or capacity enforcement.
-   * Index candidates are checked before mutation; dirty tracking, transaction
+   * Index candidates are checked before mutation. Dirty tracking, transaction
    * locks and saving remain active. Emit deletes then inserts after saving.
    * @param {object[]} docs - Archived final-state documents.
    * @returns {Promise<void>}
@@ -1326,7 +1326,7 @@ class Collection {
 
   /**
    * Restore one archived document through the same guarded save lifecycle.
-   * Preserve archived fields exactly; emit the observed delete/update/insert
+   * Preserve archived fields exactly. Emit the observed delete/update/insert
    * transition after saving. Do not record replay in the changelog.
    * @param {string} id - Document ID.
    * @param {object|null} archived - Historical document, or null for deletion.
@@ -1381,7 +1381,7 @@ class Collection {
     }
   }
 
-  /** Commit prepared inserts; retain only potential FIFO victims on the success path. */
+  /** Commit prepared inserts. Retain only potential FIFO victims on the success path. */
   _commitInsertedDocs(docs, batch = false, enforceCap = false) {
     const count = this._ds.count();
     const evictCount = enforceCap && this._maxDocs ? Math.max(0, count + docs.length - this._maxDocs) : 0;
@@ -1414,7 +1414,7 @@ class Collection {
     throw error;
   }
 
-  // ─── Private index helpers ────────────────────────────────────────────────
+  // --- Private index helpers ------------------------------------------------
 
   _addToIndex(doc) {
     if (this._fieldIndex) this._fieldIndex.add(doc);
@@ -1428,7 +1428,7 @@ class Collection {
     if (this._fieldIndex) this._fieldIndex.update(oldDoc, doc);
   }
 
-  // ─── Private document construction ───────────────────────────────────────
+  // --- Private document construction ---------------------------------------
 
   /**
    * Build a new document from a raw item: assign _id/timestamps, apply TTL,
@@ -1457,7 +1457,7 @@ class Collection {
     }
   }
 
-  // ─── Private projection / population helpers ──────────────────────────────
+  // --- Private projection / population helpers ------------------------------
 
   /**
    * Return a shallow copy of doc with optional field projection.

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { cosineSimilarity, stripVector } from "../../src/engine/vector.js";
 
-// ─── cosineSimilarity ────────────────────────────────────────────────────────
+// --- cosineSimilarity --------------------------------------------------------
 
 describe("cosineSimilarity", () => {
   test("identical vectors → 1.0", () => {
@@ -50,7 +50,7 @@ describe("cosineSimilarity", () => {
   });
 });
 
-// ─── stripVector ─────────────────────────────────────────────────────────────
+// --- stripVector -------------------------------------------------------------
 
 describe("stripVector", () => {
   test("removes _vector field", () => {

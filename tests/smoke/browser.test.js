@@ -24,7 +24,7 @@ import { fileURLToPath } from "url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 
-// ─── Static file server ───────────────────────────────────────────────────────
+// --- Static file server -------------------------------------------------------
 
 const MIME = {
   ".html": "text/html",
@@ -54,7 +54,7 @@ function startServer() {
   });
 }
 
-// ─── Page runner ─────────────────────────────────────────────────────────────
+// --- Page runner -------------------------------------------------------------
 
 async function runPage(page, port, path, label) {
   await page.goto(`http://127.0.0.1:${port}/${path}`);
@@ -86,7 +86,7 @@ async function runPage(page, port, path, label) {
   return result;
 }
 
-// ─── Runner ───────────────────────────────────────────────────────────────────
+// --- Runner -------------------------------------------------------------------
 
 async function run() {
   const server  = await startServer();
@@ -106,7 +106,7 @@ async function run() {
   let totalFailed = 0;
 
   try {
-    // ── ESM browser build (skalex.browser.js) ──────────────────────────────
+    // -- ESM browser build (skalex.browser.js) ------------------------------
     const page1 = await browser.newPage();
     attachListeners(page1);
     const r1 = await runPage(page1, port, "tests/smoke/browser.html", "browser ESM build (skalex.browser.js)");
@@ -114,7 +114,7 @@ async function run() {
     await page1.close();
     totalFailed += r1.failed;
 
-    // ── UMD / CDN build (skalex.umd.min.js) ────────────────────────────────
+    // -- UMD / CDN build (skalex.umd.min.js) --------------------------------
     const page2 = await browser.newPage();
     attachListeners(page2);
     const r2 = await runPage(page2, port, "tests/smoke/browser-umd.html", "browser UMD build (skalex.umd.min.js)  -  CDN path");

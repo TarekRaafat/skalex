@@ -31,7 +31,7 @@ const D1_MAX_BATCH_SIZE = 1000;
  * @param {string}     [opts.table]     - Table name. Default: "skalex_store". Falls back to SKALEX_TABLE env var.
  * @param {number}     [opts.batchSize] - Max statements per `d1.batch()` call. Default: 1000,
  *                                        matching Cloudflare D1's documented per-batch limit.
- *                                        Each chunk is an atomic batch; failures in a later
+ *                                        Each chunk is an atomic batch. Failures in a later
  *                                        chunk do not roll back earlier chunks. Override with
  *                                        a smaller value only if you need finer-grained
  *                                        progress tracking.

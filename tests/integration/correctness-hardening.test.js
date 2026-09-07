@@ -28,7 +28,7 @@ function makeDb(opts = {}) {
   return { db: new Skalex({ adapter, ...opts }), adapter };
 }
 
-// ─── #14  ifNotExists stripped copy ────────────────────────────────────────
+// --- #14  ifNotExists stripped copy ----------------------------------------
 
 describe("ifNotExists returns stripped copy", () => {
   test("returned doc excludes _vector and is not a mutable internal ref", async () => {
@@ -48,7 +48,7 @@ describe("ifNotExists returns stripped copy", () => {
   });
 });
 
-// ─── #15  Aggregation ensureConnected ──────────────────────────────────────
+// --- #15  Aggregation ensureConnected --------------------------------------
 
 describe("aggregation methods trigger auto-connect", () => {
   test("count() works before explicit connect()", async () => {
@@ -67,7 +67,7 @@ describe("aggregation methods trigger auto-connect", () => {
   });
 });
 
-// ─── #16  Dot-notation index rejection ─────────────────────────────────────
+// --- #16  Dot-notation index rejection -------------------------------------
 
 describe("dot-notation index field rejection", () => {
   test("single-field index with dot-notation throws ValidationError", () => {
@@ -90,7 +90,7 @@ describe("dot-notation index field rejection", () => {
   });
 });
 
-// ─── #17  connect() idempotent ─────────────────────────────────────────────
+// --- #17  connect() idempotent ---------------------------------------------
 
 describe("connect() idempotent under concurrent calls", () => {
   test("two concurrent connect() calls resolve without error", async () => {
@@ -103,7 +103,7 @@ describe("connect() idempotent under concurrent calls", () => {
   });
 });
 
-// ─── #20  _vector excluded from select ─────────────────────────────────────
+// --- #20  _vector excluded from select -------------------------------------
 
 describe("_vector excluded from explicit select", () => {
   test("select including _vector does not return it", async () => {
@@ -121,7 +121,7 @@ describe("_vector excluded from explicit select", () => {
   });
 });
 
-// ─── #21  Recursive dangerous key stripping ────────────────────────────────
+// --- #21  Recursive dangerous key stripping --------------------------------
 
 describe("recursive dangerous key stripping in applyUpdate", () => {
   test("nested dangerous keys are stripped from update values", async () => {
@@ -145,7 +145,7 @@ describe("recursive dangerous key stripping in applyUpdate", () => {
   });
 });
 
-// ─── #22  Named exports ────────────────────────────────────────────────────
+// --- #22  Named exports ----------------------------------------------------
 
 describe("error types available as named exports", () => {
   test("ValidationError is importable from skalex", () => {
@@ -154,7 +154,7 @@ describe("error types available as named exports", () => {
   });
 });
 
-// ─── #25  stripVector short-circuit ────────────────────────────────────────
+// --- #25  stripVector short-circuit ----------------------------------------
 
 describe("stripVector optimization", () => {
   test("doc without _vector returns a copy (defensive)", () => {
@@ -172,7 +172,7 @@ describe("stripVector optimization", () => {
   });
 });
 
-// ─── #26  ID entropy ──────────────────────────────────────────────────────
+// --- #26  ID entropy ------------------------------------------------------
 
 describe("generateUniqueId full entropy", () => {
   test("ID length is at least 27 characters (no truncation)", () => {
@@ -186,7 +186,7 @@ describe("generateUniqueId full entropy", () => {
   });
 });
 
-// ─── #29  Corrupt file default behavior ────────────────────────────────────
+// --- #29  Corrupt file default behavior ------------------------------------
 
 describe("corrupt collection file handling", () => {
   test("throws PersistenceError by default", async () => {
@@ -217,7 +217,7 @@ describe("corrupt collection file handling", () => {
   });
 });
 
-// ─── #30  System fields enforcement on insert ──────────────────────────────
+// --- #30  System fields enforcement on insert ------------------------------
 
 describe("system fields enforcement on insert", () => {
   test("createdAt and updatedAt cannot be overwritten by user", async () => {
@@ -244,7 +244,7 @@ describe("system fields enforcement on insert", () => {
   });
 });
 
-// ─── #31  dump() deep copy ─────────────────────────────────────────────────
+// --- #31  dump() deep copy -------------------------------------------------
 
 describe("dump() returns deep copies", () => {
   test("mutating dump output does not corrupt internal state", async () => {

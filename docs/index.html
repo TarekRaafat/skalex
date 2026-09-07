@@ -300,7 +300,7 @@
         "name": "When should I not use Skalex?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Skalex is not the right tool when: multiple processes or servers need to share the same data concurrently; your dataset exceeds available RAM (all data is loaded into the process heap on connect(), regardless of which storage adapter you use); you need complex relational joins or full SQL query power; or you need high write concurrency across many clients. For those scenarios, use PostgreSQL, MongoDB, or SQLite directly."
+          "text": "Skalex is not the right tool when: multiple processes or servers need to share the same data concurrently. Your dataset exceeds available RAM (all data is loaded into the process heap on connect(), regardless of which storage adapter you use). You need complex relational joins or full SQL query power. Or you need high write concurrency across many clients. For those scenarios, use PostgreSQL, MongoDB, or SQLite directly."
         }
       },
       {
@@ -356,7 +356,7 @@
         "name": "What happens to my data if the process crashes?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "FsAdapter writes a temporary file before renaming it into place. This avoids exposing a partially written replacement file, but does not provide multi-file atomicity or fsync-based power-loss durability. Interrupted transaction batches can leave mixed data; an incomplete-flush marker reports that possibility on reconnect without repairing it. autoSave or save:true requests persistence, not a stronger durability guarantee."
+          "text": "FsAdapter writes a temporary file before renaming it into place. This avoids exposing a partially written replacement file, but does not provide multi-file atomicity or fsync-based power-loss durability. Interrupted transaction batches can leave mixed data. An incomplete-flush marker reports that possibility on reconnect without repairing it. autoSave or save:true requests persistence, not a stronger durability guarantee."
         }
       },
       {
@@ -380,7 +380,7 @@
         "name": "Isn't Skalex just a Map with a JSON file underneath?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "At the most reductive level, yes  -  and so is every database at some layer of abstraction. What Skalex provides on top of that is what takes weeks to assemble correctly on your own: a full embedding pipeline with OpenAI and Ollama adapters; cosine similarity vector search with hybrid filter support; semantic agent memory with compression and token-aware context generation; natural language query translation via any LLM; a complete MCP server with 8 tools, stdio and HTTP transports, and per-collection access control; secondary indexes with O(1) lookups; per-file replacement with adapter-dependent durability; TTL sweeps; versioned migrations; in-memory snapshot transactions with automatic rollback; soft deletes; an append-only changelog with point-in-time restore; and a cross-runtime isomorphic build that runs identically in Node.js, Bun, Deno, browsers, and edge runtimes without polyfills. You could build all of that yourself. Skalex is the choice when you would rather ship."
+          "text": "At the most reductive level, yes  -  and so is every database at some layer of abstraction. What Skalex provides on top of that is what takes weeks to assemble correctly on your own: a full embedding pipeline with OpenAI and Ollama adapters. Cosine similarity vector search with hybrid filter support. Semantic agent memory with compression and token-aware context generation. Natural language query translation via any LLM. A complete MCP server with 8 tools, stdio and HTTP transports, and per-collection access control. Secondary indexes with O(1) lookups. Per-file replacement with adapter-dependent durability. TTL sweeps. Versioned migrations. In-memory snapshot transactions with automatic rollback. Soft deletes. An append-only changelog with point-in-time restore. And a cross-runtime isomorphic build that runs identically in Node.js, Bun, Deno, browsers, and edge runtimes without polyfills. You could build all of that yourself. Skalex is the choice when you would rather ship."
         }
       },
       {
@@ -388,7 +388,7 @@
         "name": "How do I upgrade from Skalex v3 to v4?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "v4 is a ground-up rewrite with several breaking changes: Node.js >=18 is now required; sort direction changed to MongoDB-standard (1 ascending, -1 descending); db.mcp() defaults to read-only access; db.namespace() sanitises IDs; MCP HTTP CORS is opt-in; and CSV import via db.import() has been removed. Full step-by-step migration instructions are in MIGRATION.md in the GitHub repository."
+          "text": "v4 is a ground-up rewrite with several breaking changes: Node.js >=18 is now required. Sort direction changed to MongoDB-standard (1 ascending, -1 descending). Db.mcp() defaults to read-only access. Db.namespace() sanitises IDs. MCP HTTP CORS is opt-in. And CSV import via db.import() has been removed. Full step-by-step migration instructions are in MIGRATION.md in the GitHub repository."
         }
       },
       {

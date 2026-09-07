@@ -3,7 +3,7 @@
 //
 // Reads size-budget.json, gzips each published artifact, and fails (exit 1)
 // if any artifact exceeds its budget. This is the automated guardrail behind
-// the "minimal footprint" hard rule in CLAUDE.md: the published bundle does
+// the "minimal footprint" hard rule for this project: the published bundle does
 // not grow past its budget without a deliberate, reviewed budget bump.
 //
 // Usage:

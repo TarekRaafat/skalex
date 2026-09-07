@@ -21,7 +21,7 @@ function makeDb(opts = {}) {
   return { db: new Skalex({ adapter, ...opts }), adapter };
 }
 
-// ─── #11  Index update atomicity ───────────────────────────────────────────
+// --- #11  Index update atomicity -------------------------------------------
 
 describe("FieldIndex.update() atomicity", () => {
   test("failed re-index restores old document in index", async () => {
@@ -75,7 +75,7 @@ describe("FieldIndex.update() atomicity", () => {
   });
 });
 
-// ─── #8  saveAtomic includes _meta in batch ───────────────────────────────
+// --- #8  saveAtomic includes _meta in batch -------------------------------
 
 describe("saveAtomic memory/disk coherence", () => {
   test("_meta is included in the writeAll batch", async () => {
@@ -175,7 +175,7 @@ describe("saveAtomic memory/disk coherence", () => {
   });
 });
 
-// ─── #9  save() best-effort semantics ─────────────────────────────────────
+// --- #9  save() best-effort semantics -------------------------------------
 
 describe("save() best-effort semantics", () => {
   test("partial failure persists successful collections", async () => {
@@ -206,7 +206,7 @@ describe("save() best-effort semantics", () => {
   });
 });
 
-// ─── #10  Save mutex ──────────────────────────────────────────────────────
+// --- #10  Save mutex ------------------------------------------------------
 
 describe("save mutex serializes saveAtomic calls", () => {
   test("concurrent transactions serialize their saveAtomic commits", async () => {
@@ -346,7 +346,7 @@ describe("save mutex serializes saveAtomic calls", () => {
   });
 });
 
-// ─── _meta managed via PersistenceManager ─────────────────────────────────
+// --- _meta managed via PersistenceManager ---------------------------------
 
 describe("PersistenceManager  -  _meta ownership", () => {
   test("getMeta / updateMeta round-trip", async () => {
@@ -374,7 +374,7 @@ describe("PersistenceManager  -  _meta ownership", () => {
   });
 });
 
-// ─── Orphan cleanup lives on the adapter ──────────────────────────────────
+// --- Orphan cleanup lives on the adapter ----------------------------------
 
 describe("PersistenceManager  -  orphan cleanup delegation", () => {
   test("delegates to adapter.cleanOrphans on load", async () => {
@@ -386,7 +386,7 @@ describe("PersistenceManager  -  orphan cleanup delegation", () => {
   });
 });
 
-// ─── FsAdapter rename failure + orphan recovery ───────────────────────────
+// --- FsAdapter rename failure + orphan recovery ---------------------------
 
 describe("FsAdapter  -  rename failure + orphan recovery", () => {
   let dir;
@@ -421,7 +421,7 @@ describe("FsAdapter  -  rename failure + orphan recovery", () => {
       nodeFs.promises.rename = originalRename;
     }
 
-    // Staging wrote temp files; since rename failed, writeAll's catch block
+    // Staging wrote temp files. Since rename failed, writeAll's catch block
     // best-effort-unlinked them. Depending on ordering, some may remain.
     // In any case, cleanOrphans must leave zero `.tmp.` files.
     await adapter.cleanOrphans();

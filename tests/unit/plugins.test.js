@@ -6,7 +6,7 @@ import PluginEngine from "../../src/features/plugins.js";
 import Skalex from "../../src/index.js";
 import MemoryAdapter from "../helpers/MemoryAdapter.js";
 
-// ─── PluginEngine unit tests ──────────────────────────────────────────────────
+// --- PluginEngine unit tests --------------------------------------------------
 
 describe("PluginEngine  -  register()", () => {
   test("throws if plugin is not an object", () => {
@@ -83,7 +83,7 @@ describe("PluginEngine  -  run()", () => {
   });
 });
 
-// ─── db.use() integration ────────────────────────────────────────────────────
+// --- db.use() integration ----------------------------------------------------
 
 function makeDb() {
   return new Skalex({ adapter: new MemoryAdapter() });

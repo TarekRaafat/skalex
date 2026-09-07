@@ -15,7 +15,7 @@ function makeEncrypted(key = KEY_HEX) {
   return { inner, enc };
 }
 
-// ─── Construction ────────────────────────────────────────────────────────────
+// --- Construction ------------------------------------------------------------
 
 describe("EncryptedAdapter  -  construction", () => {
   test("accepts a 64-char hex key", () => {
@@ -38,7 +38,7 @@ describe("EncryptedAdapter  -  construction", () => {
   });
 });
 
-// ─── Write / Read round-trip ──────────────────────────────────────────────────
+// --- Write / Read round-trip --------------------------------------------------
 
 describe("EncryptedAdapter  -  write / read", () => {
   test("read returns null for missing file", async () => {
@@ -105,7 +105,7 @@ describe("EncryptedAdapter  -  write / read", () => {
   });
 });
 
-// ─── delete / list ────────────────────────────────────────────────────────────
+// --- delete / list ------------------------------------------------------------
 
 describe("EncryptedAdapter  -  delete / list", () => {
   test("delete() removes file from inner adapter", async () => {
@@ -125,7 +125,7 @@ describe("EncryptedAdapter  -  delete / list", () => {
   });
 });
 
-// ─── Integration: Skalex with encrypt config ─────────────────────────────────
+// --- Integration: Skalex with encrypt config ---------------------------------
 
 describe("Skalex encrypt config", () => {
   test("db data is readable after connect/disconnect cycle", async () => {
