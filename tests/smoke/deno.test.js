@@ -159,6 +159,8 @@ async function run() {
     await missingIndexFields(db, assert);
     const { default: detachedReads } = await import("./detached-reads.js");
     await detachedReads(db, assert);
+    const { default: commitRecovery } = await import("./commit-recovery.js");
+    await commitRecovery(db, assert);
     const { default: memoryCompression } = await import("./memory-compression.js");
     await memoryCompression(Skalex, assert);
   });

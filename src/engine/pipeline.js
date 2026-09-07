@@ -37,6 +37,7 @@ class MutationPipeline {
     const ctx = this._ctx;
 
     await ctx.ensureConnected();
+    if (this._col._store._recoveryError) throw this._col._store._recoveryError;
 
     const txm = ctx.txManager;
     const owner = ctx._transaction;

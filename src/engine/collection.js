@@ -296,9 +296,7 @@ class Collection {
 
         assertTxAlive(); // guard before first in-memory state change
         for (const item of newItems) this._assertInsertIdAvailable(item._id);
-        this._fieldIndex?._addBatch(newItems);
-        this._ds.push(...newItems);
-        const evicted = this._enforceCapAfterInsert();
+        const evicted = this._commitInsertedDocs(newItems, true, true);
         // Emit delete events for FIFO-evicted documents so watch listeners
         // observe their disappearance alongside the corresponding inserts.
         for (const doc of evicted) {
@@ -397,21 +395,7 @@ class Collection {
         }
 
         assertTxAlive(); // guard before first in-memory state change
-        if (oldDocs.length === 1) {
-          this._commitUpdatedDoc(oldDocs[0], nextDocs[0]);
-        } else {
-          // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
-          const targets = new Set(oldDocs);
-          const positions = new Map();
-          for (let i = 0; i < this._ds.data.length; i++) {
-            if (targets.has(this._ds.data[i])) positions.set(this._ds.data[i], i);
-          }
-          for (const doc of oldDocs) this._assertUpdatePosition(doc, positions.get(doc));
-          this._fieldIndex?._replaceBatch(oldDocs, nextDocs);
-          for (let i = 0; i < oldDocs.length; i++) {
-            this._ds.replaceAt(positions.get(oldDocs[i]), nextDocs[i]);
-          }
-        }
+        this._commitUpdatedDocs(oldDocs, nextDocs);
 
         return { docs: nextDocs, prevDocs };
       },
@@ -525,6 +509,31 @@ class Collection {
     return merged;
   }
 
+  /** Commit a prepared update batch with bounded failure recovery. */
+  _commitUpdatedDocs(oldDocs, nextDocs) {
+    if (oldDocs.length === 1) {
+      this._commitUpdatedDoc(oldDocs[0], nextDocs[0]);
+    } else {
+      // Pre-compute positions in one pass to avoid O(n) indexOf per doc.
+      const targets = new Set(oldDocs);
+      const positions = new Map();
+      for (let i = 0; i < this._ds.data.length; i++) {
+        if (targets.has(this._ds.data[i])) positions.set(this._ds.data[i], i);
+      }
+      for (const doc of oldDocs) this._assertUpdatePosition(doc, positions.get(doc));
+      try {
+        this._fieldIndex?._replaceBatch(oldDocs, nextDocs);
+        for (let i = 0; i < oldDocs.length; i++) {
+          this._ds.replaceAt(positions.get(oldDocs[i]), nextDocs[i]);
+        }
+      } catch (error) {
+        const previous = this._ds.data.slice();
+        for (const doc of oldDocs) previous[positions.get(doc)] = doc;
+        this._recoverCommit(error, previous);
+      }
+    }
+  }
+
   /**
    * Replace a live document with a prepared document and update all indexes.
    * @param {object} oldDoc
@@ -533,8 +542,14 @@ class Collection {
   _commitUpdatedDoc(oldDoc, newDoc) {
     const idx = this._ds.indexOf(oldDoc);
     this._assertUpdatePosition(oldDoc, idx);
-    this._updateInIndex(oldDoc, newDoc);
-    this._ds.replaceAt(idx, newDoc);
+    try {
+      this._updateInIndex(oldDoc, newDoc);
+      this._ds.replaceAt(idx, newDoc);
+    } catch (error) {
+      const previous = this._ds.data.slice();
+      previous[idx] = oldDoc;
+      this._recoverCommit(error, previous);
+    }
   }
 
   /** Reject stale targets before any document or index in the batch changes. */
@@ -650,8 +665,7 @@ class Collection {
 
                 assertTxAlive();
                 this._assertInsertIdAvailable(newDoc._id);
-                this._addToIndex(newDoc);
-                this._ds.push(newDoc);
+                this._commitInsertedDocs([newDoc]);
                 inserted = true;
 
                 outDocs.push(newDoc);
@@ -660,6 +674,7 @@ class Collection {
               }
             }
           } catch (error) {
+            if (this._store._recoveryError) throw error;
             // Preserve completed items and finish their normal pipeline lifecycle.
             failure = { error };
           }
@@ -670,7 +685,12 @@ class Collection {
 
           // Apply FIFO capacity enforcement once after all inserts land.
           if (inserted) {
-            const evicted = this._enforceCapAfterInsert();
+            let evicted = [];
+            try { evicted = this._enforceCapAfterInsert(); }
+            catch (error) {
+              if (this._store._recoveryError) throw error;
+              failure ??= { error };
+            }
             for (const doc of evicted) {
               this._ctx.emitEvent(this.name, {
                 op: Ops.DELETE,
@@ -743,10 +763,10 @@ class Collection {
       afterHookPayload: (restored) => ({ collection: this.name, filter, docs: restored }),
       mutate: (assertTxAlive) => {
         assertTxAlive();
-        delete item._deletedAt;
-        item.updatedAt = new Date();
-        this._ds.setInIndex(item._id, item);
-        return { docs: [item] };
+        const next = { ...item, updatedAt: new Date() };
+        delete next._deletedAt;
+        this._commitUpdatedDoc(item, next);
+        return { docs: [next] };
       },
     });
     return stripVector(docs[0]);
@@ -1104,36 +1124,36 @@ class Collection {
         assertTxAlive(); // guard before first in-memory state change
         if (mode === "soft") {
           const now = new Date();
-          for (const item of items) {
-            item._deletedAt = now;
-            item.updatedAt = now;
-            this._ds.setInIndex(item._id, item);
-          }
-          return { docs: items };
+          const next = items.map(item => ({ ...item, _deletedAt: now, updatedAt: now }));
+          this._commitUpdatedDocs(items, next);
+          return { docs: next };
         }
 
         if (mode === "hard") {
           const idx = this._findIndex(filter);
           if (idx === -1) return { docs: [] };
-          const deletedItem = this._ds.spliceAt(idx);
-          this._removeFromIndex(deletedItem);
+          const deletedItem = this._ds.data[idx];
+          this._commitDeletedDoc(deletedItem, idx);
           return { docs: [deletedItem] };
         }
 
         // hardMany
+        const previous = this._ds.data;
         const deletedItems = [];
         const remainingItems = [];
-        for (const item of this._ds) {
-          if (matchesFilter(item, filter)) {
-            deletedItems.push(item);
-            this._removeFromIndex(item);
-          } else {
-            remainingItems.push(item);
+        try {
+          for (const item of this._ds) {
+            if (matchesFilter(item, filter)) {
+              deletedItems.push(item);
+              this._removeFromIndex(item);
+            } else {
+              remainingItems.push(item);
+            }
           }
-        }
-        // replaceAll clears and rebuilds the _id index from remaining docs,
-        // so per-item deleteFromIndex calls are unnecessary.
-        this._ds.replaceAll(remainingItems);
+          // replaceAll clears and rebuilds the _id index from remaining docs,
+          // so per-item deleteFromIndex calls are unnecessary.
+          this._ds.replaceAll(remainingItems);
+        } catch (error) { this._recoverCommit(error, previous); }
         return { docs: deletedItems };
       },
     });
@@ -1212,14 +1232,8 @@ class Collection {
    * Evict oldest documents when the collection exceeds `maxDocs`.
    * FIFO: the earliest-inserted documents are removed first.
    *
-   * Atomicity: candidates are collected first, then removed from all indexes.
-   * Each doc is tracked by removal state so that a mid-batch failure can
-   * restore exactly the indexes that were touched, leaving `_data` and both
-   * indexes internally consistent.
-   *
-   * `_data.splice()` runs only after every index removal succeeds, so a
-   * failure leaves `_data` untouched - callers can rely on "either every
-   * eviction committed or none did".
+   * Keep candidate references for recovery. On a synchronous failure, restore
+   * the pre-eviction array and rebuild indexes before rethrowing.
    *
    * @returns {object[]} The evicted documents (for caller-side event emission).
    */
@@ -1229,34 +1243,17 @@ class Collection {
     const evictCount = this._ds.count() - max;
     const toEvict = this._ds.slice(0, evictCount);
 
-    // Per-doc removal state:
-    //   0 = untouched
-    //   1 = removed from id-index
-    //   2 = removed from id-index AND field-index
-    const states = new Array(toEvict.length).fill(0);
+    const count = this._ds.count();
     try {
-      for (let i = 0; i < toEvict.length; i++) {
-        const doc = toEvict[i];
+      for (const doc of toEvict) {
         this._ds.deleteFromIndex(doc._id);
-        states[i] = 1;
         this._removeFromIndex(doc);
-        states[i] = 2;
       }
       this._ds.spliceRange(0, evictCount);
       return toEvict;
-    } catch (err) {
-      // Restore in reverse order. For each doc, undo exactly the steps that
-      // were committed. This leaves data + both indexes consistent.
-      for (let i = toEvict.length - 1; i >= 0; i--) {
-        const doc = toEvict[i];
-        if (states[i] === 0) continue;
-        if (states[i] === 2) {
-          try { this._addToIndex(doc); } catch { /* best-effort */ }
-        }
-        // states 1 and 2 both require id-index restore
-        this._ds.setInIndex(doc._id, doc);
-      }
-      throw err;
+    } catch (error) {
+      const previous = this._ds.count() < count ? toEvict.concat(this._ds.data) : this._ds.data;
+      this._recoverCommit(error, previous);
     }
   }
 
@@ -1308,8 +1305,10 @@ class Collection {
           this._fieldIndex.assertUniqueBatch(replacement, { replacing: true });
         }
         assertTxAlive();
-        this._ds.replaceAll(replacement);
-        if (this._fieldIndex) this._fieldIndex.buildFromData(replacement);
+        try {
+          this._ds.replaceAll(replacement);
+          this._fieldIndex?.buildFromData(replacement);
+        } catch (error) { this._recoverCommit(error, previous); }
         return {
           docs: replacement,
           emitEvents: () => {
@@ -1346,8 +1345,7 @@ class Collection {
           if (!existing) return { docs: [] };
           const idx = this._ds.indexOf(existing);
           if (idx === -1) return { docs: [] };
-          this._removeFromIndex(existing);
-          this._ds.spliceAt(idx);
+          this._commitDeletedDoc(existing, idx);
           doc = existing;
           op = Ops.DELETE;
         } else {
@@ -1356,8 +1354,7 @@ class Collection {
             this._commitUpdatedDoc(existing, doc);
             op = Ops.UPDATE;
           } else {
-            this._addToIndex(doc);
-            this._ds.push(doc);
+            this._commitInsertedDocs([doc]);
             op = Ops.INSERT;
           }
         }
@@ -1369,6 +1366,52 @@ class Collection {
         };
       },
     });
+  }
+
+  /** Commit a single removal, restoring its original position after failure. */
+  _commitDeletedDoc(doc, idx) {
+    const count = this._ds.count();
+    try {
+      this._ds.spliceAt(idx);
+      this._removeFromIndex(doc);
+    } catch (error) {
+      const previous = this._ds.data.slice();
+      if (previous.length < count) previous.splice(idx, 0, doc);
+      this._recoverCommit(error, previous);
+    }
+  }
+
+  /** Commit prepared inserts; retain only potential FIFO victims on the success path. */
+  _commitInsertedDocs(docs, batch = false, enforceCap = false) {
+    const count = this._ds.count();
+    const evictCount = enforceCap && this._maxDocs ? Math.max(0, count + docs.length - this._maxDocs) : 0;
+    const prefix = evictCount ? this._ds.slice(0, Math.min(count, evictCount)) : null;
+    try {
+      if (batch) this._fieldIndex?._addBatch(docs);
+      else this._addToIndex(docs[0]);
+      this._ds.push(...docs);
+      return enforceCap ? this._enforceCapAfterInsert() : [];
+    } catch (error) {
+      const inserted = new Set(docs);
+      let previous = this._ds.data.filter(doc => !inserted.has(doc));
+      if (prefix?.length && !previous.includes(prefix[0])) previous = prefix.concat(previous);
+      this._recoverCommit(error, previous);
+    }
+  }
+
+  /** Rebuild primary and secondary indexes from restored documents on a failed commit. */
+  _recoverCommit(error, previous) {
+    try {
+      this._ds.replaceAll(previous);
+      this._fieldIndex?.buildFromData(previous);
+    } catch (recoveryError) {
+      const failure = new SkalexError("ERR_SKALEX_MUTATION_RECOVERY", "Mutation recovery failed. Discard this instance and reopen verified storage.", {
+        collection: this.name, mutationError: error, recoveryError,
+      });
+      this._store._recoveryError = failure;
+      throw failure;
+    }
+    throw error;
   }
 
   // ─── Private index helpers ────────────────────────────────────────────────

@@ -890,3 +890,9 @@ Validate Origin and Host before route dispatch, SSE subscription or preflight. E
 ## 27. Read Ownership
 
 Document reads preserve shallow-copy defaults; groupBy retains live document references. Explicit clone: true applies structuredClone to returned data after projection/population and read hooks. Collection owns clone-error translation to ERR_SKALEX_QUERY_CLONE. Memory history/recall forward the option. This does not isolate inputs, mutation returns, hooks or shared-memory buffers, and it does not provide transaction snapshot isolation.
+
+## 28. Commit Recovery
+
+Collection shares synchronous insert/update/delete commit primitives across ordinary writes, upserts, soft-delete/restore and historical replay. Known validation failures remain preflighted. A commit exception reconstructs the pre-commit document array and rebuilds primary and secondary indexes; success paths retain document references and only potential FIFO victims rather than cloning whole collections. Recovery is O(n) in collection size plus index construction, paid on failure.
+
+The pipeline owns subsequent effects. A recovered atomic commit rethrows before dirty/save/hooks/events; upsert batches finalize their completed prefix. If recovery itself fails, the store retains ERR_SKALEX_MUTATION_RECOVERY with both errors. Pipeline entry and persistence serialization reject that state. Reads are not protected; discard the instance and reopen verified storage. This does not provide crash recovery, snapshot isolation or rollback of post-commit effects.

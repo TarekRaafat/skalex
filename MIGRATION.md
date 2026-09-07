@@ -75,6 +75,16 @@ Read defaults remain unchanged. Use `{ clone: true }` with `findOne`, `find`, `s
 
 Default document reads return shallow copies, while groupBy retains live document references. Mutating shared nested values changes in-memory data without running validation, versioning, dirty tracking or transaction checks. Persistence may therefore diverge from memory. Use collection mutation methods to change stored data, or request `clone: true` before editing a read result. Nested input values, mutation results, hooks and event payloads may still share stored data. This option does not provide transaction snapshot isolation. Structured-clone semantics apply: SharedArrayBuffer backing memory remains shared, and custom prototypes/accessor descriptors are not preserved.
 
+### Commit-stage recovery
+
+A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay; it does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
+
+For upsertMany, only the failing item is recovered; completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
+
+If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage; there is no supported reset of this failure state.
+
+Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives; it is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
+
 ### Other reliability changes
 
 

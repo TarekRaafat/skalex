@@ -148,6 +148,7 @@ try {
 
 | Code | Error class | Thrown when | Details |
 |---|---|---|---|
+| `ERR_SKALEX_MUTATION_RECOVERY` | `SkalexError` | A synchronous mutation commit fails and restoring documents/indexes also fails; discard the instance and reopen verified storage | `collection`, `mutationError`, `recoveryError` |
 | `ERR_SKALEX_MUTATION_FINALIZE` | `SkalexError` | An `upsertMany()` item fails, then finalizing earlier completed items also fails | `collection`, `mutationError`, `finalizationError` |
 
 Catch this code to inspect both failures. Earlier writes or effects may already have completed; the error does not imply rollback, and remaining finalization steps may not have run.
@@ -735,7 +736,7 @@ Batch upsert. For each doc in `docs`, matches on `matchKey` and updates if found
 
 An uncaught batch error inside `transaction()` rolls back the enclosing transaction. If the transaction callback catches the error and returns successfully, the completed prefix can commit with its deferred effects. A timed-out transaction continuation cannot finalize rolled-back data.
 
-If a second error interrupts prefix finalization (for example, a save or after-hook failure), the call rejects with `SkalexError`, code `ERR_SKALEX_MUTATION_FINALIZE`. Its `details` contain `collection`, `mutationError`, and `finalizationError`. Earlier changes and effects may already have occurred, and remaining finalization steps may not run. This does not provide recovery from arbitrary mid-commit index failures.
+If a second error interrupts prefix finalization (for example, a save or after-hook failure), the call rejects with `SkalexError`, code `ERR_SKALEX_MUTATION_FINALIZE`. Its `details` contain `collection`, `mutationError`, and `finalizationError`. Earlier changes and effects may already have occurred, and remaining finalization steps may not run. Completed items retain their partial-success contract; see commit-stage recovery below.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -753,6 +754,16 @@ await products.upsertMany(
   { save: true }
 );
 ```
+
+### Commit-stage recovery
+
+A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay; it does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
+
+For upsertMany, only the failing item is recovered; completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
+
+If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage; there is no supported reset of this failure state.
+
+Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives; it is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
 
 ---
 

@@ -34,7 +34,7 @@ Alpha.7 preserves existing shallow document reads and live `groupBy()` reference
 
 This resolves F16 as an opt-in detachment contract, not safe-by-default reads. Mutating shared values can bypass validation, versioning, dirty tracking and transaction checks; callers must use collection mutations for stored changes. Inputs, mutation results, hooks and event payloads retain their existing ownership behavior.
 
-Default detachment and development-time freezing are not part of this change. Freezing requires separate compatibility and performance evaluation. Passing the revised F16 diagnostic does not close F04's remaining commit-stage recovery work or establish release readiness.
+Default detachment and development-time freezing are not part of this change. Freezing requires separate compatibility and performance evaluation. F04 now has bounded synchronous commit-stage recovery, verified with one-shot faults and a separate recovery-failure guard. Neither this guarantee nor the revised F16 diagnostic establishes release readiness or arbitrary failure atomicity.
 
 ## 1.5 Critical-issue lane
 

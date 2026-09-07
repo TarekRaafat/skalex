@@ -327,6 +327,7 @@ class PersistenceManager {
    * @returns {string}
    */
   _serializeCollection(col) {
+    if (col._recoveryError) throw col._recoveryError;
     let data = col.data;
     // Rollback may restore older metadata; never erase an unresolved warning.
     if (col.collectionName === "_meta" && this._pendingFlush) {

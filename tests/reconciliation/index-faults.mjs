@@ -1,5 +1,5 @@
 /**
- * Diagnose the open commit-stage consistency contract using one-shot faults.
+ * Diagnose the bounded commit-stage recovery contract using one-shot faults.
  * Run: bun tests/reconciliation/index-faults.mjs <source-root> <output.json>
  * Exits nonzero when an injected index failure leaves inconsistent live state.
  * Faults are simulated internal exceptions, not evidence of a natural trigger.

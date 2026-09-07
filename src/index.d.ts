@@ -873,6 +873,11 @@ export default Skalex;
  * Every instance carries a stable `code` (e.g. `"ERR_SKALEX_VALIDATION_REQUIRED"`)
  * and a structured `details` object for programmatic consumers.
  */
+/**
+ * ERR_SKALEX_MUTATION_RECOVERY reports failed commit recovery. Details contain
+ * collection, mutationError and recoveryError. Further pipeline writes and
+ * collection serialization reject; discard the instance and reopen verified storage.
+ */
 export declare class SkalexError extends Error {
   constructor(code: string, message: string, details?: Record<string, unknown>);
   readonly code: string;

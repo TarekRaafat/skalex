@@ -188,6 +188,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 Engine errors expose a stable `code` and structured `details`; typed error classes are available as named imports from `skalex`. See the API documentation's Error Types section for the hierarchy.
 
 - `ERR_SKALEX_QUERY_CLONE` (`QueryError`): requested result cloning failed; `details` contains `collection` and `cause`. Select cloneable fields or omit clone for shallow reads. Functions cannot be cloned.
+- `ERR_SKALEX_MUTATION_RECOVERY` (`SkalexError`): commit recovery also failed. Details: `collection`, `mutationError`, `recoveryError`. Further pipeline writes and collection serialization reject; reads may be inconsistent. Discard the instance and reopen verified storage. No supported reset.
 - `ERR_SKALEX_MUTATION_FINALIZE` (`SkalexError`): an `upsertMany()` item failed and a second error interrupted finalization of earlier completed items. `details` contains `collection`, `mutationError`, and `finalizationError`. Earlier writes/effects may already have completed; remaining effects may be incomplete. This is not a rollback guarantee.
 
 ## Document System Fields
@@ -267,3 +268,13 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 - Migration guide: https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md
 - npm: https://www.npmjs.com/package/skalex
 - GitHub: https://github.com/TarekRaafat/skalex
+
+### Commit-stage recovery
+
+A recoverable synchronous failure while committing document or index changes restores the pre-commit documents and rebuilds their indexes before rethrowing the original error. The failed commit does not mark previously clean data dirty, save it, or emit success events or after-hooks. Existing dirty state is preserved. This covers ordinary insert/update/delete batches, soft-delete/restore and historical replay; it does not undo preparation-hook side effects or failures after a successful commit, such as saving or after-hooks.
+
+For upsertMany, only the failing item is recovered; completed earlier items retain their normal partial-success lifecycle. If capacity eviction fails and recovers, completed inserts remain and are finalized before rejection, so the collection can exceed its cap. Review the applied prefix before retrying.
+
+If rebuilding also fails, SkalexError with code ERR_SKALEX_MUTATION_RECOVERY includes collection, mutationError and recoveryError in details. Subsequent pipeline writes and serialization of that collection reject, including saves attempted by disconnect. Reads are not guaranteed consistent. Discard the instance and reopen verified storage; there is no supported reset of this failure state.
+
+Recovery reconstructs indexes on the failure path. It assumes ordinary stored values and functioning recovery primitives; it is not a guarantee against memory exhaustion, process termination, repeated failures, direct/shared-reference mutation or external side effects.
