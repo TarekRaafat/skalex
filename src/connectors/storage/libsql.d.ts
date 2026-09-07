@@ -1,2 +1,2 @@
-import { LibSQLAdapter } from "../../index.js";
+import { LibSQLAdapter } from "../contracts.js";
 export default LibSQLAdapter;

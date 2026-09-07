@@ -10,14 +10,15 @@ Implemented work includes mutation/index recovery, explicit transaction ownershi
 
 Required follow-up:
 
-- [ ] Prevent independent saves from persisting uncommitted transaction data.
-- [ ] Keep ordinary collection handles coherent across reconnect and reload.
-- [ ] Validate collection rename inputs and support prototype-like collection names.
-- [ ] Prevent accidental replacement of existing collection definitions.
-- [ ] Eliminate natural-language query cache collisions.
-- [ ] Keep CSV values aligned with their columns.
-- [ ] Align package exports, connector error identity and method-specific declarations.
-- [ ] Repeat installed-consumer, migration, runtime and release checks.
+- [x] Prevent independent saves from persisting uncommitted transaction data.
+- [x] Keep ordinary collection handles coherent across reconnect and reload.
+- [x] Validate collection rename inputs and support prototype-like collection names.
+- [x] Prevent accidental replacement of existing collection definitions.
+- [x] Eliminate natural-language query cache collisions.
+- [x] Keep CSV values aligned with their columns.
+- [x] Align package exports, connector error identity and method-specific declarations.
+- [x] Verify installed consumers, alpha.6 migrations, declarations and all four runtime targets.
+- [ ] Complete release dates and publishing approval.
 
 See [migration guidance](migration.md) for implemented behavior and upgrade requirements. Pending items above are not claims that the implementation already supports them.
 

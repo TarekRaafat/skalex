@@ -20,18 +20,6 @@ import Skalex, {
   Plugin,
   PluginInsertContext,
   PluginUpdateContext,
-  StorageAdapter,
-  FsAdapter,
-  LocalStorageAdapter,
-  EncryptedAdapter,
-  D1Adapter,
-  BunSQLiteAdapter,
-  LibSQLAdapter,
-  OpenAIEmbeddingAdapter,
-  OllamaEmbeddingAdapter,
-  OpenAILLMAdapter,
-  AnthropicLLMAdapter,
-  OllamaLLMAdapter,
   SkalexMCPServer,
   ChangeLog,
   ChangeLogEntry,
@@ -49,6 +37,8 @@ import Skalex, {
   AdapterError,
   QueryError,
 } from "../../dist/skalex.js";
+
+import { StorageAdapter, FsAdapter, LocalStorageAdapter, EncryptedAdapter, D1Adapter, BunSQLiteAdapter, LibSQLAdapter, EmbeddingAdapter, OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter, LLMAdapter, OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from "../../src/connectors/index.js";
 
 // --- Construction ----------------------------------------------------------
 

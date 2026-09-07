@@ -33,9 +33,10 @@ async function exportData(data, collectionName, filter, { dir, name, format = "j
         return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
           ? `"${s.replace(/"/g, '""')}"` : s;
       };
-      const header = Object.keys(filteredData[0]).map(escapeCsv).join(",");
+      const columns = [...new Set(filteredData.flatMap(Object.keys))];
+      const header = columns.map(escapeCsv).join(",");
       const rows = filteredData.map(item =>
-        Object.values(item).map(escapeCsv).join(",")
+        columns.map(key => escapeCsv(item[key])).join(",")
       );
       content = [header, ...rows].join("\n");
     }

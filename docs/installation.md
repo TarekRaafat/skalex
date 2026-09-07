@@ -67,3 +67,10 @@ await db.disconnect();
 ```
 
 For a manual or LLM-assisted upgrade, follow the [migration checklist](https://tarekraafat.github.io/skalex/#/migration) and apply every change required by your starting version.
+
+
+### Package entry points
+
+Adapter constructors are runtime exports of skalex/connectors and its subpaths. Their root names are type-only, as are Memory, ChangeLog, SkalexMCPServer and the named Skalex type. Import the database constructor as the default export. Obtain memory, changelog and MCP instances through their database factories. findOne accepts populate, select, includeDeleted and clone, not sort/page/limit/session. Use find for sorting and pagination. Compound index declarations accept arrays of field names.
+
+MCP tool definitions and handlers load on the first tool request. Keep the package's src/connectors/mcp/tools.js and src/engine/errors.js alongside dist, as well as the existing optional HTTP transport. The documentation distribution includes matching modules under docs/src. Error constructors are shared within a JavaScript realm through a non-enumerable, immutable registry keyed by Symbol.for("skalex.errors.v4"). ESM, CJS and source connectors retain the same error constructors and normal instanceof semantics. Separate realms are not covered.

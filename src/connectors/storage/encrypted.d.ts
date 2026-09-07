@@ -1,2 +1,2 @@
-import { EncryptedAdapter } from "../../index.js";
+import { EncryptedAdapter } from "../contracts.js";
 export default EncryptedAdapter;

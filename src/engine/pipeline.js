@@ -45,6 +45,7 @@ class MutationPipeline {
     // Recheck after async preparation as well as on entry: a bare write can
     // begin before a transaction acquires the collection lock.
     const assertTxAlive = () => {
+      this._ctx.assertCollection?.();
       if (owner) txm._assertOwner(owner);
       else if (txm.isCollectionLocked(this._col.name)) {
         throw new TransactionError(

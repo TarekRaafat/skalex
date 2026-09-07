@@ -1,2 +1,2 @@
-import { LocalStorageAdapter } from "../../index.js";
+import { LocalStorageAdapter } from "../contracts.js";
 export default LocalStorageAdapter;

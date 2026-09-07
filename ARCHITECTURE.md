@@ -1,6 +1,6 @@
 # Skalex v4: Architecture
 
-> Internal reference for contributors. Describes the current alpha.4 design of every module, data structure, and subsystem.
+> Internal reference for contributors. Describes the alpha.7 implementation and its bounded guarantees. The release plan owns future designs.
 
 ---
 
@@ -695,7 +695,7 @@ Duplicate version registration throws immediately. Version numbers must be posit
 
 ## 19. Auto-Connect
 
-`_ensureConnected()` is called at the top of every public operation (via the MutationPipeline or directly).
+Document operations ensure connection through the pipeline or their read/export entry. Synchronous factories and metadata inspection have their own lifecycle contracts.
 
 ```js
 async connect() {
@@ -745,7 +745,7 @@ TypeScript declarations are hand-written in `src/index.d.ts` and copied to `dist
 
 Runner: **Vitest** (kept over Bun test because `LocalStorageAdapter` tests require a jsdom/browser environment, which Bun test does not support as of v1.x).
 
-**896 vitest tests** across the unit and integration test files, plus **229 smoke tests** across Node.js, Bun, Deno, and headless Chromium (**1,125 total**).
+Run the mandatory unit/integration, declaration, package-contract and four-runtime smoke gates for current counts.
 
 ### MemoryAdapter (`tests/helpers/MemoryAdapter.js`)
 
@@ -896,3 +896,20 @@ Document reads preserve shallow-copy defaults. GroupBy retains live document ref
 Collection shares synchronous insert/update/delete commit primitives across ordinary writes, upserts, soft-delete/restore and historical replay. Known validation failures remain preflighted. A commit exception reconstructs the pre-commit document array and rebuilds primary and secondary indexes. Success paths retain document references and only potential FIFO victims rather than cloning whole collections. Recovery is O(n) in collection size plus index construction, paid on failure.
 
 The pipeline owns subsequent effects. A recovered atomic commit rethrows before dirty/save/hooks/events. Upsert batches finalize their completed prefix. If recovery itself fails, the store retains ERR_SKALEX_MUTATION_RECOVERY with both errors. Pipeline entry and persistence serialization reject that state. Reads are not protected. Discard the instance and reopen verified storage. This does not provide crash recovery, snapshot isolation or rollback of post-commit effects.
+
+
+### Collection lifetime and persistence admission
+
+Ordinary collection and memory handles expire after disconnect. An ordinary handle observing a transaction-created collection also expires if rollback removes that collection. Reset seeding preserves the current tracked handle. Reacquire them with useCollection() or useMemory() before subsequent operations. Stale collection access throws ValidationError with ERR_SKALEX_VALIDATION_STALE_COLLECTION and details.collection. Cached ordinary handles remain valid through loadData(). Existing watch subscriptions retain their prior lifetime behavior. createCollection() rejects an existing definition with ERR_SKALEX_PERSISTENCE_COLLECTION_EXISTS. Define schemas before connect(), and use useCollection() to access existing data. Rename validates both names before changing state. Ordinary saves reject transaction-locked targets with ERR_SKALEX_TX_COLLECTION_LOCKED, including when ownership changes while queued. loadData() and disconnect() reject during an active transaction with ERR_SKALEX_TX_DIRECT_ACCESS. Rename and reset seeding reject locked targets. Saving independent unlocked collections remains supported.
+
+
+### Package and query contract corrections
+
+Adapter constructors are runtime exports of skalex/connectors and its subpaths. Their root names are type-only, as are Memory, ChangeLog, SkalexMCPServer and the named Skalex type. Import the database constructor as the default export. Obtain memory, changelog and MCP instances through their database factories. findOne accepts populate, select, includeDeleted and clone, not sort/page/limit/session. Use find for sorting and pagination. Compound index declarations accept arrays of field names.
+
+Natural-language query caches now persist the complete collection/schema/query identity. Legacy hash-only cache records are ignored and translations regenerate on demand. This may cause an additional model call after upgrade. CSV export uses the union of fields in first-seen order and writes empty cells for missing fields, preserving column alignment.
+
+MCP tool definitions and handlers load on the first tool request. Keep the package's src/connectors/mcp/tools.js and src/engine/errors.js alongside dist, as well as the existing optional HTTP transport. The documentation distribution includes matching modules under docs/src. Error constructors are shared within a JavaScript realm through a non-enumerable, immutable registry keyed by Symbol.for("skalex.errors.v4"). ESM, CJS and source connectors retain the same error constructors and normal instanceof semantics. Separate realms are not covered.
+
+
+Retiring a collection replaces its context with a rejecting context. Normal connected reads keep their original connection fast path. Pending mutation preparation rechecks the current context before committing, so a write cannot resume into a disconnected store. Existing cached handles are rebound during explicit loadData().

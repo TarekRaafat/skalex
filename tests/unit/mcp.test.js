@@ -621,3 +621,22 @@ describe("HttpTransport", () => {
     await transport.stop();
   });
 });
+
+describe("prototype-like collection scopes", () => {
+  test.each(["constructor", "toString"].flatMap(name => [false, true].map(deny => [name, deny])))("%s honors own rules and wildcard fallback, denied=%s", async (name, deny) => {
+    const scopes = { "*": ["read"], ...(deny ? { [name]: [] } : {}) };
+    const { db, server, transport } = await makeServer({ scopes });
+    await db.useCollection(name).insertOne({ value: 1 });
+    await transport.receive({ jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name: "skalex_find", arguments: { collection: name } } });
+    const result = transport.lastSent().result;
+    if (deny) {
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Access denied");
+    } else {
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content[0].text).docs[0].value).toBe(1);
+    }
+    await server.close();
+  });
+});

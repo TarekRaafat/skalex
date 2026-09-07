@@ -49,7 +49,7 @@ class SkalexAI {
 
   /**
    * Natural-language query: translate `nlQuery` into a filter via the language
-   * model and run it against the collection. Results are cached by query hash.
+   * model and run it against the collection. Translations are cached by complete collection/schema/query identity.
    *
    * @param {string} collectionName
    * @param {string} nlQuery

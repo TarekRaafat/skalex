@@ -25,7 +25,7 @@
  * const httpServer = db.mcp({ transport: 'http', port: 3456 });
  * await httpServer.listen();
  */
-import { TOOL_DEFS, callTool, _validateCollection } from "./tools.js";
+
 import { ok, error, parse, toolResult, toolError, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./protocol.js";
 import StdioTransport from "./transports/stdio.js";
 
@@ -125,7 +125,7 @@ class SkalexMCPServer {
           break;
 
         case "tools/list":
-          this._send(ok(id, { tools: this._visibleTools() }));
+          this._send(ok(id, { tools: await this._visibleTools() }));
           break;
 
         case "tools/call":
@@ -153,6 +153,7 @@ class SkalexMCPServer {
       return;
     }
 
+    const { TOOL_DEFS, callTool, _validateCollection } = await import("./tools.js");
     const def = TOOL_DEFS.find(t => t.name === name);
     if (!def) {
       this._send(error(id, METHOD_NOT_FOUND, `Unknown tool: ${name}`));
@@ -181,7 +182,8 @@ class SkalexMCPServer {
    * Return tool definitions visible to the current scope configuration.
    * Tools whose scope is not granted on any collection are excluded.
    */
-  _visibleTools() {
+  async _visibleTools() {
+    const { TOOL_DEFS } = await import("./tools.js");
     return TOOL_DEFS.filter(def => {
       // If the global wildcard grants the scope, show the tool
       const global = this._scopes["*"];
@@ -205,11 +207,11 @@ class SkalexMCPServer {
       perms.includes("admin") || perms.includes(scope);
 
     // collection-specific rule takes precedence over wildcard
-    if (collection && this._scopes[collection]) {
+    if (collection && Object.hasOwn(this._scopes, collection)) {
       return check(this._scopes[collection]);
     }
     // fall back to wildcard
-    if (this._scopes["*"]) {
+    if (Object.hasOwn(this._scopes, "*")) {
       return check(this._scopes["*"]);
     }
     return false;

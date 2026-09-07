@@ -294,6 +294,7 @@ class Skalex {
       debug: this.debug,
       lenientLoad: lenientLoad ?? false,
       registry: this._registry,
+      assertSave: name => this._assertCollectionUnlocked(name),
     });
     this._changeLog = new ChangeLog(this);
     this._eventBus = new EventBus();
@@ -386,10 +387,13 @@ class Skalex {
   }
 
   /**
-   * Disconnect: flush all unsaved data, clear in-memory state.
+   * Disconnect: flush unsaved data, clear state and expire ordinary collection handles.
+   * Reacquire collection and memory handles after reconnect.
+   * @throws {TransactionError} If a transaction is active.
    * @returns {Promise<void>}
    */
   async disconnect() {
+    this._assertLifecycleAvailable("disconnect");
     try {
       this._ttlScheduler.stop();
       await this.saveData();
@@ -415,6 +419,24 @@ class Skalex {
   _ensureConnected() {
     if (this.isConnected || this._bootstrapping) return undefined;
     return this.connect();
+  }
+
+  /** Reject persistence or definition changes to transaction-owned stores. */
+  _assertCollectionUnlocked(name) {
+    if (this._txManager.isCollectionLocked(name)) {
+      throw new TransactionError("ERR_SKALEX_TX_COLLECTION_LOCKED",
+        `Collection "${name}" is locked by an active transaction. Retry after it completes.`,
+        { collection: name });
+    }
+  }
+
+  /** Lifecycle operations cannot replace the state of an active transaction. */
+  _assertLifecycleAvailable(operation) {
+    if (this._txManager.active) {
+      throw new TransactionError("ERR_SKALEX_TX_DIRECT_ACCESS",
+        `${operation}() is unavailable during an active transaction. Retry after it completes.`,
+        { operation });
+    }
   }
 
   // --- Collections ---------------------------------------------------------
@@ -445,13 +467,17 @@ class Skalex {
   }
 
   /**
-   * Rename a collection. Updates in-memory state and persists the new name.
+   * Rename a collection. Validate names before changing state, then persist the new name.
+   * @throws {ValidationError} If either collection name is invalid.
+   * @throws {TransactionError} If either collection is transaction-locked.
    * Requires the storage adapter to support `delete(name)`.
    * @param {string} from
    * @param {string} to
    * @returns {Promise<void>}
    */
   async renameCollection(from, to) {
+    this._assertCollectionUnlocked(from);
+    this._assertCollectionUnlocked(to);
     this._registry.rename(from, to);
     await this.saveData(to);
     await this.fs.delete(from);
@@ -464,6 +490,7 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async loadData() {
+    this._assertLifecycleAvailable("loadData");
     await this._persistence.loadAll(this.collections, {
       parseSchema,
       buildIndex: this._registry.buildIndex,
@@ -748,10 +775,10 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async seed(fixtures, { reset = false } = {}) {
+    if (reset) for (const name of Object.keys(fixtures)) this._assertCollectionUnlocked(name);
     for (const [name, docs] of Object.entries(fixtures)) {
       if (reset && this.collections[name]) {
         this._applySnapshot(name, { data: [], index: new Map() });
-        delete this._collectionInstances[name];
       }
       const col = this.useCollection(name);
       await col.insertMany(docs);

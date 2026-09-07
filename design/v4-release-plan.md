@@ -32,13 +32,13 @@ These hold for every release on the path to 4.0.0.
 
 Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
 
-Earlier local release-candidate checks passed for the original scope. Architecture and API review identified additional release-blocking work. Qualification must be repeated after these fixes. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+Architecture and API follow-up fixes are implemented. Local qualification covers 1298 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
 
 Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Retain the existing critical-issue policy: the choice between a narrow safety patch and direct alpha.7 delivery must be recorded explicitly before publication. Completing the audit is not authorization to publish or an exception to that policy.
 
 ## 1.4 Required alpha.7 follow-up and later design work
 
-The architecture/API review found defects in the existing alpha.6 behavior as well as the current candidate. Alpha.7 now includes these focused corrections, each with expected-behavior regression tests:
+The architecture/API review found defects in the existing alpha.6 behavior as well as the current candidate. Alpha.7 includes the following completed corrections with regression coverage:
 
 1. Prevent ordinary saves from serializing uncommitted transaction state, including saves already queued before a lock is acquired.
 2. Preserve a coherent ordinary collection-handle lifetime across reconnect and reload. Never acknowledge a write to an obsolete store.

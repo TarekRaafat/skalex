@@ -215,6 +215,8 @@ async function run() {
     await detachedReads(db, assert);
     const { default: commitRecovery } = await import("./commit-recovery.js");
     await commitRecovery(db, assert);
+    const { default: packageContracts } = await import("./package-contracts.js");
+    await packageContracts(db, assert);
     const { default: memoryCompression } = await import("./memory-compression.js");
     await memoryCompression(Skalex, assert);
   });

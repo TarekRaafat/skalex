@@ -6,4 +6,4 @@ export {
   BunSQLiteAdapter,
   D1Adapter,
   LibSQLAdapter,
-} from "../../index.js";
+} from "../contracts.js";

@@ -33,9 +33,9 @@ class CollectionRegistry {
   constructor(CollectionClass) {
     this._CollectionClass = CollectionClass;
     /** @type {Object<string, object>} Collection stores keyed by name. */
-    this.stores = {};
+    this.stores = Object.create(null);
     /** @type {Object<string, import("./collection.js").default>} Cached Collection instances. */
-    this._instances = {};
+    this._instances = Object.create(null);
     /** @type {Map<string, { result: object, _snapshotLen: number }>} Cached stats per collection. */
     this._statsCache = new Map();
   }
@@ -64,6 +64,7 @@ class CollectionRegistry {
    */
   create(name, options = {}, db) {
     _assertCollectionName(name);
+    if (this.stores[name]) throw new PersistenceError("ERR_SKALEX_PERSISTENCE_COLLECTION_EXISTS", `Collection "${name}" already exists. Use useCollection() to access it.`, { collection: name });
     this.createStore(name, options);
     const instance = new this._CollectionClass(this.stores[name], db);
     this._instances[name] = instance;
@@ -126,6 +127,8 @@ class CollectionRegistry {
    * @param {string} to
    */
   rename(from, to) {
+    _assertCollectionName(from);
+    _assertCollectionName(to);
     if (!this.stores[from]) throw new PersistenceError("ERR_SKALEX_PERSISTENCE_COLLECTION_NOT_FOUND", `Collection "${from}" not found`, { collection: from });
     if (this.stores[to]) throw new PersistenceError("ERR_SKALEX_PERSISTENCE_COLLECTION_EXISTS", `Collection "${to}" already exists`, { collection: to });
 
@@ -175,9 +178,7 @@ class CollectionRegistry {
         maxDocs: col.maxDocs ?? null,
       };
     }
-    const result = {};
-    for (const n in this.stores) result[n] = this.inspect(n);
-    return result;
+    return Object.fromEntries(Object.keys(this.stores).map(n => [n, this.inspect(n)]));
   }
 
   /**
@@ -247,8 +248,9 @@ class CollectionRegistry {
    * Clear all stores and instances.
    */
   clear() {
-    this.stores = {};
-    this._instances = {};
+    for (const instance of Object.values(this._instances)) instance._invalidate();
+    this.stores = Object.create(null);
+    this._instances = Object.create(null);
     this._statsCache.clear();
   }
 }

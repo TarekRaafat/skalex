@@ -1,2 +1,2 @@
-import { FsAdapter } from "../../index.js";
+import { FsAdapter } from "../contracts.js";
 export default FsAdapter;

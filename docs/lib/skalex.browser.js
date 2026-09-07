@@ -67,40 +67,53 @@ function resolveDotPath(obj, path) {
  */
 
 /**
- * Base error for all Skalex engine errors.
- * @extends Error
+ * Create the shared error hierarchy.
+ * @returns {object} Named error constructors.
  */
-class SkalexError extends Error {
-  /**
-   * @param {string} code    - Stable error code (e.g. "ERR_SKALEX_VALIDATION_REQUIRED").
-   * @param {string} message - Human-readable description.
-   * @param {object} [details] - Structured context for programmatic consumers.
-   */
-  constructor(code, message, details = {}) {
-    super(message);
-    this.name = this.constructor.name;
-    this.code = code;
-    this.details = details;
+function _createErrorTypes() {
+  /** Base error for all Skalex engine errors. */
+  class SkalexError extends Error {
+    /**
+     * @param {string} code    - Stable error code (e.g. "ERR_SKALEX_VALIDATION_REQUIRED").
+     * @param {string} message - Human-readable description.
+     * @param {object} [details] - Structured context for programmatic consumers.
+     */
+    constructor(code, message, details = {}) {
+      super(message);
+      this.name = this.constructor.name;
+      this.code = code;
+      this.details = details;
+    }
   }
+
+  /** Schema parsing or document validation failure. */
+  class ValidationError extends SkalexError { }
+
+  /** Insert or update violates a unique field constraint. */
+  class UniqueConstraintError extends SkalexError { }
+
+  /** Transaction timeout, abort, or rollback failure. */
+  class TransactionError extends SkalexError { }
+
+  /** Load, save, serialization, or flush failure. */
+  class PersistenceError extends SkalexError { }
+
+  /** Storage or AI adapter misconfiguration or missing dependency. */
+  class AdapterError extends SkalexError { }
+
+  /** Query filter, operator, or execution failure. */
+  class QueryError extends SkalexError { }
+
+  const types = { SkalexError, ValidationError, UniqueConstraintError, TransactionError, PersistenceError, AdapterError, QueryError };
+  for (const [name, Type] of Object.entries(types)) Object.defineProperty(Type, "name", { value: name });
+  return types;
 }
 
-/** Schema parsing or document validation failure. */
-class ValidationError extends SkalexError { }
-
-/** Insert or update violates a unique field constraint. */
-class UniqueConstraintError extends SkalexError { }
-
-/** Transaction timeout, abort, or rollback failure. */
-class TransactionError extends SkalexError { }
-
-/** Load, save, serialization, or flush failure. */
-class PersistenceError extends SkalexError { }
-
-/** Storage or AI adapter misconfiguration or missing dependency. */
-class AdapterError extends SkalexError { }
-
-/** Query filter, operator, or execution failure. */
-class QueryError extends SkalexError { }
+// Source connectors and ESM/CJS/browser bundles share constructors in one realm.
+// The versioned symbol avoids string globals and keeps type-based catches stable.
+const _key = Symbol.for("skalex.errors.v4");
+if (!globalThis[_key]) Object.defineProperty(globalThis, _key, { value: Object.freeze(_createErrorTypes()) });
+const { SkalexError, ValidationError, UniqueConstraintError, TransactionError, PersistenceError, AdapterError, QueryError } = globalThis[_key];
 
 /**
  * query.js  -  filter evaluation engine.
@@ -626,6 +639,7 @@ class MutationPipeline {
     // Recheck after async preparation as well as on entry: a bare write can
     // begin before a transaction acquires the collection lock.
     const assertTxAlive = () => {
+      this._ctx.assertCollection?.();
       if (owner) txm._assertOwner(owner);
       else if (txm.isCollectionLocked(this._col.name)) {
         throw new TransactionError(
@@ -1217,9 +1231,10 @@ async function exportData(data, collectionName, filter, { dir, name, format = "j
         return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
           ? `"${s.replace(/"/g, '""')}"` : s;
       };
-      const header = Object.keys(filteredData[0]).map(escapeCsv).join(",");
+      const columns = [...new Set(filteredData.flatMap(Object.keys))];
+      const header = columns.map(escapeCsv).join(",");
       const rows = filteredData.map(item =>
-        Object.values(item).map(escapeCsv).join(",")
+        columns.map(key => escapeCsv(item[key])).join(",")
       );
       content = [header, ...rows].join("\n");
     }
@@ -1469,6 +1484,16 @@ class Collection {
 
     this._setStore(collectionData);
     this._pipeline = new MutationPipeline(this);
+  }
+
+  /** Retire a disconnected handle without adding checks to ordinary reads. */
+  _invalidate() {
+    const reject = () => {
+      throw new ValidationError("ERR_SKALEX_VALIDATION_STALE_COLLECTION",
+        `Collection "${this.name}" is no longer current. Reacquire it with useCollection().`,
+        { collection: this.name });
+    };
+    this._ctx = Object.assign(Object.create(this._ctx), { ensureConnected: reject, assertCollection: reject });
   }
 
   /** Update the backing store and re-wrap the DataStore. Called by loadData sync. */
@@ -2122,6 +2147,7 @@ class Collection {
    * @returns {(() => void)|AsyncIterableIterator}
    */
   watch(filter, callbackOrOpts) {
+    this._ctx.assertCollection?.(this);
     // watch(callback) shorthand - no filter
     if (typeof filter === "function") { callbackOrOpts = filter; filter = null; }
 
@@ -2269,6 +2295,7 @@ class Collection {
 
     await this._ctx.plugins.run(Hooks.BEFORE_FIND, { collection: this.name, filter, options });
 
+    this._ctx.assertCollection?.();
     const candidates = this._getCandidates(filter);
     // Pre-compile $regex strings once so matchesFilter doesn't run
     // compileRegexFilter per document on every iteration.
@@ -2487,11 +2514,14 @@ class Collection {
   // --- Export --------------------------------------------------------------
 
   /**
-   * Export filtered data to a file via the storage adapter.
+   * Export filtered data after connection through a current collection handle.
+   * @returns {Promise<void>}
+   * @throws {ValidationError} ERR_SKALEX_VALIDATION_STALE_COLLECTION after disconnect.
    * @param {object} [filter={}]
    * @param {{ dir?: string, name?: string, format?: "json"|"csv" }} [options]
    */
-  export(filter = {}, options = {}) {
+  async export(filter = {}, options = {}) {
+    await this._ctx.ensureConnected();
     return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 
@@ -3613,25 +3643,10 @@ class IndexEngine {
  * ask.js  -  query cache and LLM filter utilities for db.ask().
  */
 
-// --- Hash ---------------------------------------------------------------------
-
-/**
- * Deterministic djb2-style hash of a string.
- * @param {string} str
- * @returns {string} 8-char hex
- */
-function _djb2(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
-}
-
 // --- QueryCache ---------------------------------------------------------------
 
 /**
- * QueryCache  -  maps hash(collection + schema + query) → filter object.
+ * QueryCache  -  maps complete collection, schema and query identity to a filter.
  *
  * Persisted in the _meta collection so it survives connect/disconnect cycles.
  * The cache avoids calling the LLM again for the same question on the same schema.
@@ -3648,7 +3663,7 @@ class QueryCache {
   }
 
   _key(collectionName, schema, query) {
-    return _djb2(JSON.stringify({ collectionName, schema, query }));
+    return JSON.stringify({ collectionName, schema, query });
   }
 
   get(collectionName, schema, query) {
@@ -3680,7 +3695,8 @@ class QueryCache {
   fromJSON(data) {
     if (!data || typeof data !== "object") return;
     for (const [k, v] of Object.entries(data)) {
-      this._cache.set(k, v);
+      // Old hash-only entries cannot establish query identity. Recompute on demand.
+      if (k.startsWith("{") && v && typeof v.ts === "number") this._cache.set(k, v);
     }
   }
 
@@ -3812,7 +3828,7 @@ class SkalexAI {
 
   /**
    * Natural-language query: translate `nlQuery` into a filter via the language
-   * model and run it against the collection. Results are cached by query hash.
+   * model and run it against the collection. Translations are cached by complete collection/schema/query identity.
    *
    * @param {string} collectionName
    * @param {string} nlQuery
@@ -3903,11 +3919,12 @@ class PersistenceManager {
    * @param {Function} opts.serializer   - (value) => string
    * @param {Function} opts.deserializer - (text) => value
    * @param {Function} opts.logger       - (msg, level) => void
+   * @param {Function} [opts.assertSave] - Reject ordinary writes to transaction-owned stores.
    * @param {boolean}  [opts.debug=false]
    */
   get [Symbol.toStringTag]() { return "PersistenceManager"; }
 
-  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null }) {
+  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null, assertSave = null }) {
     this._adapter = adapter;
     this._serializer = serializer;
     this._deserializer = deserializer;
@@ -3916,6 +3933,7 @@ class PersistenceManager {
     this._lenientLoad = lenientLoad;
     /** @type {import("./registry.js").default|null} Back-reference used for canonical store construction. */
     this._registry = registry;
+    this._assertSave = assertSave;
 
     /**
      * One adapter-write queue for ordinary saves and transaction batches.
@@ -4081,6 +4099,7 @@ class PersistenceManager {
    * @returns {Promise<void>}
    */
   async save(collections, collectionName) {
+    for (const name of collectionName ? [collectionName] : Object.keys(collections)) this._assertSave?.(name);
     if (collectionName) {
       await this._saveOne(collections, collectionName);
     } else {
@@ -4098,6 +4117,7 @@ class PersistenceManager {
   async saveDirty(collections) {
     const dirtyNames = Object.keys(collections).filter(name => collections[name]._dirty);
     if (dirtyNames.length === 0) return;
+    for (const name of dirtyNames) this._assertSave?.(name);
     await Promise.all(dirtyNames.map(name => this._saveOne(collections, name)));
   }
 
@@ -4282,6 +4302,8 @@ class PersistenceManager {
    */
   _writeCollection(name, col) {
     return this._withSaveLock(async () => {
+      // Ownership may have changed while this ordinary save waited in the queue.
+      this._assertSave?.(name);
       // Clear before capturing the snapshot so edits during I/O stay dirty.
       col._dirty = false;
       try {
@@ -4707,6 +4729,7 @@ class TransactionManager {
         for (const [name, store] of ctx.createdCollections) {
           if (db.collections[name] === store) {
             delete db.collections[name];
+            db._collectionInstances[name]?._invalidate();
             delete db._collectionInstances[name];
             if (db._registry?._statsCache) db._registry._statsCache.delete(name);
           }
@@ -4888,9 +4911,9 @@ class CollectionRegistry {
   constructor(CollectionClass) {
     this._CollectionClass = CollectionClass;
     /** @type {Object<string, object>} Collection stores keyed by name. */
-    this.stores = {};
+    this.stores = Object.create(null);
     /** @type {Object<string, import("./collection.js").default>} Cached Collection instances. */
-    this._instances = {};
+    this._instances = Object.create(null);
     /** @type {Map<string, { result: object, _snapshotLen: number }>} Cached stats per collection. */
     this._statsCache = new Map();
   }
@@ -4919,6 +4942,7 @@ class CollectionRegistry {
    */
   create(name, options = {}, db) {
     _assertCollectionName(name);
+    if (this.stores[name]) throw new PersistenceError("ERR_SKALEX_PERSISTENCE_COLLECTION_EXISTS", `Collection "${name}" already exists. Use useCollection() to access it.`, { collection: name });
     this.createStore(name, options);
     const instance = new this._CollectionClass(this.stores[name], db);
     this._instances[name] = instance;
@@ -4981,6 +5005,8 @@ class CollectionRegistry {
    * @param {string} to
    */
   rename(from, to) {
+    _assertCollectionName(from);
+    _assertCollectionName(to);
     if (!this.stores[from]) throw new PersistenceError("ERR_SKALEX_PERSISTENCE_COLLECTION_NOT_FOUND", `Collection "${from}" not found`, { collection: from });
     if (this.stores[to]) throw new PersistenceError("ERR_SKALEX_PERSISTENCE_COLLECTION_EXISTS", `Collection "${to}" already exists`, { collection: to });
 
@@ -5030,9 +5056,7 @@ class CollectionRegistry {
         maxDocs: col.maxDocs ?? null,
       };
     }
-    const result = {};
-    for (const n in this.stores) result[n] = this.inspect(n);
-    return result;
+    return Object.fromEntries(Object.keys(this.stores).map(n => [n, this.inspect(n)]));
   }
 
   /**
@@ -5102,8 +5126,9 @@ class CollectionRegistry {
    * Clear all stores and instances.
    */
   clear() {
-    this.stores = {};
-    this._instances = {};
+    for (const instance of Object.values(this._instances)) instance._invalidate();
+    this.stores = Object.create(null);
+    this._instances = Object.create(null);
     this._statsCache.clear();
   }
 }
@@ -6605,299 +6630,6 @@ class PluginEngine {
 }
 
 /**
- * tools.js  -  MCP tool definitions and handlers for Skalex.
- *
- * Each tool exposes one Skalex operation to an AI agent.
- * The handler receives (db, args) and returns a plain value that is
- * JSON-serialised into the MCP content text.
- *
- * Tools:
- *   collections  -  list all collections
- *   schema       -  get schema for a collection
- *   find         -  find documents
- *   insert       -  insert a document
- *   update       -  update matching documents
- *   delete       -  delete matching documents
- *   search       -  semantic similarity search (requires embedding adapter)
- *   ask          -  natural-language query (requires AI adapter)
- *
- * Scopes:
- *   read   -  collections, schema, find, search, ask
- *   write  -  insert, update, delete
- */
-
-/**
- * Maximum allowed depth of a filter tree sanitized from agent input.
- * Real filters rarely exceed 3-4 levels (`$or` → branch → field op). 16
- * gives 4× headroom for complex compound queries. Deeper trees are
- * almost certainly malicious (stack-overflow attempts) or buggy and are
- * rejected with a stable error code.
- */
-const MAX_FILTER_DEPTH = 16;
-
-/**
- * Validate a collection name supplied by an AI agent.
- * Rejects names containing path separators or traversal sequences that could
- * escape the data directory when the name is used to construct a file path.
- * @param {string} name
- * @returns {string} The validated name
- */
-function _validateCollection(name) {
-  if (typeof name !== "string" || !name.trim()) {
-    throw new ValidationError(
-      "ERR_SKALEX_VALIDATION_MCP_COLLECTION",
-      "collection name must be a non-empty string",
-      { name }
-    );
-  }
-  if (/[/\\]/.test(name) || name.includes("..") || name.includes("\0")) {
-    throw new ValidationError(
-      "ERR_SKALEX_VALIDATION_MCP_COLLECTION",
-      `invalid collection name: "${name}"`,
-      { name }
-    );
-  }
-  if (name.trim().startsWith("_")) {
-    throw new ValidationError(
-      "ERR_SKALEX_VALIDATION_MCP_COLLECTION",
-      `access to system collection "${name}" is not permitted`,
-      { name }
-    );
-  }
-  return name.trim();
-}
-
-/**
- * Sanitize an MCP-sourced filter. Handles `$fn` according to the registered
- * predicates allowlist:
- *
- * - If `predicates` is provided and `$fn` is a string matching a registered
- *   name, the string is replaced with the real function. The agent gets
- *   `$fn` power without code crossing the wire.
- * - If `$fn` is a string that does NOT match a registered name, it is
- *   stripped and a warning is logged.
- * - If `$fn` is anything other than a string (a function, an object, code),
- *   it is stripped regardless of predicates.
- * - If no `predicates` map is provided, all `$fn` keys are stripped
- *   (alpha.3 default behavior).
- *
- * Traverses into `$or`, `$and`, `$not` branches. Enforces a maximum
- * traversal depth ({@link MAX_FILTER_DEPTH}) so an adversarial agent
- * cannot send a deeply nested payload to blow the call stack.
- *
- * @param {*} filter
- * @param {(msg: string, level?: string) => void} [logger]
- * @param {number} [depth=0] - Current recursion depth (internal).
- * @param {Record<string, Function>} [predicates] - Named predicate allowlist.
- * @returns {*} A new filter with `$fn` keys resolved, stripped, or kept.
- * @throws {ValidationError} ERR_SKALEX_VALIDATION_FILTER_DEPTH when the
- *   filter tree nests deeper than {@link MAX_FILTER_DEPTH}.
- */
-function sanitizeFilter(filter, logger, depth = 0, predicates = null) {
-  if (depth > MAX_FILTER_DEPTH) {
-    throw new ValidationError(
-      "ERR_SKALEX_VALIDATION_FILTER_DEPTH",
-      `Filter nested too deeply (> ${MAX_FILTER_DEPTH} levels). This limit ` +
-      `protects against stack-overflow attacks from agent-supplied filters.`,
-      { maxDepth: MAX_FILTER_DEPTH }
-    );
-  }
-  if (filter === null || typeof filter !== "object") return filter;
-  if (Array.isArray(filter)) return filter.map(f => sanitizeFilter(f, logger, depth + 1, predicates));
-  const out = {};
-  for (const key of Object.keys(filter)) {
-    if (key === "$fn") {
-      const val = filter[key];
-      // Only string names can be resolved against the allowlist.
-      // Functions, objects, and code strings are always stripped.
-      if (typeof val === "string" && predicates && val in predicates) {
-        out[key] = predicates[val];
-        continue;
-      }
-      if (logger) logger(`[MCP] $fn stripped from agent-supplied filter`, "warn");
-      continue;
-    }
-    out[key] = sanitizeFilter(filter[key], logger, depth + 1, predicates);
-  }
-  return out;
-}
-
-const TOOL_DEFS = [
-  {
-    name: "skalex_collections",
-    description: "List all collection names in the database.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-    scope: "read",
-  },
-  {
-    name: "skalex_schema",
-    description: "Return the schema for a collection as a { field: type } map. Returns null if the collection is empty.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-      },
-      required: ["collection"],
-    },
-    scope: "read",
-  },
-  {
-    name: "skalex_find",
-    description: "Find documents in a collection that match a filter.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-        filter:     { type: "object", description: "Query filter (MongoDB-style operators supported)." },
-        limit:      { type: "number", description: "Maximum number of results. Default: 20." },
-        sort:       { type: "object", description: "Sort descriptor: { field: 1 } for ascending, { field: -1 } for descending." },
-      },
-      required: ["collection"],
-    },
-    scope: "read",
-  },
-  {
-    name: "skalex_insert",
-    description: "Insert a single document into a collection.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-        doc:        { type: "object", description: "Document to insert." },
-      },
-      required: ["collection", "doc"],
-    },
-    scope: "write",
-  },
-  {
-    name: "skalex_update",
-    description: "Update the first document matching a filter.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-        filter:     { type: "object", description: "Query filter to identify the document." },
-        update:     { type: "object", description: "Fields to update (direct assignment, $inc, $push supported)." },
-        many:       { type: "boolean", description: "If true, update all matching documents. Default: false." },
-      },
-      required: ["collection", "filter", "update"],
-    },
-    scope: "write",
-  },
-  {
-    name: "skalex_delete",
-    description: "Delete the first document matching a filter.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-        filter:     { type: "object", description: "Query filter to identify the document." },
-        many:       { type: "boolean", description: "If true, delete all matching documents. Default: false." },
-      },
-      required: ["collection", "filter"],
-    },
-    scope: "write",
-  },
-  {
-    name: "skalex_search",
-    description: "Semantic similarity search. Requires an embedding adapter to be configured.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-        query:      { type: "string", description: "Natural-language query string to embed and compare." },
-        limit:      { type: "number", description: "Maximum number of results. Default: 10." },
-        minScore:   { type: "number", description: "Minimum cosine similarity score [0, 1]. Default: 0." },
-        filter:     { type: "object", description: "Optional structured pre-filter (hybrid search)." },
-      },
-      required: ["collection", "query"],
-    },
-    scope: "read",
-  },
-  {
-    name: "skalex_ask",
-    description: "Translate a natural-language question into a filter and query a collection. Requires a language model adapter.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        collection: { type: "string", description: "Collection name." },
-        question:   { type: "string", description: "Natural-language question about the data." },
-        limit:      { type: "number", description: "Maximum number of results. Default: 20." },
-      },
-      required: ["collection", "question"],
-    },
-    scope: "read",
-  },
-];
-
-/**
- * Execute a tool call.
- * @param {string} name - Tool name.
- * @param {object} args - Tool arguments.
- * @param {object} db   - Skalex instance.
- * @param {Record<string, Function>|null} [predicates] - Named predicate allowlist.
- * @returns {Promise<object>} Plain value to be JSON.stringify'd into content text.
- */
-function callTool(name, args, db, predicates = null) {
-  const log = db._logger;
-  const _sanitize = (f) => sanitizeFilter(f, log, 0, predicates);
-  switch (name) {
-    case "skalex_collections":
-      return Object.keys(db.collections).filter(n => !n.startsWith("_"));
-
-    case "skalex_schema": {
-      const s = db.schema(_validateCollection(args.collection));
-      return s ?? null;
-    }
-
-    case "skalex_find": {
-      const col = db.useCollection(_validateCollection(args.collection));
-      const opts = {};
-      if (args.limit) opts.limit = args.limit;
-      if (args.sort)  opts.sort  = args.sort;
-      return col.find(_sanitize(args.filter || {}), opts);
-    }
-
-    case "skalex_insert": {
-      const col = db.useCollection(_validateCollection(args.collection));
-      return col.insertOne(args.doc || {});
-    }
-
-    case "skalex_update": {
-      const col = db.useCollection(_validateCollection(args.collection));
-      const filter = _sanitize(args.filter || {});
-      if (args.many) return col.updateMany(filter, args.update || {});
-      return col.updateOne(filter, args.update || {});
-    }
-
-    case "skalex_delete": {
-      const col = db.useCollection(_validateCollection(args.collection));
-      const filter = _sanitize(args.filter || {});
-      if (args.many) return col.deleteMany(filter);
-      return col.deleteOne(filter);
-    }
-
-    case "skalex_search": {
-      const col = db.useCollection(_validateCollection(args.collection));
-      return col.search(args.query, {
-        limit:    args.limit    ?? 10,
-        minScore: args.minScore ?? 0,
-        filter:   _sanitize(args.filter),
-      });
-    }
-
-    case "skalex_ask":
-      return db.ask(_validateCollection(args.collection), args.question, { limit: args.limit ?? 20 });
-
-    default:
-      throw Object.assign(new Error(`Unknown tool: ${name}`), { code: "NOT_FOUND" });
-  }
-}
-
-/**
  * protocol.js  -  JSON-RPC 2.0 helpers for the MCP server.
  *
  * MCP (Model Context Protocol) uses JSON-RPC 2.0 as its wire format.
@@ -7075,6 +6807,7 @@ class StdioTransport {
  * await httpServer.listen();
  */
 
+
 const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.7" };
 const PROTOCOL_VERSION = "2024-11-05";
 
@@ -7171,7 +6904,7 @@ class SkalexMCPServer {
           break;
 
         case "tools/list":
-          this._send(ok(id, { tools: this._visibleTools() }));
+          this._send(ok(id, { tools: await this._visibleTools() }));
           break;
 
         case "tools/call":
@@ -7199,6 +6932,7 @@ class SkalexMCPServer {
       return;
     }
 
+    const { TOOL_DEFS, callTool, _validateCollection } = await import('../src/connectors/mcp/tools.js');
     const def = TOOL_DEFS.find(t => t.name === name);
     if (!def) {
       this._send(error(id, METHOD_NOT_FOUND, `Unknown tool: ${name}`));
@@ -7227,7 +6961,8 @@ class SkalexMCPServer {
    * Return tool definitions visible to the current scope configuration.
    * Tools whose scope is not granted on any collection are excluded.
    */
-  _visibleTools() {
+  async _visibleTools() {
+    const { TOOL_DEFS } = await import('../src/connectors/mcp/tools.js');
     return TOOL_DEFS.filter(def => {
       // If the global wildcard grants the scope, show the tool
       const global = this._scopes["*"];
@@ -7251,11 +6986,11 @@ class SkalexMCPServer {
       perms.includes("admin") || perms.includes(scope);
 
     // collection-specific rule takes precedence over wildcard
-    if (collection && this._scopes[collection]) {
+    if (collection && Object.hasOwn(this._scopes, collection)) {
       return check(this._scopes[collection]);
     }
     // fall back to wildcard
-    if (this._scopes["*"]) {
+    if (Object.hasOwn(this._scopes, "*")) {
       return check(this._scopes["*"]);
     }
     return false;
@@ -7541,6 +7276,7 @@ class Skalex {
       debug: this.debug,
       lenientLoad: lenientLoad ?? false,
       registry: this._registry,
+      assertSave: name => this._assertCollectionUnlocked(name),
     });
     this._changeLog = new ChangeLog(this);
     this._eventBus = new EventBus();
@@ -7633,10 +7369,13 @@ class Skalex {
   }
 
   /**
-   * Disconnect: flush all unsaved data, clear in-memory state.
+   * Disconnect: flush unsaved data, clear state and expire ordinary collection handles.
+   * Reacquire collection and memory handles after reconnect.
+   * @throws {TransactionError} If a transaction is active.
    * @returns {Promise<void>}
    */
   async disconnect() {
+    this._assertLifecycleAvailable("disconnect");
     try {
       this._ttlScheduler.stop();
       await this.saveData();
@@ -7662,6 +7401,24 @@ class Skalex {
   _ensureConnected() {
     if (this.isConnected || this._bootstrapping) return undefined;
     return this.connect();
+  }
+
+  /** Reject persistence or definition changes to transaction-owned stores. */
+  _assertCollectionUnlocked(name) {
+    if (this._txManager.isCollectionLocked(name)) {
+      throw new TransactionError("ERR_SKALEX_TX_COLLECTION_LOCKED",
+        `Collection "${name}" is locked by an active transaction. Retry after it completes.`,
+        { collection: name });
+    }
+  }
+
+  /** Lifecycle operations cannot replace the state of an active transaction. */
+  _assertLifecycleAvailable(operation) {
+    if (this._txManager.active) {
+      throw new TransactionError("ERR_SKALEX_TX_DIRECT_ACCESS",
+        `${operation}() is unavailable during an active transaction. Retry after it completes.`,
+        { operation });
+    }
   }
 
   // --- Collections ---------------------------------------------------------
@@ -7692,13 +7449,17 @@ class Skalex {
   }
 
   /**
-   * Rename a collection. Updates in-memory state and persists the new name.
+   * Rename a collection. Validate names before changing state, then persist the new name.
+   * @throws {ValidationError} If either collection name is invalid.
+   * @throws {TransactionError} If either collection is transaction-locked.
    * Requires the storage adapter to support `delete(name)`.
    * @param {string} from
    * @param {string} to
    * @returns {Promise<void>}
    */
   async renameCollection(from, to) {
+    this._assertCollectionUnlocked(from);
+    this._assertCollectionUnlocked(to);
     this._registry.rename(from, to);
     await this.saveData(to);
     await this.fs.delete(from);
@@ -7711,6 +7472,7 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async loadData() {
+    this._assertLifecycleAvailable("loadData");
     await this._persistence.loadAll(this.collections, {
       parseSchema,
       buildIndex: this._registry.buildIndex,
@@ -7995,10 +7757,10 @@ class Skalex {
    * @returns {Promise<void>}
    */
   async seed(fixtures, { reset = false } = {}) {
+    if (reset) for (const name of Object.keys(fixtures)) this._assertCollectionUnlocked(name);
     for (const [name, docs] of Object.entries(fixtures)) {
       if (reset && this.collections[name]) {
         this._applySnapshot(name, { data: [], index: new Map() });
-        delete this._collectionInstances[name];
       }
       const col = this.useCollection(name);
       await col.insertMany(docs);

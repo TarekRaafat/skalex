@@ -3,4 +3,4 @@ export {
   OpenAILLMAdapter,
   AnthropicLLMAdapter,
   OllamaLLMAdapter,
-} from "../../index.js";
+} from "../contracts.js";

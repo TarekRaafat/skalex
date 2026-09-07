@@ -1,2 +1,2 @@
-import { D1Adapter } from "../../index.js";
+import { D1Adapter } from "../contracts.js";
 export default D1Adapter;

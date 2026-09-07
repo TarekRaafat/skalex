@@ -146,6 +146,16 @@ class Collection {
     this._pipeline = new MutationPipeline(this);
   }
 
+  /** Retire a disconnected handle without adding checks to ordinary reads. */
+  _invalidate() {
+    const reject = () => {
+      throw new ValidationError("ERR_SKALEX_VALIDATION_STALE_COLLECTION",
+        `Collection "${this.name}" is no longer current. Reacquire it with useCollection().`,
+        { collection: this.name });
+    };
+    this._ctx = Object.assign(Object.create(this._ctx), { ensureConnected: reject, assertCollection: reject });
+  }
+
   /** Update the backing store and re-wrap the DataStore. Called by loadData sync. */
   _setStore(store) {
     this.__store = store;
@@ -797,6 +807,7 @@ class Collection {
    * @returns {(() => void)|AsyncIterableIterator}
    */
   watch(filter, callbackOrOpts) {
+    this._ctx.assertCollection?.(this);
     // watch(callback) shorthand - no filter
     if (typeof filter === "function") { callbackOrOpts = filter; filter = null; }
 
@@ -944,6 +955,7 @@ class Collection {
 
     await this._ctx.plugins.run(Hooks.BEFORE_FIND, { collection: this.name, filter, options });
 
+    this._ctx.assertCollection?.();
     const candidates = this._getCandidates(filter);
     // Pre-compile $regex strings once so matchesFilter doesn't run
     // compileRegexFilter per document on every iteration.
@@ -1162,11 +1174,14 @@ class Collection {
   // --- Export --------------------------------------------------------------
 
   /**
-   * Export filtered data to a file via the storage adapter.
+   * Export filtered data after connection through a current collection handle.
+   * @returns {Promise<void>}
+   * @throws {ValidationError} ERR_SKALEX_VALIDATION_STALE_COLLECTION after disconnect.
    * @param {object} [filter={}]
    * @param {{ dir?: string, name?: string, format?: "json"|"csv" }} [options]
    */
-  export(filter = {}, options = {}) {
+  async export(filter = {}, options = {}) {
+    await this._ctx.ensureConnected();
     return exportData(this._ds.data, this.name, filter, options, this._ctx);
   }
 

@@ -2,4 +2,4 @@ export {
   EmbeddingAdapter,
   OpenAIEmbeddingAdapter,
   OllamaEmbeddingAdapter,
-} from "../../index.js";
+} from "../contracts.js";

@@ -271,3 +271,6 @@ Transaction commits persist a recovery marker before batch data. If a batch is i
 Released under the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
 
 © 2026 [Tarek Raafat](http://www.tarekraafat.com)
+
+
+Alpha.7 also protects collection lifetimes and transaction save admission. Reacquire collection and memory handles after disconnect, import adapter constructors through connector subpaths, and review the [migration guide](MIGRATION.md) before upgrading.

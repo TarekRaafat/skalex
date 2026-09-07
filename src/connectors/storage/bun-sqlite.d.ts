@@ -1,2 +1,2 @@
-import { BunSQLiteAdapter } from "../../index.js";
+import { BunSQLiteAdapter } from "../contracts.js";
 export default BunSQLiteAdapter;

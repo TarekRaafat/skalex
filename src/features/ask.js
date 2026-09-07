@@ -3,25 +3,10 @@
  */
 import { QueryError } from "../engine/errors.js";
 
-// --- Hash ---------------------------------------------------------------------
-
-/**
- * Deterministic djb2-style hash of a string.
- * @param {string} str
- * @returns {string} 8-char hex
- */
-function _djb2(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
-}
-
 // --- QueryCache ---------------------------------------------------------------
 
 /**
- * QueryCache  -  maps hash(collection + schema + query) → filter object.
+ * QueryCache  -  maps complete collection, schema and query identity to a filter.
  *
  * Persisted in the _meta collection so it survives connect/disconnect cycles.
  * The cache avoids calling the LLM again for the same question on the same schema.
@@ -38,7 +23,7 @@ class QueryCache {
   }
 
   _key(collectionName, schema, query) {
-    return _djb2(JSON.stringify({ collectionName, schema, query }));
+    return JSON.stringify({ collectionName, schema, query });
   }
 
   get(collectionName, schema, query) {
@@ -70,7 +55,8 @@ class QueryCache {
   fromJSON(data) {
     if (!data || typeof data !== "object") return;
     for (const [k, v] of Object.entries(data)) {
-      this._cache.set(k, v);
+      // Old hash-only entries cannot establish query identity. Recompute on demand.
+      if (k.startsWith("{") && v && typeof v.ts === "number") this._cache.set(k, v);
     }
   }
 

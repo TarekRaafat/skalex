@@ -18,11 +18,12 @@ class PersistenceManager {
    * @param {Function} opts.serializer   - (value) => string
    * @param {Function} opts.deserializer - (text) => value
    * @param {Function} opts.logger       - (msg, level) => void
+   * @param {Function} [opts.assertSave] - Reject ordinary writes to transaction-owned stores.
    * @param {boolean}  [opts.debug=false]
    */
   get [Symbol.toStringTag]() { return "PersistenceManager"; }
 
-  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null }) {
+  constructor({ adapter, serializer, deserializer, logger, debug = false, lenientLoad = false, registry = null, assertSave = null }) {
     this._adapter = adapter;
     this._serializer = serializer;
     this._deserializer = deserializer;
@@ -31,6 +32,7 @@ class PersistenceManager {
     this._lenientLoad = lenientLoad;
     /** @type {import("./registry.js").default|null} Back-reference used for canonical store construction. */
     this._registry = registry;
+    this._assertSave = assertSave;
 
     /**
      * One adapter-write queue for ordinary saves and transaction batches.
@@ -196,6 +198,7 @@ class PersistenceManager {
    * @returns {Promise<void>}
    */
   async save(collections, collectionName) {
+    for (const name of collectionName ? [collectionName] : Object.keys(collections)) this._assertSave?.(name);
     if (collectionName) {
       await this._saveOne(collections, collectionName);
     } else {
@@ -213,6 +216,7 @@ class PersistenceManager {
   async saveDirty(collections) {
     const dirtyNames = Object.keys(collections).filter(name => collections[name]._dirty);
     if (dirtyNames.length === 0) return;
+    for (const name of dirtyNames) this._assertSave?.(name);
     await Promise.all(dirtyNames.map(name => this._saveOne(collections, name)));
   }
 
@@ -397,6 +401,8 @@ class PersistenceManager {
    */
   _writeCollection(name, col) {
     return this._withSaveLock(async () => {
+      // Ownership may have changed while this ordinary save waited in the queue.
+      this._assertSave?.(name);
       // Clear before capturing the snapshot so edits during I/O stay dirty.
       col._dirty = false;
       try {

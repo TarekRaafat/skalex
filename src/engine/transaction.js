@@ -264,6 +264,7 @@ class TransactionManager {
         for (const [name, store] of ctx.createdCollections) {
           if (db.collections[name] === store) {
             delete db.collections[name];
+            db._collectionInstances[name]?._invalidate();
             delete db._collectionInstances[name];
             if (db._registry?._statsCache) db._registry._statsCache.delete(name);
           }

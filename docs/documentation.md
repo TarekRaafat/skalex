@@ -2061,3 +2061,17 @@ Every document inserted by Skalex has the following system fields added automati
 | `_deletedAt` | `Date` | When `softDelete: true` + deleted | Soft-delete timestamp. Present only on deleted documents |
 
 System fields `createdAt` and `updatedAt` are always set by the engine on insert - user-provided values are overwritten. User-provided `_id` values are preserved. If omitted, a 27-character hex ID (timestamp + crypto random) is generated.
+
+
+### Collection lifetime and persistence admission
+
+Ordinary collection and memory handles expire after disconnect. An ordinary handle observing a transaction-created collection also expires if rollback removes that collection. Reset seeding preserves the current tracked handle. Reacquire them with useCollection() or useMemory() before subsequent operations. Stale collection access throws ValidationError with ERR_SKALEX_VALIDATION_STALE_COLLECTION and details.collection. Cached ordinary handles remain valid through loadData(). Existing watch subscriptions retain their prior lifetime behavior. createCollection() rejects an existing definition with ERR_SKALEX_PERSISTENCE_COLLECTION_EXISTS. Define schemas before connect(), and use useCollection() to access existing data. Rename validates both names before changing state. Ordinary saves reject transaction-locked targets with ERR_SKALEX_TX_COLLECTION_LOCKED, including when ownership changes while queued. loadData() and disconnect() reject during an active transaction with ERR_SKALEX_TX_DIRECT_ACCESS. Rename and reset seeding reject locked targets. Saving independent unlocked collections remains supported.
+
+
+### Package and query contract corrections
+
+Adapter constructors are runtime exports of skalex/connectors and its subpaths. Their root names are type-only, as are Memory, ChangeLog, SkalexMCPServer and the named Skalex type. Import the database constructor as the default export. Obtain memory, changelog and MCP instances through their database factories. findOne accepts populate, select, includeDeleted and clone, not sort/page/limit/session. Use find for sorting and pagination. Compound index declarations accept arrays of field names.
+
+Natural-language query caches now persist the complete collection/schema/query identity. Legacy hash-only cache records are ignored and translations regenerate on demand. This may cause an additional model call after upgrade. CSV export uses the union of fields in first-seen order and writes empty cells for missing fields, preserving column alignment.
+
+MCP tool definitions and handlers load on the first tool request. Keep the package's src/connectors/mcp/tools.js and src/engine/errors.js alongside dist, as well as the existing optional HTTP transport. The documentation distribution includes matching modules under docs/src. Error constructors are shared within a JavaScript realm through a non-enumerable, immutable registry keyed by Symbol.for("skalex.errors.v4"). ESM, CJS and source connectors retain the same error constructors and normal instanceof semantics. Separate realms are not covered.

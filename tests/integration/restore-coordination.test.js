@@ -148,7 +148,8 @@ describe("historical restore failure boundaries", () => {
   });
 
   test.each(["unique", "compound"])("full restore validates current %s indexes before replacing state", async kind => {
-    const adapter = new MemoryAdapter(), db = new Skalex({ adapter });
+    const adapter = new MemoryAdapter();
+    let db = new Skalex({ adapter });
     await db.connect();
     const old = db.createCollection("items", { changelog: true });
     await old.insertMany([
@@ -159,7 +160,11 @@ describe("historical restore failure boundaries", () => {
     await new Promise(r => setTimeout(r, 5));
     const options = kind === "unique" ? { schema: { value: { type: "string", unique: true } } }
       : { indexes: [["value", "group"]] };
+    await old.deleteMany({});
+    await db.disconnect();
+    db = new Skalex({ adapter });
     const col = db.createCollection("items", { changelog: true, ...options });
+    await db.connect();
     await col.insertOne({ _id: "keep", value: "current", group: "valid" });
     const events = [];
     db.watch(event => { if (event.collection === "items") events.push(event.op); });
@@ -228,13 +233,18 @@ describe("full historical replacement constraints", () => {
   test.each(["db", "changelog"].flatMap(entry =>
     [false, true].map(populated => [entry, populated])
   ))("%s rejects duplicate archive with populated=%s", async (entry, populated) => {
-    const adapter = new MemoryAdapter(), db = new Skalex({ adapter });
+    const adapter = new MemoryAdapter();
+    let db = new Skalex({ adapter });
     await db.connect();
     const old = db.createCollection("items", { changelog: true });
     await old.insertMany([{ _id: "x", value: "duplicate" }, { _id: "y", value: "duplicate" }]);
     const timestamp = new Date();
     await new Promise(r => setTimeout(r, 5));
+    await old.deleteMany({});
+    await db.disconnect();
+    db = new Skalex({ adapter });
     const col = db.createCollection("items", { changelog: true, schema: { value: { type: "string", unique: true } } });
+    await db.connect();
     if (populated) await col.insertOne({ _id: "keep", value: "current" });
     await db.saveData();
     const events = [];

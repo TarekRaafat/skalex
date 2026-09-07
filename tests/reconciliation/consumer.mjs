@@ -44,6 +44,21 @@ import { readFileSync } from "node:fs";
 const require = createRequire(import.meta.url);
 const pkg = JSON.parse(readFileSync("node_modules/skalex/package.json", "utf8"));
 for (const key of Object.keys(pkg.exports)) await import(key === "." ? "skalex" : "skalex" + key.slice(1));
+const rootErrors = await import("skalex");
+for (const key of ["skalex", "skalex/min"]) {
+  const entry = await import(key);
+  assert.equal(entry.AdapterError, rootErrors.AdapterError);
+  assert.equal(require(key).AdapterError, rootErrors.AdapterError);
+  assert.throws(() => new EncryptedAdapter({}, new Uint8Array(1)),
+    error => error instanceof entry.AdapterError && error instanceof entry.SkalexError);
+}
+const toolServer = new Skalex({ adapter: new FsAdapter({ dir: "./tool-data" }) }).mcp();
+let receiveTool;
+const toolReplies = [];
+await toolServer.connect({ onMessage: fn => { receiveTool = fn; }, send: reply => { toolReplies.push(reply); } });
+await receiveTool({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+assert(toolReplies[0].result.tools.some(tool => tool.name === "skalex_find"));
+await toolServer.close();
 for (const key of ["skalex", "skalex/min"]) {
   const mod = require(key);
   const Common = mod.default ?? mod;

@@ -29,11 +29,12 @@ describe("changelog restore - exact rehydrate", () => {
     await tick();
     await col.updateOne({ _id: "x" }, { label: "v2" });
     const t2 = (await col.findOne({ _id: "x" })).updatedAt;
+    const between = new Date();
     await tick();
     await col.updateOne({ _id: "x" }, { label: "v3" });
 
     // Restore to "just after the first update" (before the v3 update).
-    const between = new Date(t2.getTime() + 1);
+
     await db.restore("items", between, { _id: "x" });
 
     const after = await col.findOne({ _id: "x" });

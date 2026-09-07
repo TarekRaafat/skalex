@@ -80,7 +80,7 @@ test("every persisted compression snapshot retains originals or the embedded sum
   }
   await db.disconnect();
   await db.connect();
-  expect((await mem.recall("important")).docs[0]?.text).toBe("summary");
+  expect((await db.useMemory("compression").recall("important")).docs[0]?.text).toBe("summary");
 });
 
 test("keepRecent preserves newest entries and skips embedding when nothing is selected", async () => {

@@ -5,10 +5,10 @@ import terser from "@rollup/plugin-terser";
 const input = "src/index.js";
 
 const external = ["node:fs", "node:path", "node:zlib", "node:crypto", "node:http"];
-const isHttpTransport = id => id.endsWith("/mcp/transports/http.js");
-const isExternal = id => external.includes(id) || isHttpTransport(id);
-// The optional HTTP server loads from the source module shipped in the package.
-const paths = id => isHttpTransport(id) ? "../src/connectors/mcp/transports/http.js" : id;
+const isLazyMcpModule = id => id.endsWith("/mcp/transports/http.js") || id.endsWith("/mcp/tools.js");
+const isExternal = id => external.includes(id) || isLazyMcpModule(id);
+// Optional HTTP transport and tool handling load from source modules shipped in the package.
+const paths = id => isLazyMcpModule(id) ? "../src/connectors/mcp/" + id.split("/mcp/")[1] : id;
 
 /**
  * Replaces node:* built-in imports with empty stubs for browser builds.
@@ -64,7 +64,7 @@ export default [
       sourcemap: true,
       inlineDynamicImports: true,
     },
-    external: isHttpTransport,
+    external: isLazyMcpModule,
     plugins: [nodeBrowserStubs(), ...plugins],
   },
   // ESM minified
@@ -95,7 +95,7 @@ export default [
       // Unwrap so window.Skalex is the constructor, not { default, ... }
       footer: "Skalex=Skalex.default;",
     },
-    external: isHttpTransport,
+    external: isLazyMcpModule,
     plugins: [nodeBrowserStubs(), ...minPlugins],
   },
   // CJS build
