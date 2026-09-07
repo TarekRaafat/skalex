@@ -7609,7 +7609,7 @@ class Skalex {
       if (meta.queryCache) this._ai.queryCache.fromJSON(meta.queryCache);
 
       // Run pending migrations. Each migration runs in its own transaction
-      // and records its version in `_meta` atomically with its data writes
+      // and includes its version in the same adapter batch as its data writes
       // via the `recordApplied` closure below. No post-loop flush needed.
       if (this._migrations._migrations.length > 0) {
         const applied = meta.appliedVersions || [];
@@ -7732,8 +7732,8 @@ class Skalex {
    * Persist one or all collections via the storage adapter.
    *
    * Best-effort: each collection is written independently. If one fails,
-   * others may already be committed. For atomic multi-collection writes,
-   * use transaction() which calls saveAtomic() on commit.
+   * others may already be committed. transaction() coordinates owned writes;
+   * its disk atomicity depends on the adapter batch implementation.
    * Ordinary writes and transaction batches share one adapter-write queue.
    * Snapshots are serialized when their queued write begins.
    *
@@ -7891,13 +7891,13 @@ class Skalex {
   }
 
   /**
-   * Record the applied-migrations list into `_meta` atomically with the
+   * Record the applied-migrations list into `_meta` in the same batch as the
    * active transaction. Called by the migration runner inside `up()`'s
    * transaction callback; must NOT be called outside a transaction.
    *
    * Ensures `_meta` exists, snapshots it into the active tx so rollback
    * reverts the version record on failure, and mutates it via the
-   * persistence manager. Bypasses the tx proxy's `collections` blockade
+   * persistence manager. Uses the private context instead of exposing collections
    * by closing over `this` directly - the write is still covered by
    * rollback because we went through `snapshotIfNeeded` first.
    *
@@ -7908,7 +7908,7 @@ class Skalex {
     // Defensive: this function's atomicity contract depends on running
     // inside an active transaction. Without a tx, snapshotIfNeeded is a
     // no-op and the _meta mutation would persist via a future save
-    // instead of being atomically bundled with the migration's data
+    // instead of being included in the migration's data
     // flush. Fail loud so any future refactor that breaks this invariant
     // shows up in tests instead of silently regressing to the pre-F1 bug.
     if (!this._txManager.active) {

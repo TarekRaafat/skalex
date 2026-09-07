@@ -160,7 +160,7 @@ Implementation is complete; installed-package verification and release preparati
 - [x] Extract shared `fetchWithRetry()` utility from all AI adapters (6 duplicated copies)
 - [x] Convert `FsAdapter` from sync to async zlib (`deflateSync` blocks event loop)
 - [x] Formalize tiered adapter capability interfaces (`StorageAdapter`, `BatchStorageAdapter`, `RawFileStorageAdapter`, `PathAwareStorageAdapter`)
-- [x] D1 session-based cross-chunk atomicity: when Cloudflare's D1 Sessions API reaches GA, wrap `D1Adapter.writeAll()` chunks in a single session so failures in later chunks roll back earlier ones atomically
+- [x] Document D1's per-chunk atomicity limit; cross-chunk rollback is not implemented.
 - [x] Tighten transaction isolation: block non-tx writes to tx-touched collections (rollback can clobber outside writes)
 - [x] Add backpressure to watch event queues (`maxBufferSize` with oldest-drop)
 - [x] Lazy-import `FsAdapter` for browser builds (clear error instead of cryptic stub failure)
@@ -176,7 +176,7 @@ Implementation is complete; installed-package verification and release preparati
 - [x] Prune `_abortedIds` in `TransactionManager` with bounded pruning window (1000) - fixes unbounded memory growth on repeated timeouts
 - [x] Per-instance `_idCounter` in `TransactionManager` - fixes latent cross-instance transaction ID bleed from the module-level counter
 - [x] Make `_enforceCapAfterInsert()` atomic with per-doc state tracking; evicted docs emit `delete` watch events
-- [x] Migration atomicity: each migration runs inside a transaction; `_meta.appliedVersions` is flushed atomically with migration data via a new `recordApplied` callback and `_txManager.snapshotIfNeeded("_meta", ...)` path
+- [x] Migration atomicity: each migration runs inside a transaction; `_meta.appliedVersions` is included in the migration-data batch (disk atomicity remains adapter-dependent) via a new `recordApplied` callback and `_txManager.snapshotIfNeeded("_meta", ...)` path
 - [x] Migration API: `up(collection)` → `up(db)` (breaking change; `db.useCollection(name)` inside migration callbacks)
 - [x] Fix `Memory.tokenCount()` / `context()` bypassing `ensureConnected` - now async, reads through public `find()` API
 - [x] Memory session ID fail-fast validation at `useMemory(sessionId)` construction

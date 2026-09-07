@@ -241,11 +241,11 @@ Compound index fields must be scalar values (string, number, boolean, or null). 
 
 Skalex keeps all data **in memory** between operations. Writes are flushed to the storage adapter when `{ save: true }` is passed. The returned promise resolves only after the data reaches storage - concurrent callers are queued and resolved after the coalesced write completes. Writes also flush when `autoSave` is enabled, or explicitly via `saveData()`. `disconnect()` flushes all pending data.
 
-> **Important:** If the process is killed before a flush completes (e.g. `kill -9`, power loss), the in-flight write may be lost. For Node.js, the `FsAdapter` uses an atomic temp-file-then-rename strategy to prevent corrupt files; a collection is either fully written or left at its last good state. Always call `await db.disconnect()` for a clean shutdown.
+> **Important:** If the process is killed before a flush completes (e.g. `kill -9`, power loss), the in-flight write may be lost. For Node.js, the `FsAdapter` uses an atomic temp-file-then-rename strategy to prevent corrupt files; a collection is either fully written or left at its last good state. Normally call `await db.disconnect()` to flush pending data. If commit recovery failed, disconnect can reject while saving; discard that instance and reopen verified storage as described under commit-stage recovery.
 
 #### `saveData(collectionName?)`
 
-Persists one collection (or all, if no name given) via the storage adapter. Best-effort semantics: each collection is written independently. If one write fails, others may have already committed. For atomic multi-collection writes, use `transaction()`.
+Persists one collection (or all, if no name given) via the storage adapter. Best-effort semantics: each collection is written independently. If one write fails, others may have already committed. Use `transaction()` to coordinate owned writes; disk atomicity depends on the adapter's batch guarantees.
 
 Ordinary saves and transaction batches share one adapter-write queue per database instance, including the batch sentinel-clear write. Queued writes capture current data when execution begins. Writes to different collections also wait their turn; concurrent saves of one collection remain coalesced. A failed write does not stop later queued work, and edits made during an ordinary write remain dirty for a later flush. Multi-collection ordinary saves remain best-effort, with other writes potentially finishing after a rejection. This ordering does not add read isolation or crash recovery.
 
@@ -272,9 +272,9 @@ After inspecting storage and repairing it if needed, call `await db.acknowledgeI
 | Single-write atomicity | Yes (temp+rename) | Yes (SQLite) | Yes | Yes |
 | Cross-collection atomicity | Best-effort | Yes (transaction) | Per batch chunk | Yes (batch) |
 | Incomplete Skalex batch detection | Persistent marker warning | Persistent marker warning | Persistent marker warning | Persistent marker warning |
-| Power-loss durability | No | Yes | Yes | Yes |
+| Power-loss durability | No fsync guarantee | Depends on SQLite configuration/storage | Depends on service guarantees | Depends on deployment/configuration |
 
-> For primary-database use cases where cross-collection atomicity or power-loss durability is required, use an SQL-backed adapter (`BunSQLiteAdapter`, `D1Adapter`, or `LibSQLAdapter`).
+> Match the adapter to the required guarantee. D1 atomicity is limited to each batch chunk. SQL-backed storage does not by itself establish a universal power-loss guarantee; verify the deployment and durability configuration.
 
 ---
 
@@ -282,16 +282,16 @@ After inspecting storage and repairing it if needed, call `await db.acknowledgeI
 
 #### `addMigration({ version, description?, up })`
 
-Registers a migration. Pending migrations run automatically on `connect()` in version order. Each migration runs inside its own transaction: partial state rolls back on failure, and the applied-version record is persisted atomically with the migration's data writes (`_meta.appliedVersions` is flushed in the same `saveAtomic` batch). Migrations that commit successfully are preserved even if a later migration fails.
+Registers a migration. Pending migrations run automatically on `connect()` in version order. Each migration runs inside its own transaction. A callback failure rolls back owned in-memory writes. The applied-version record and migration data are submitted in the same batch; disk atomicity depends on the adapter, and a failed sequential or chunked batch may leave partial data. Migrations that commit successfully are preserved even if a later migration fails.
 
-The `up` callback receives the Skalex instance (transaction proxy). Use `db.useCollection(name)` to obtain any collection the migration needs to touch.
+The `up` callback receives a restricted `TransactionHandle`. Use `tx.useCollection(name)` or `tx.createCollection(name, options)`, await owned writes, and let the transaction perform saving. Database lifecycle, persistence and inspection methods are unavailable.
 
 ```javascript
 db.addMigration({
   version: 1,
   description: "Add default role to all users",
-  up: async (db) => {
-    const users = db.useCollection("users");
+  up: async (tx) => {
+    const users = tx.useCollection("users");
     await users.updateMany({}, { role: "user" });
   },
 });

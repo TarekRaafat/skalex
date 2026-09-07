@@ -72,7 +72,7 @@
 **Data lifecycle:**
 - TTL documents: auto-expiry with `_expiresAt`; `defaultTtl` per collection; `ttlSweepInterval` for live processes
 - Versioned migrations: `addMigration({ version, up })`, auto-run on `connect()`
-- Transactions: in-memory snapshot/rollback; writes suppressed from disk during `fn()`; concurrent transactions serialised; external side effects and direct collection mutations are not rolled back
+- Transactions: in-memory snapshot/rollback; owned writes deferred until commit; concurrent transactions serialised; external side effects and direct collection mutations are not rolled back
 - Soft deletes: `createCollection(name, { softDelete: true })`, `col.restore()`, `{ includeDeleted }`
 - Document versioning: auto-increments `_version` on every write
 - Capped collections: `createCollection(name, { maxDocs: N })`, FIFO eviction
@@ -104,7 +104,7 @@
 6. **Migrations that run themselves:**
    - Register versioned migration functions with `db.addMigration({ version, up })`. They run automatically on `connect()` in the correct order, once, and never again.
 7. **Transactions with no boilerplate:**
-   - `db.transaction(fn)` snapshots all in-memory state before your callback runs. If anything throws, every change rolls back. No manual savepoints, no error-prone cleanup.
+   - `db.transaction(fn)` snapshots owned collections lazily. Callback failures roll back owned in-memory writes; independent writes and post-commit effects remain outside that rollback. Reads are live, and disk atomicity depends on the adapter.
 8. **Relations without a query language:**
    - Link collections via `populate` on `find`/`findOne`. One-to-one and one-to-many relationships resolve in a single call.
 9. **Queries as expressive as your data:**

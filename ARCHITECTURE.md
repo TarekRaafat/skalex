@@ -289,7 +289,7 @@ class StorageAdapter {
 
 ### `writeAll(entries)`
 
-Batch write method. The base class provides a sequential fallback (`for...of write()`). Adapters that support atomic batches (SQL-backed) override this with a single transaction. Used by `PersistenceManager.saveAtomic()` during transaction commit.
+Batch write method. The base class provides a sequential fallback (`for...of write()`). Adapters can override this with native batch transactions; D1 provides atomicity within each chunk, not across chunks. Used by `PersistenceManager.saveAtomic()` during transaction commit.
 
 ### FsAdapter extras
 
@@ -672,12 +672,12 @@ File: `src/engine/migrations.js`
 Migrations are registered via `db.addMigration({ version, description?, up })` and stored sorted by version. On `connect()`:
 
 1. `PersistenceManager.getMeta(collections)` reads applied versions from the `_meta` collection.
-2. `MigrationEngine.run({ runInTx, recordApplied }, appliedVersions)` filters to pending versions and runs each migration inside its own transaction. `runInTx(fn)` is bound to `(fn) => skalex.transaction(fn)`; `fn` receives the Skalex proxy and calls `migration.up(db)`. After `up` returns successfully (but before the transaction commits), the runner calls `recordApplied(nextVersions)` which:
+2. `MigrationEngine.run({ runInTx, recordApplied }, appliedVersions)` filters to pending versions and runs each migration inside its own transaction. `runInTx(fn)` is bound to `(fn) => skalex.transaction(fn)`; `fn` receives the restricted TransactionHandle and calls `migration.up(tx)`. After `up` returns successfully (but before the transaction commits), the runner calls `recordApplied(nextVersions)` which:
     - snapshots `_meta` into the active transaction via `_txManager.snapshotIfNeeded()` so the version record participates in rollback, and
     - mutates `_meta.appliedVersions` through `PersistenceManager.updateMeta()`.
-3. `saveAtomic()` flushes the migration's touched collections **and** `_meta` in a single `writeAll` batch, so the version record and the migration's data are committed together.
+3. `saveAtomic()` flushes the migration's touched collections **and** `_meta` in a single `writeAll` batch, so the version record and migration data share a batch; the adapter determines its atomicity.
 
-If `up()` throws, the transaction rolls back all writes the migration made **and** the `_meta` version bump - the migration re-runs from a clean slate on the next `connect()`. Migrations that committed before a later failure are preserved.
+If `up()` throws, the transaction rolls back owned in-memory writes **and** the `_meta` version bump - the migration re-runs from a clean slate on the next `connect()`. Migrations that committed before a later failure are preserved.
 
 **Atomicity guarantee** depends on the adapter's `writeAll` semantics: fully atomic on `BunSQLiteAdapter` / `LibSQLAdapter` / `D1Adapter`-within-chunk; narrowed failure window on `FsAdapter` (sequential renames, `_meta` always renamed last, incomplete-flush sentinel detects partial commits on next load); not atomic across D1 chunks. Migrations should still be authored idempotently (`upsert`, check-before-mutate).
 

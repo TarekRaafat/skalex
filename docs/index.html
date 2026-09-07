@@ -356,7 +356,7 @@
         "name": "What happens to my data if the process crashes?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Skalex uses atomic writes: data is written to a temporary file first, then renamed into place in a single OS-level operation. This means a crash mid-write cannot produce a corrupt or half-written file  -  you either have the previous version or the new version, never a broken state. Any writes that had not yet been flushed to the adapter at the time of the crash will be lost, so use autoSave: true or pass { save: true } on critical writes to flush immediately after each operation."
+          "text": "FsAdapter writes a temporary file before renaming it into place. This avoids exposing a partially written replacement file, but does not provide multi-file atomicity or fsync-based power-loss durability. Interrupted transaction batches can leave mixed data; an incomplete-flush marker reports that possibility on reconnect without repairing it. autoSave or save:true requests persistence, not a stronger durability guarantee."
         }
       },
       {
@@ -380,7 +380,7 @@
         "name": "Isn't Skalex just a Map with a JSON file underneath?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "At the most reductive level, yes  -  and so is every database at some layer of abstraction. What Skalex provides on top of that is what takes weeks to assemble correctly on your own: a full embedding pipeline with OpenAI and Ollama adapters; cosine similarity vector search with hybrid filter support; semantic agent memory with compression and token-aware context generation; natural language query translation via any LLM; a complete MCP server with 8 tools, stdio and HTTP transports, and per-collection access control; secondary indexes with O(1) lookups; atomic writes that survive crashes; TTL sweeps; versioned migrations; in-memory snapshot transactions with automatic rollback; soft deletes; an append-only changelog with point-in-time restore; and a cross-runtime isomorphic build that runs identically in Node.js, Bun, Deno, browsers, and edge runtimes without polyfills. You could build all of that yourself. Skalex is the choice when you would rather ship."
+          "text": "At the most reductive level, yes  -  and so is every database at some layer of abstraction. What Skalex provides on top of that is what takes weeks to assemble correctly on your own: a full embedding pipeline with OpenAI and Ollama adapters; cosine similarity vector search with hybrid filter support; semantic agent memory with compression and token-aware context generation; natural language query translation via any LLM; a complete MCP server with 8 tools, stdio and HTTP transports, and per-collection access control; secondary indexes with O(1) lookups; per-file replacement with adapter-dependent durability; TTL sweeps; versioned migrations; in-memory snapshot transactions with automatic rollback; soft deletes; an append-only changelog with point-in-time restore; and a cross-runtime isomorphic build that runs identically in Node.js, Bun, Deno, browsers, and edge runtimes without polyfills. You could build all of that yourself. Skalex is the choice when you would rather ship."
         }
       },
       {

@@ -141,7 +141,7 @@ await accounts.insertMany([
   { name: "Bob",   balance: 200 },
 ]);
 
-// Transfer 100 from Alice to Bob - rolls back if anything throws
+// Transfer 100 from Alice to Bob - callback failure rolls back owned in-memory writes
 await db.transaction(async (db) => {
   const accounts = db.useCollection("accounts");
   await accounts.updateOne({ name: "Alice" }, { balance: { $inc: -100 } });
@@ -922,3 +922,91 @@ for (const entry of slow) {
 
 await db.disconnect();
 ```
+
+---
+
+### 27. Edit a detached read result
+
+Default reads are shallow. Use collection mutation methods for stored changes, or request a detached copy when preparing edits locally.
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./detached-example", format: "json" });
+await db.connect();
+const users = db.useCollection("users");
+await users.upsert({ _id: "alice" }, { profile: { name: "Alice" } });
+
+const draft = await users.findOne({ _id: "alice" }, { clone: true });
+draft.profile.name = "Preview";
+console.log((await users.findOne({ _id: "alice" })).profile.name); // Alice
+
+await users.updateOne({ _id: "alice" }, { profile: draft.profile });
+console.log((await users.findOne({ _id: "alice" })).profile.name); // Preview
+await db.disconnect();
+```
+
+Cloning costs scale with returned data and can reject uncloneable values. It does not isolate input documents, hooks or shared-memory buffers. See [read ownership](documentation.md#read-ownership).
+
+### 28. Reuse a helper inside a transaction or migration
+
+Helpers can depend only on the collection capabilities they need. Transaction and migration handles expose useCollection/createCollection; persistence is performed by commit.
+
+```javascript
+import Skalex from "skalex";
+
+async function ensureAccount(handle, id) {
+  await handle.useCollection("accounts").upsert(
+    { _id: id }, { enabled: true }
+  );
+}
+
+const db = new Skalex({ path: "./transaction-example", format: "json" });
+db.addMigration({
+  version: 1,
+  up: async tx => { await ensureAccount(tx, "system"); },
+});
+await db.connect();
+await ensureAccount(db, "alice");
+await db.transaction(async tx => {
+  await ensureAccount(tx, "bob");
+  await tx.useCollection("accounts").updateOne({ _id: "alice" }, { enabled: false });
+});
+await db.disconnect();
+```
+
+Await owned operations before the callback returns; do not retain its handles for later use. Database lifecycle, save, export and subscription capabilities are unavailable through the transaction handle. Callback failures roll back owned in-memory writes; reads remain live and disk atomicity depends on the adapter. See [transactions](documentation.md#transactionfn-options).
+
+### 29. Configure an HTTP origin
+
+Origin permission and backend Host validation are separate checks. This example permits a browser application at one exact origin and uses an available backend port.
+
+```javascript
+import Skalex from "skalex";
+
+const db = new Skalex({ path: "./http-example", format: "json" });
+await db.connect();
+const server = db.mcp({
+  transport: "http",
+  port: 0,
+  allowedOrigin: "http://localhost:3000",
+});
+await server.listen();
+console.log(server.url);
+// Keep the server running while clients use it. On shutdown:
+await server.close();
+await db.disconnect();
+```
+
+Reverse proxies must send the trusted backend Host. Origin/Host checks do not authenticate native clients, and a wildcard origin does not disable Host validation.
+
+### 30. Acknowledge an inspected incomplete flush
+
+An incomplete-flush warning means persisted collections may disagree. Preserve and inspect storage, repair it if necessary, then acknowledge the warning on a connected database outside transactions:
+
+```javascript
+// Only after inspection and any required repair:
+await db.acknowledgeIncompleteFlush();
+```
+
+This call clears the warning; it neither repairs nor saves collection data. A queued state change or storage failure rejects with ERR_SKALEX_PERSISTENCE_ACK_FAILED. See [incomplete transaction batches](documentation.md#incomplete-transaction-batches).

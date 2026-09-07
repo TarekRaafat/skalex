@@ -95,7 +95,7 @@
 - `LibSQLAdapter`: LibSQL / Turso client adapter
 
 **Built for developers who value their time.**
-- `db.transaction(fn)`: in-memory snapshot/rollback; writes serialised and suppressed from disk until `fn()` resolves
+- `db.transaction(fn)`: owned in-memory snapshot/rollback; transaction writes deferred until commit, with adapter-dependent disk atomicity
 - `db.seed(fixtures)`: idempotent fixture seeding
 - `db.dump()` / `db.inspect()`: snapshot and metadata
 - `db.namespace(id)`: isolated sub-instances per tenant / user
@@ -246,6 +246,19 @@ See what's shipping next: **[Roadmap](https://tarekraafat.github.io/skalex/#/roa
 | [Eleva.js](https://github.com/TarekRaafat/eleva) | Ultra-lightweight (~2.5KB) pure vanilla JavaScript framework with signal-based reactivity |
 
 ---
+
+### Upgrading to alpha.7
+
+Transaction and migration callbacks now receive restricted collection handles. Use their collection methods and await each write; commit owns saving. HTTP clients must satisfy Origin and Host validation. See the [migration guide](MIGRATION.md) for upgrade requirements and failure behavior.
+
+Reads remain shallow by default. Use collection mutations to change stored data; use `clone: true` before editing a returned nested value independently:
+
+```javascript
+const draft = await users.findOne({ _id: id }, { clone: true });
+if (draft?.profile) draft.profile.displayName = "Preview";
+```
+
+Cloning is optional and may reject uncloneable values. Failed upsert batches can retain completed items, and commit recovery covers bounded synchronous failures. See [read ownership](docs/documentation.md#read-ownership) and [commit recovery](docs/documentation.md#commit-stage-recovery) for the precise contracts.
 
 ### Incomplete persistence batches
 
