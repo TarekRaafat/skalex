@@ -46,7 +46,7 @@ WAL and incremental persistence remain committed v4 work. Benchmarks must includ
 
 The [performance work register](https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14b-performance-and-footprint-work) records evaluation windows, dependencies and acceptance evidence. These candidates do not expand committed release scope.
 
-- Alpha.7 may evaluate remaining empty-hook dispatch and single-document uniqueness bookkeeping. Accept only measured gains that preserve existing behavior.
+- Alpha.7 evaluated remaining empty find-hook dispatch and single-document uniqueness bookkeeping. Neither was adopted because improvements did not hold across the required workloads. Keep the benchmark and behavior tests for future investigation.
 - Alpha.8/alpha.9 can evaluate unsorted page projection/population and compound-index use in findOne after pinning ordering and failure semantics.
 - Alpha.9/alpha.10 evaluates provider loading and MCP package boundaries as part of the planned package split. Track core bytes, total package size and first-use loading separately.
 - Beta performance work includes the planned filter cache, operator-only updates and incremental persistence. Removing redundant flush preflight requires proven adapter atomicity first.

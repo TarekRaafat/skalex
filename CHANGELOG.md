@@ -80,11 +80,13 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 ### Tests
 
+- Add query-hook characterization for late registration, filter mutation, error propagation and handle invalidation, plus a built-artifact benchmark with registered-hook controls. Keep the current query and uniqueness implementation after evaluating optional performance changes.
+
 - Add 25 lifecycle/identity regressions (the initial 21 had 18 failures before the fix), three cache/CSV regressions, negative declaration cases and package error/entry tests. Run shared safety checks on all four runtime targets and the documentation browser asset.
 
 - Verify installed tarball exports, CJS CRUD and lazy HTTP loading on Node/Bun. Load and update alpha.6 JSON/gz data with and without encryption. Compile isolated consumers under ES2022/ES2024 with NodeNext/Bundler resolution, including a negative disposal-reference control.
 
-- All 1302 unit/integration tests pass, including the original ownership, mutation recovery, persistence and query regressions. Package contracts and declaration checks run separately. Built-artifact smoke covers Node, Bun, Deno and browsers.
+- All 1306 unit/integration tests pass, including the original ownership, mutation recovery, persistence and query regressions. Package contracts and declaration checks run separately. Built-artifact smoke covers Node, Bun, Deno and browsers.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Add 30 commit-recovery regressions to the normal gate and exercise recovery against built artifacts in all four runtimes. One-shot fault injection verifies bounded recovery, not arbitrary failure atomicity.
 - Add executable audit reproductions against source and published artifacts under `tests/reconciliation/`. Unresolved diagnostic assertions remain separate from the normal test gate and do not indicate release readiness.
 - **De-flaked `changelog-exact-restore.test.js`** - the "preserves `_expiresAt`" case restored to a document's `updatedAt`, which can predate the document's own changelog entry by a sub-millisecond skew, so it failed intermittently (~1 in 10 isolated runs). It now captures a wall-clock instant after the awaited insert, matching the deterministic pattern the sibling cases already use. Verified 12/12 isolated runs. The underlying `restore()` millisecond-resolution limitation is tracked for a later release.

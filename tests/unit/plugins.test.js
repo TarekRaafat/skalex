@@ -276,3 +276,55 @@ describe("plugin registration across insert phases", () => {
     await db.disconnect();
   });
 });
+
+
+describe("find hook admission", () => {
+  test("observes hook methods added after an empty-plugin query", async () => {
+    const db = makeDb();
+    const col = db.useCollection("items");
+    await col.insertOne({ _id: "a" });
+    const plugin = {};
+    db.use(plugin);
+    await col.find({});
+    const calls = [];
+    plugin.beforeFind = () => calls.push("before");
+    plugin.afterFind = ({ docs }) => { calls.push("after"); docs[0].observed = true; };
+    expect((await col.find({})).docs[0].observed).toBe(true);
+    expect(calls).toEqual(["before", "after"]);
+    await db.disconnect();
+  });
+
+  test("awaits filter changes and after-hook registration during beforeFind", async () => {
+    const db = makeDb();
+    const col = db.useCollection("items");
+    await col.insertMany([{ _id: "a" }, { _id: "b" }]);
+    const calls = [];
+    db.use({ beforeFind: async ({ filter }) => {
+      await Promise.resolve();
+      filter._id = "b";
+      db.use({ afterFind: ({ docs }) => calls.push(docs[0]._id) });
+    } });
+    expect((await col.find({})).docs.map(doc => doc._id)).toEqual(["b"]);
+    expect(calls).toEqual(["b"]);
+    await db.disconnect();
+  });
+
+  test("preserves beforeFind errors without running afterFind", async () => {
+    const db = makeDb();
+    const col = db.useCollection("items");
+    const failure = new TypeError("hook failure");
+    let after = false;
+    db.use({ beforeFind: () => { throw failure; }, afterFind: () => { after = true; } });
+    await expect(col.find({})).rejects.toBe(failure);
+    expect(after).toBe(false);
+    await db.disconnect();
+  });
+
+  test("rejects a handle invalidated by an awaited beforeFind hook", async () => {
+    const db = makeDb();
+    const col = db.useCollection("items");
+    await col.insertOne({ _id: "a" });
+    db.use({ beforeFind: () => db.disconnect() });
+    await expect(col.find({})).rejects.toMatchObject({ code: "ERR_SKALEX_VALIDATION_STALE_COLLECTION" });
+  });
+});

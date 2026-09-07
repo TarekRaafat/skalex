@@ -32,7 +32,7 @@ These hold for every release on the path to 4.0.0.
 
 Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
 
-Architecture and API follow-up fixes are implemented. Local qualification covers 1302 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+Architecture and API follow-up fixes are implemented. Local qualification covers 1306 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
 
 Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Retain the existing critical-issue policy: the choice between a narrow safety patch and direct alpha.7 delivery must be recorded explicitly before publication. Completing the audit is not authorization to publish or an exception to that policy.
 
@@ -78,6 +78,8 @@ Alpha.7 already skips empty insert before-hooks and ordinary mutation after-hook
 | Compiled-filter reuse and operator-only updates | beta.3 | Define cache identity/invalidation for mutable filters, functions and regular expressions. Preserve schema, hooks, changelog and index consistency. Measure cache misses as well as repeated queries. |
 | Atomic-adapter flush preflight optimization | After alpha.8 capability design, within persistence hardening | Specify all-or-nothing multi-entry writes, including wrappers and chunked batches. Prove crash/failure behavior before removing any marker I/O. An adapter label alone is insufficient. |
 | Incremental persistence | Existing storage work through beta.3 | Measure ordinary saves, autosaves and transactions separately, including snapshots, serialization, recovery and bytes written. Preserve the agreed commit/recovery protocol. This remains committed v4 work. |
+
+Alpha.7 evaluation outcome: neither remaining micro-optimization is adopted. Skipping empty find hooks improved plugin-free queries but registered-hook medians increased in both repeated Bun and Node comparisons. Avoiding the single-document unique-batch Set improved Bun but regressed Node in the initial comparison. Retain the current implementation and revisit only with a design that meets the workload requirements. Search dispatch was not measured or changed. The query benchmark and hook characterization tests remain available for future work.
 
 Preparation before expanding implementation:
 
