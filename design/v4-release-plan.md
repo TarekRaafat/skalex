@@ -62,6 +62,31 @@ This resolves F16 as an opt-in detachment contract, not safe-by-default reads. M
 
 Default detachment and development-time freezing are not part of this change. Freezing requires separate compatibility and performance evaluation. F04 now has bounded synchronous commit-stage recovery, verified with one-shot faults and a separate recovery-failure guard. Neither this guarantee nor the revised F16 diagnostic establishes release readiness or arbitrary failure atomicity.
 
+## 1.4b Performance and footprint work
+
+The opportunities below are investigation candidates, not additional release promises. Target windows indicate when to evaluate them alongside committed work. Promote a candidate to implementation only after demonstrating a representative workload benefit, preserving behavioral contracts and passing the unchanged runtime, dependency and bundle gates. A small benchmark win alone does not justify more API or package complexity.
+
+Alpha.7 already skips empty insert before-hooks and ordinary mutation after-hooks. Deferred transaction hooks remain intact. The three-way built-artifact insert benchmark records raw samples across index profiles and separates alpha.6, the prior candidate and the optimized build. Results depend on runtime, garbage collection and workload. Do not extrapolate plugin-free insert measurements to autosave, embeddings or registered hooks.
+
+| Opportunity | Evaluation window | Required preparation and acceptance evidence |
+| --- | --- | --- |
+| Remaining empty query/search hook dispatch | Optional alpha.7 | Measure short indexed queries with zero plugins and registered plugins. Preserve hook ordering, late registration, errors and handle checks. Keep only repeatable gains. |
+| Single-document unique-index bookkeeping | Optional alpha.7 | Measure avoiding a batch-local Set for one candidate. Preserve live-index collision checks, missing values, compound validation, replacement mode and recovery. No validation bypass. |
+| Projection/population after unsorted pagination | alpha.8/alpha.9 | Characterize totals, empty pages, limit-only early stop, hook payloads and population failure/concurrency timing. Measure returned-page work versus all matched candidates. Treat observable timing changes as a contract decision. |
+| Compound-index candidates for findOne | alpha.9 | Pin first-match ordering, visibility, undefined/null handling and additional predicates against scans. Existing index presence must not unexpectedly select a different matching document. Measure selectivity and fallback costs. |
+| Provider implementation loading and MCP package boundaries | alpha.9/alpha.10 | Attribute bundle bytes before extraction. Preserve configuration ergonomics, constructor validation and error identity. Measure initial and first-use load costs, total package size and transitive lazy modules across ESM/CJS/browser consumers. Align with the already planned package split. |
+| Compiled-filter reuse and operator-only updates | beta.3 | Define cache identity/invalidation for mutable filters, functions and regular expressions. Preserve schema, hooks, changelog and index consistency. Measure cache misses as well as repeated queries. |
+| Atomic-adapter flush preflight optimization | After alpha.8 capability design, within persistence hardening | Specify all-or-nothing multi-entry writes, including wrappers and chunked batches. Prove crash/failure behavior before removing any marker I/O. An adapter label alone is insufficient. |
+| Incremental persistence | Existing storage work through beta.3 | Measure ordinary saves, autosaves and transactions separately, including snapshots, serialization, recovery and bytes written. Preserve the agreed commit/recovery protocol. This remains committed v4 work. |
+
+Preparation before expanding implementation:
+
+1. Retain immutable alpha.6 and candidate artifacts with integrity hashes. Record exact entries, runtime versions, workload sizes, warmups, sample order and raw timings. Compare the same artifact type and measure without profiler overhead for final results.
+2. Add workload-specific characterization tests when starting each candidate. Reuse scan/index equivalence, transaction ownership and failure-injection coverage. Avoid speculative APIs, capability flags or caches merely to prepare for future work.
+3. Extend measurement coverage to registered hooks, autosave, embeddings and larger datasets as the relevant work starts. Keep ordinary CRUD measurements separate from those optional costs.
+4. Report core gzip size, package archive size and lazy-module transfer separately. Keep the current hard core budget. Consider additional lazy-entry budgets during the package split without silently widening existing limits.
+5. Keep alpha.7 bounded. Optional micro-optimizations must not delay the safety release for an open-ended performance campaign. After any accepted change, refresh the documentation bundle and qualify the final installed tarball before publication.
+
 ## 1.5 Critical-issue lane
 
 P0 findings preempt the release train. They do not wait for the next planned release. A P0 is one of:
