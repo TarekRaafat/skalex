@@ -222,3 +222,57 @@ describe("db.use()  -  multiple plugins", () => {
     await db.disconnect();
   });
 });
+
+
+describe("plugin registration across insert phases", () => {
+  test("activates hooks on an existing handle after an unobserved insert", async () => {
+    const db = makeDb();
+    const col = db.useCollection("items");
+    await col.insertOne({ _id: "first" });
+    const calls = [];
+    db.use({
+      beforeInsert: ({ doc }) => calls.push("before:" + doc._id),
+      afterInsert: ({ doc }) => calls.push("after:" + doc._id),
+    });
+    await col.insertOne({ _id: "second" });
+    expect(calls).toEqual(["before:second", "after:second"]);
+    await db.disconnect();
+  });
+
+  test("observes after hooks registered by a synchronous watch listener", async () => {
+    const db = makeDb();
+    const col = db.useCollection("items");
+    const calls = [];
+    col.watch(() => db.use({ afterInsert: ({ doc }) => calls.push(doc._id) }));
+    await col.insertOne({ _id: "first" });
+    expect(calls).toEqual(["first"]);
+    await db.disconnect();
+  });
+
+  test("retains deferred hooks when the first plugin is registered later in a transaction", async () => {
+    const db = makeDb();
+    await db.connect();
+    const calls = [];
+    await db.transaction(async tx => {
+      await tx.useCollection("items").insertOne({ _id: "owned" });
+      db.use({ afterInsert: ({ doc }) => calls.push(doc._id) });
+      expect(calls).toEqual([]);
+    });
+    expect(calls).toEqual(["owned"]);
+    await db.disconnect();
+  });
+
+  test("keeps checking hook methods on already registered plugin objects", async () => {
+    const db = makeDb();
+    const plugin = {};
+    db.use(plugin);
+    const col = db.useCollection("items");
+    await col.insertOne({ _id: "first" });
+    const calls = [];
+    plugin.beforeInsert = ({ doc }) => calls.push("before:" + doc._id);
+    plugin.afterInsert = ({ doc }) => calls.push("after:" + doc._id);
+    await col.insertOne({ _id: "second" });
+    expect(calls).toEqual(["before:second", "after:second"]);
+    await db.disconnect();
+  });
+});

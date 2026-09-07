@@ -717,7 +717,8 @@ class MutationPipeline {
     // After hook - fire per-doc for insert, single call for update/delete.
     // All hook payloads receive vector-stripped docs for consistency, so
     // plugins don't have to handle _vector presence vs absence per hook type.
-    if (afterHook) {
+    // Owned writes must retain deferred hooks even if plugins register later.
+    if (afterHook && (isTxWrite || ctx.plugins.size)) {
       if (afterHookPayload) {
         const stripped = docs.map(stripVector);
         await ctx.runAfterHook(afterHook, afterHookPayload(stripped));
@@ -1601,7 +1602,7 @@ class Collection {
    */
   async _prepareInsertInBatch(body, { ttl, embed, batchIds }) {
     const validated = this._applyValidation(body);
-    await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
+    if (this._ctx.plugins.size) await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
     const newDoc = await this._buildDoc(validated, { ttl, embed });
     if (batchIds) {
       this._assertInsertIdAvailable(newDoc._id, batchIds);

@@ -261,7 +261,7 @@ class Collection {
    */
   async _prepareInsertInBatch(body, { ttl, embed, batchIds }) {
     const validated = this._applyValidation(body);
-    await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
+    if (this._ctx.plugins.size) await this._ctx.plugins.run(Hooks.BEFORE_INSERT, { collection: this.name, doc: validated });
     const newDoc = await this._buildDoc(validated, { ttl, embed });
     if (batchIds) {
       this._assertInsertIdAvailable(newDoc._id, batchIds);

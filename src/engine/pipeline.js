@@ -123,7 +123,8 @@ class MutationPipeline {
     // After hook - fire per-doc for insert, single call for update/delete.
     // All hook payloads receive vector-stripped docs for consistency, so
     // plugins don't have to handle _vector presence vs absence per hook type.
-    if (afterHook) {
+    // Owned writes must retain deferred hooks even if plugins register later.
+    if (afterHook && (isTxWrite || ctx.plugins.size)) {
       if (afterHookPayload) {
         const stripped = docs.map(stripVector);
         await ctx.runAfterHook(afterHook, afterHookPayload(stripped));

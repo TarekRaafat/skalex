@@ -32,7 +32,7 @@ These hold for every release on the path to 4.0.0.
 
 Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
 
-Architecture and API follow-up fixes are implemented. Local qualification covers 1298 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+Architecture and API follow-up fixes are implemented. Local qualification covers 1302 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
 
 Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Retain the existing critical-issue policy: the choice between a narrow safety patch and direct alpha.7 delivery must be recorded explicitly before publication. Completing the audit is not authorization to publish or an exception to that policy.
 
