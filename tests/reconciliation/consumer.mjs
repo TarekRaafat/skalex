@@ -148,7 +148,7 @@ void check;
   const report = { candidateVersion: pkg.version, candidateSha256: createHash("sha256").update(readFileSync(candidate)).digest("hex"),
     baselineVersion: "4.0.0-alpha.6", baselineIntegrity: "sha512-" + baselineIntegrity,
     packageFiles: files.length, runtimeDependencies: 0, results,
-    limits: "Candidate retains development version until release preparation. CJS checks exercise CRUD; migration and HTTP exercises use ESM. Tests cover JSON/gz with and without encryption, not every adapter or minimum Node version. Built-browser/Deno smoke is a separate gate." };
+    limits: "Version shown is installed tarball metadata; publication is not verified. CJS checks exercise CRUD; migration and HTTP exercises use ESM. Tests cover JSON/gz with and without encryption, not every adapter or minimum Node version. Built-browser/Deno smoke is a separate gate." };
   writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify(report, null, 2));
 } finally { rmSync(workspace, { recursive: true, force: true }); }

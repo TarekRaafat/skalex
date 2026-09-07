@@ -37,14 +37,14 @@ ID filters: `{ _id: { $in: ["a", "b"] } }` and regular expressions use the norma
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.6 is the current release.** `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **v4.0.0-alpha.7 is prepared for release, not yet published.** Versioned examples target this upcoming release. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 **CDN - ESM** (recommended for browser apps; use the browser-specific barrel):
 
 ```html
 <script type="module">
-  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/dist/skalex.browser.js";
-  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/src/connectors/storage/browser.js";
+  import Skalex from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.7/dist/skalex.browser.js";
+  import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.7/src/connectors/storage/browser.js";
 </script>
 ```
 
@@ -64,7 +64,7 @@ import { FsAdapter, OpenAIEmbeddingAdapter, OpenAILLMAdapter } from 'skalex/conn
 **CDN - IIFE** (quick demos, `window.Skalex` global, no connector bundling):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6"></script>
+<script src="https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.7"></script>
 ```
 
 ## Core API - by workflow
@@ -204,7 +204,7 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 - Embedding only: `import { OpenAIEmbeddingAdapter, OllamaEmbeddingAdapter } from 'skalex/connectors/embedding'`
 - LLM only: `import { OpenAILLMAdapter, AnthropicLLMAdapter, OllamaLLMAdapter } from 'skalex/connectors/llm'`
 - Individual paths: `skalex/connectors/fs`, `skalex/connectors/local`, `skalex/connectors/encrypted`, `skalex/connectors/bun-sqlite`, `skalex/connectors/d1`, `skalex/connectors/libsql`
-- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.6/src/connectors/storage/browser.js"`
+- CDN ESM (browser, no bundler): `import { LocalStorageAdapter, EncryptedAdapter } from "https://cdn.jsdelivr.net/npm/skalex@4.0.0-alpha.7/src/connectors/storage/browser.js"`
 
 ## Storage Adapters
 

@@ -29,7 +29,7 @@ import { TOOL_DEFS, callTool, _validateCollection } from "./tools.js";
 import { ok, error, parse, toolResult, toolError, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./protocol.js";
 import StdioTransport from "./transports/stdio.js";
 
-const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.6" };
+const SERVER_INFO = { name: "skalex", version: "4.0.0-alpha.7" };
 const PROTOCOL_VERSION = "2024-11-05";
 
 class SkalexMCPServer {
