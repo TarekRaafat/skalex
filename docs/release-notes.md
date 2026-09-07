@@ -33,6 +33,8 @@ Read the [upgrade checklist](migration.md) before changing an existing applicati
 
 ### Performance and Size
 
+- **Persistence tradeoff** - Ordinary saves now share an ordered queue with transaction commits to prevent older saves from overwriting newer committed data. Saving multiple collections, including during disconnect, may take longer. This is a persistence-ordering safeguard, not a claim of performance neutrality.
+
 - Skip empty insert before-hooks and ordinary mutation after-hooks when no plugins are registered, while preserving deferred transaction hooks.
 - Local plugin-free insert benchmarks improved on the preceding alpha.7 build. These results do not establish performance for embeddings, persistence or registered plugins.
 - Core minified bundles remain within the unchanged 29500-byte gzip limit. MCP HTTP and tool modules load lazily and must remain available in deployed packages.

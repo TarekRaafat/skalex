@@ -64,7 +64,7 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 
 - **Partial-batch detection** - persist the flush marker before transaction data using previously committed metadata, so pending migration versions cannot escape through preflight. Incomplete markers survive rollback, later saves and unrelated commits. Reconnect warns without claiming automatic repair. Each non-empty commit adds a metadata read and marker write.
 
-- **Persistence write ordering** - ordinary saves and transaction batches share the adapter-write queue, including sentinel clearing. Older saves cannot overwrite a later commit. Failed writes release the queue. Concurrent same-collection saves remain coalesced, and newer unsaved edits retain dirty state.
+- **Persistence write ordering** - ordinary saves and transaction batches share the adapter-write queue, including sentinel clearing. Older saves cannot overwrite a later commit. Failed writes release the queue. Concurrent same-collection saves remain coalesced, and newer unsaved edits retain dirty state. Saving multiple collections, including during disconnect, may take longer because their writes now execute in order.
 
 - **Protected historical restore** - replay uses the mutation pipeline for locks, dirty tracking and saving, including a lock check after reading history. Archived timestamps, version, expiry and vector remain exact. Replay skips mutation hooks and recursive changelog entries. Restored nested values are detached from archived records. Both database and changelog restore entry points share the protected path.
 

@@ -17,7 +17,8 @@ Do not infer the installed version from an import statement. Check the applicati
 1. Record the runtime, storage adapter, serialization/compression settings and encryption configuration.
 2. Stop all writers before copying persistent storage. Preserve the complete storage set, including metadata and changelog collections, with its encryption key available separately.
 3. Test the upgrade on a copy of that storage in an isolated application instance. Do not run old and new writers against the same directory or database.
-4. Record the application's transaction callbacks, migration callbacks, HTTP MCP configuration and retry behavior.
+4. Record the application's transaction callbacks, migration callbacks, HTTP MCP configuration and retry behavior. Preserve the previous application build, exact dependency version and lockfile.
+5. Keep the backup separate from writable test data. Verify the copied files with checksums or the adapter's backup verification tools, then rehearse restoring into another isolated location with the previous application. A copied folder alone does not prove that a backup can be restored. Use the adapter's consistent-backup procedure for storage that is not file-based.
 
 Alpha.7 does not change the collection payload format. Local qualification covers alpha.6 JSON and gz filesystem data, with and without encryption, on Node and Bun. That evidence does not certify every adapter, runtime version or application schema.
 
@@ -26,7 +27,7 @@ Alpha.7 does not change the collection payload format. Local qualification cover
 Pin the target version in the application:
 
 ```sh
-npm install skalex@4.0.0-alpha.7
+npm install --save-exact skalex@4.0.0-alpha.7
 ```
 
 Review the dependency and lockfile diff. Preserve storage paths, keys and adapter options.
@@ -59,19 +60,32 @@ Adapter constructors are runtime exports of skalex/connectors and its subpaths. 
 
 Natural-language query caches now persist the complete collection/schema/query identity. Legacy hash-only cache records are ignored and translations regenerate on demand. This may cause an additional model call after upgrade. CSV export uses the union of fields in first-seen order and writes empty cells for missing fields, preserving column alignment.
 
+### Persistence cost
+
+Ordinary saves now share an ordered queue with transaction commits to prevent older saves from overwriting newer committed data. Saving multiple collections, including during disconnect, may take longer. This is a persistence-ordering safeguard, not a claim of performance neutrality.
+
 ## Verify before rollout
 
 - Compile the application, including transaction and migration callback types.
-- Run CRUD and indexed queries against the copied dataset.
+- Before making test writes, record collection names, document counts, IDs and representative field values/types with the previous application. Include timestamps, nested values and indexes relevant to the application.
+- Run CRUD and indexed queries against the copied dataset. Compare expected query results and check that untouched records and IDs remain unchanged.
 - Run each pending migration and reconnect to verify its data and applied-version record.
 - Exercise transaction success and callback failure, including relevant hooks.
 - Verify HTTP MCP access from intended clients and rejection of unintended origins.
-- Save, disconnect and reopen with the same adapter and encryption configuration.
+- Save, disconnect and reopen with the same adapter and encryption configuration. Verify saved changes, counts, IDs, representative values/types and migration records again. Account explicitly for intentional migration changes.
 - Inspect incomplete-flush warnings before acknowledging them. Never auto-acknowledge as an upgrade step.
 - Preserve legacy temporary-looking files and investigate payload-name mismatches. Never bulk-delete files containing .tmp.
 - Treat ERR_SKALEX_MUTATION_RECOVERY as a failed instance. Stop using it and reopen verified storage rather than clearing internal flags.
 
-If validation fails, stop the rollout. Restore the verified pre-upgrade backup with the previous application only after stopping new writers. Do not assume downgrading the dependency reverses application migrations.
+## Rollout and recovery
+
+After the isolated checks pass, stop writers and take a fresh verified backup before switching the real application. Deploy the same tested package version, lockfile and configuration. Verify the reopened data before resuming writes.
+
+If validation fails, stop the rollout. Preserve the failed storage separately before attempting recovery. Restore the verified pre-upgrade backup into a separate location with the previous application, then verify its contents before directing the application to it. Never run the previous and upgraded applications as writers against the same storage.
+
+A pre-upgrade backup does not contain writes accepted afterward. Preserve those writes and decide how to reconcile them before restoring, otherwise rollback loses them. Downgrading the dependency does not reverse application migrations. There is no universal automatic rollback procedure.
+
+A persistence error does not necessarily mean the in-memory mutation was undone. Inspect the operation's documented failure behavior and stored state before retrying, especially for partial upsert batches, historical restore and memory compression. An incomplete-flush warning is evidence to investigate, not permission to continue writing or acknowledge automatically. With ERR_SKALEX_MUTATION_RECOVERY, discard the failed instance and reopen only verified storage.
 
 ## Instructions for an LLM-assisted upgrade
 

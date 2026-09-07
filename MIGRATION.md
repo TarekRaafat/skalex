@@ -43,7 +43,7 @@ Restore events now follow a successful save. A save failure leaves restored data
 
 ### Persistence write ordering
 
-Ordinary saves and transaction batches now share one adapter-write queue per database instance. Saves of different collections also wait their turn, which can increase latency with slow adapters. Same-collection coalescing remains active. Failed writes release the queue for later work. Edits made during an ordinary save remain dirty for retry. This change orders writes without adding transaction read isolation or partial-batch crash recovery.
+Ordinary saves and transaction batches now share one adapter-write queue per database instance. Saves of different collections also wait their turn, which can increase latency with slow adapters. Full saves during disconnect can therefore take longer. Keep this ordering safeguard when adapting application shutdown. Same-collection coalescing remains active. Failed writes release the queue for later work. Edits made during an ordinary save remain dirty for retry. This change orders writes without adding transaction read isolation or partial-batch crash recovery.
 
 ### Incomplete transaction batches
 
