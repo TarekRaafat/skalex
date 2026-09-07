@@ -44,7 +44,7 @@ WAL and incremental persistence remain committed v4 work. Benchmarks must includ
 
 ## Performance and bundle opportunities
 
-The [performance work register](https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14b-performance-and-footprint-work) records evaluation windows, dependencies and acceptance evidence. These candidates do not expand committed release scope.
+The [performance work register](https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14b-performance-and-footprint-work) records evaluation windows, dependencies and acceptance evidence. These candidates come from code inspection, not confirmed performance or bundle-size gains. Benefits remain unverified unless backed by recorded measurements. Each requires thorough correctness, compatibility, runtime, workload and delivery-cost investigation before implementation, and may be rejected. Existing release commitments remain unchanged. The two alpha.7 candidates below were investigated and excluded, rather than left unverified.
 
 - Alpha.7 evaluated remaining empty find-hook dispatch and single-document uniqueness bookkeeping. Neither was adopted because improvements did not hold across the required workloads. Keep the benchmark and behavior tests for future investigation.
 - Alpha.8/alpha.9 can evaluate unsorted page projection/population and compound-index use in findOne after pinning ordering and failure semantics.

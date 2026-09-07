@@ -64,7 +64,11 @@ Default detachment and development-time freezing are not part of this change. Fr
 
 ## 1.4b Performance and footprint work
 
-The opportunities below are investigation candidates, not additional release promises. Target windows indicate when to evaluate them alongside committed work. Promote a candidate to implementation only after demonstrating a representative workload benefit, preserving behavioral contracts and passing the unchanged runtime, dependency and bundle gates. A small benchmark win alone does not justify more API or package complexity.
+The opportunities below come from code inspection and are investigation candidates, not confirmed optimizations or additional release promises. Their expected performance and bundle-size benefits are unverified unless supported by recorded measurements. Before implementation, each requires thorough investigation of correctness, compatibility, supported runtimes, representative workloads and total delivery cost. Investigation may conclude that no change should be made. Existing release commitments remain unchanged.
+
+The two alpha.7 experiments summarized below were investigated and excluded because their results did not meet the acceptance criteria. They are evaluated candidates, not uninvestigated opportunities. Their results do not establish benefits for the other candidates.
+
+Target windows indicate when to evaluate them alongside committed work. Promote a candidate to implementation only after demonstrating a representative workload benefit, preserving behavioral contracts and passing the unchanged runtime, dependency and bundle gates. A small benchmark win alone does not justify more API or package complexity.
 
 Alpha.7 already skips empty insert before-hooks and ordinary mutation after-hooks. Deferred transaction hooks remain intact. The three-way built-artifact insert benchmark records raw samples across index profiles and separates alpha.6, the prior candidate and the optimized build. Results depend on runtime, garbage collection and workload. Do not extrapolate plugin-free insert measurements to autosave, embeddings or registered hooks.
 
