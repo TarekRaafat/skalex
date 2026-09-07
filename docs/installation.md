@@ -16,7 +16,7 @@ In 30 seconds, you'll have a database running. No server to provision. No config
 npm install skalex@alpha
 ```
 
-> **v4.0.0-alpha.7 is prepared for release, not yet published.** Versioned examples target this upcoming release. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
+> **These docs target v4.0.0-alpha.7.** This is a prerelease; pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading. `npm install skalex` installs the last stable v3 - use `@alpha` to get v4.
 
 ---
 

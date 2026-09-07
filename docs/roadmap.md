@@ -4,9 +4,9 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 ---
 
-#### Implemented for 4.0.0-alpha.7 (unreleased)
+#### Implemented for 4.0.0-alpha.7
 
-Implementation is complete; installed-package verification and release preparation remain separate. See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) for callback restrictions, HTTP configuration and failure behavior.
+See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) for callback restrictions, HTTP configuration and failure behavior.
 
 - [x] Filesystem cleanup preserves legal collection names; collection scopes use canonical identifiers; HTTP Origin and Host checks precede dispatch.
 - [x] Consistent primary IDs, index updates and bounded synchronous commit recovery, with persistence blocked after failed recovery.

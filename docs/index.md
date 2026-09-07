@@ -26,7 +26,7 @@
 > No server. No config. No dependencies. The AI-first JavaScript database - built for AI agents, local-first apps, and every JavaScript runtime. :rocket:
 
 > [!WARNING]
-> **v4.0.0-alpha.7 (unreleased)**: this is a pre-release. The API may change before the stable `4.0.0` release. Pin the exact version in your `package.json` and review the [CHANGELOG](https://github.com/TarekRaafat/skalex/blob/master/CHANGELOG.md) before upgrading.
+> **These docs target v4.0.0-alpha.7.** This is a prerelease; pin the exact version and review the [migration guide](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) before upgrading.
 
 ## What is Skalex? <!-- {docsify-ignore} -->
 
