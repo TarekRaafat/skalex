@@ -18,7 +18,8 @@ Required follow-up:
 - [x] Keep CSV values aligned with their columns.
 - [x] Align package exports, connector error identity and method-specific declarations.
 - [x] Verify installed consumers, alpha.6 migrations, declarations and all four runtime targets.
-- [ ] Complete release dates and publishing approval.
+- [x] Record direct alpha.7 delivery and date the release materials.
+- [ ] Obtain publishing approval.
 
 See [migration guidance](migration.md) for implemented behavior and upgrade requirements. Pending items above are not claims that the implementation already supports them.
 

@@ -7,7 +7,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [4.0.0-alpha.7] - TBD
+## [4.0.0-alpha.7] - 2026-09-07
 
 Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, primary-ID races, and document/index consistency alongside the shared mutation-pipeline refactors. Adds explicit cloned reads and incomplete-flush acknowledgement, with restricted transaction callbacks and stricter HTTP validation. No serialized payload format changes. Temporary files use a reserved naming scheme. Ambiguous legacy files are preserved for inspection.
 

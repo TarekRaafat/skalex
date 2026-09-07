@@ -104,6 +104,14 @@ Recovery reconstructs indexes on the failure path. It assumes ordinary stored va
 - MCP validates and trims collection names before authorization. Configure scopes using canonical collection names. A collection-specific denial applies equally to padded names.
 - Concurrent inserts claiming an existing ID reject with `ERR_SKALEX_UNIQUE_DUPLICATE_ID`. Before-insert hooks can run before the final live-ID check. A rejected insert does not undo external hook effects. This fix does not repair duplicate IDs already stored by an older version.
 
+### Package and query contract corrections
+
+Adapter constructors are runtime exports of skalex/connectors and its subpaths. Their root names are type-only, as are Memory, ChangeLog, SkalexMCPServer and the named Skalex type. Import the database constructor as the default export. Obtain memory, changelog and MCP instances through their database factories. findOne accepts populate, select, includeDeleted and clone, not sort/page/limit/session. Use find for sorting and pagination. Compound index declarations accept arrays of field names.
+
+Natural-language query caches now persist the complete collection/schema/query identity. Legacy hash-only cache records are ignored and translations regenerate on demand. This may cause an additional model call after upgrade. CSV export uses the union of fields in first-seen order and writes empty cells for missing fields, preserving column alignment.
+
+MCP tool definitions and handlers load on the first tool request. Keep the package's src/connectors/mcp/tools.js and src/engine/errors.js alongside dist, as well as the existing optional HTTP transport. The documentation distribution includes matching modules under docs/src. Error constructors are shared within a JavaScript realm through a non-enumerable, immutable registry keyed by Symbol.for("skalex.errors.v4"). ESM, CJS and source connectors retain the same error constructors and normal instanceof semantics. Separate realms are not covered.
+
 This file collects every upgrade guide Skalex v4 has shipped. Start with the section matching the version you are upgrading from.
 
 - [4.0.0-alpha.5 → 4.0.0-alpha.6](#400-alpha5--400-alpha6) (no breaking changes)
@@ -642,12 +650,3 @@ await collection.export({}, { format: "json", name: "users" });
 
 2. Replace every `db.import(path, "csv")` call with `db.import(path)` pointing at the JSON file.
 3. `collection.export({ format: "csv" })` still works for exporting - only import of CSV was removed.
-
-
-### Package and query contract corrections
-
-Adapter constructors are runtime exports of skalex/connectors and its subpaths. Their root names are type-only, as are Memory, ChangeLog, SkalexMCPServer and the named Skalex type. Import the database constructor as the default export. Obtain memory, changelog and MCP instances through their database factories. findOne accepts populate, select, includeDeleted and clone, not sort/page/limit/session. Use find for sorting and pagination. Compound index declarations accept arrays of field names.
-
-Natural-language query caches now persist the complete collection/schema/query identity. Legacy hash-only cache records are ignored and translations regenerate on demand. This may cause an additional model call after upgrade. CSV export uses the union of fields in first-seen order and writes empty cells for missing fields, preserving column alignment.
-
-MCP tool definitions and handlers load on the first tool request. Keep the package's src/connectors/mcp/tools.js and src/engine/errors.js alongside dist, as well as the existing optional HTTP transport. The documentation distribution includes matching modules under docs/src. Error constructors are shared within a JavaScript realm through a non-enumerable, immutable registry keyed by Symbol.for("skalex.errors.v4"). ESM, CJS and source connectors retain the same error constructors and normal instanceof semantics. Separate realms are not covered.

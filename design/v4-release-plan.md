@@ -32,9 +32,9 @@ These hold for every release on the path to 4.0.0.
 
 Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
 
-Architecture and API follow-up fixes are implemented. Local qualification covers 1306 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+Architecture and API follow-up fixes are implemented. Local qualification covers 1306 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Release materials are dated 2026-09-07. Publication approval remains pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
 
-Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Retain the existing critical-issue policy: the choice between a narrow safety patch and direct alpha.7 delivery must be recorded explicitly before publication. Completing the audit is not authorization to publish or an exception to that policy.
+Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Delivery decision (2026-09-07): deliver the qualified fixes directly in alpha.7 instead of preparing a separate alpha.6 safety patch. This author-approved, release-specific exception reflects the completed alpha.7 safety work and migration qualification. The critical-issue policy remains unchanged for future incidents. This delivery decision does not authorize publication.
 
 ## 1.4 Required alpha.7 follow-up and later design work
 
