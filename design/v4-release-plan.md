@@ -5,9 +5,9 @@ The path from alpha.6 to the 4.0.0 stable release. This document is the public s
 ## Release scope
 
 - alpha.7 - Correctness, reliability and DRY cleanup
-- alpha.8 - Persistence foundation
-- alpha.9 - Correctness and security
-- alpha.10 - Final public API surface
+- alpha.8 - Lifecycle and persistence foundation
+- alpha.9 - Query contracts, security and transaction design validation
+- alpha.10 - Freeze validated public contracts
 - beta.1 - Storage engine
 - beta.2 - Transactions
 - beta.3 - Performance and polish
@@ -32,11 +32,29 @@ These hold for every release on the path to 4.0.0.
 
 Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
 
-Implementation and local release-candidate checks are complete for this scope. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+Earlier local release-candidate checks passed for the original scope. Architecture and API review identified additional release-blocking work. Qualification must be repeated after these fixes. Publication and release dates remain pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
 
 Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Retain the existing critical-issue policy: the choice between a narrow safety patch and direct alpha.7 delivery must be recorded explicitly before publication. Completing the audit is not authorization to publish or an exception to that policy.
 
-## 1.4 Document ownership decision
+## 1.4 Required alpha.7 follow-up and later design work
+
+The architecture/API review found defects in the existing alpha.6 behavior as well as the current candidate. Alpha.7 now includes these focused corrections, each with expected-behavior regression tests:
+
+1. Prevent ordinary saves from serializing uncommitted transaction state, including saves already queued before a lock is acquired.
+2. Preserve a coherent ordinary collection-handle lifetime across reconnect and reload. Never acknowledge a write to an obsolete store.
+3. Validate rename inputs before mutation and make collection registries safe for names that match JavaScript prototype properties.
+4. Reject accidental replacement of an existing collection definition while preserving definitions registered before loading persisted data.
+5. Use complete natural-language query identity for cache correctness.
+6. Align CSV rows with a common column list.
+7. Align runtime exports, connector error identity and public declarations, including method-specific find options.
+
+This is safety and API correctness work, not a new storage engine. Shallow reads with explicit clone:true remain unchanged. Transaction callbacks retain their restricted capabilities. Concurrent transaction admission remains reject-while-active for this release.
+
+Before implementing alpha.8, specify database lifecycle states, ordinary-handle lifetime, transaction/save admission, supported persisted values and adapter capabilities. Design transaction read visibility, rollback, commit and recovery semantics before the alpha.10 API freeze. Validate the consequential contracts with prototypes before freezing them. Beta implements and hardens agreed behavior rather than inventing new breaking semantics.
+
+The storage, WAL and incremental-flush commitments remain in 4.0. Their protocols and benchmarks must distinguish ordinary saves from transaction commits, account for snapshot cost, and define the commit point and recovery outcome. Any later scope reduction requires a separate explicit decision.
+
+## 1.4a Document ownership decision
 
 Alpha.7 preserves existing shallow document reads and live `groupBy()` references. Detachment is explicit through `clone: true`, with structured-clone costs and compatibility limits documented at the read APIs.
 
@@ -79,11 +97,11 @@ alpha.7 → alpha.8 → alpha.9 → alpha.10   │   beta.1 → beta.2 → beta.
 | Release | Theme | Breaking? | Effort |
 |---|---|---|---|
 | alpha.7 | Correctness and reliability fixes, restricted transaction/migration handles, DRY cleanup | Yes (callback capabilities) | Medium |
-| alpha.8 | Persistence foundation: split collection store, versioned format, extract serializer | Internal only | Medium |
-| alpha.9 | Correctness and security: MCP sanitization, `applyUpdate` strictness, AI move, query cache migration, error catalogue, MCP recall tools | Yes (narrow) | Medium |
-| alpha.10 | Final API surface: type-precision audit, `UpdateDescriptor<T>` fix, `findOne` types, deprecated removal, uniform return meta, MCP write contract freeze, MCP extraction to `skalex/mcp` + core/AI bundle split, `createCollection` + `db.ask` strictness, by-ID helpers, `hasCollection`, inline migrations, `MemoryAdapter` export, `db.config()` readback, package hygiene | Yes (last window) | Medium-Large |
+| alpha.8 | Lifecycle/store ownership, adapter capabilities, supported-value contract, versioned format and serializer extraction | Narrow if contracts require | Medium |
+| alpha.9 | Validate transaction/persistence contracts and query semantics. Remaining correctness and security: MCP sanitization, `applyUpdate` strictness, AI move, query cache migration, error catalogue, MCP recall tools | Yes (narrow) | Medium |
+| alpha.10 | Freeze only after storage/transaction-facing contract prototypes pass. Remaining final API surface: type-precision audit, `UpdateDescriptor<T>` fix, `findOne` types, deprecated removal, uniform return meta, MCP write contract freeze, MCP extraction to `skalex/mcp` + core/AI bundle split, `createCollection` + `db.ask` strictness, by-ID helpers, `hasCollection`, inline migrations, `MemoryAdapter` export, `db.config()` readback, package hygiene | Yes (last window) | Medium-Large |
 | beta.1 | Storage engine: hybrid `DataStore` + `PersistenceBoundary`, WAL, unified save strategy, opt-in `durable: true` fsync, capability-getter migration | On-disk format v3 | Large |
-| beta.2 | Transactions: remaining isolation semantics, atomic rollback, `AbortSignal` | Within the alpha.10 API freeze | Medium |
+| beta.2 | Harden agreed transaction semantics, rollback-failure handling, lifecycle interactions and agreed cancellation | Within the alpha.10 API freeze | Medium |
 | beta.3 | Performance and polish: delete-path index usage, filter cache, operator-only update fast path, dirty-page incremental flush, events-async, changelog retention, feature-context refactor, stream iterator, `exists`/`has` shortcuts | No | Medium |
 | rc.1 | Documentation, ADRs, migration guide, verification scripts | No | Small (no `src/*.js` changes) |
 | 4.0.0 | Stable release | No | - |
@@ -107,7 +125,7 @@ alpha.8 (store split + format v2 + serializer extract)
    └────▶ beta.1 (hybrid DataStore + WAL + format v3)
                     │
                     ▼
-                beta.2 (per-tx Collection wrappers on top of beta.1 call-path shape)
+                beta.2 (harden agreed transactions on the stable persistence boundary)
                     │
                     ▼
                 beta.3 (additive, fully independent)
@@ -123,8 +141,9 @@ Critical precedence:
 
 - `beta.1` hybrid DataStore depends on `alpha.8` store split (stable store shape needed).
 - `beta.1` format v3 depends on `alpha.8` versioned format v2 (versioning mechanism must exist).
-- `beta.2` per-tx wrapper redesign depends on `beta.1` DataStore (call-path shape stabilizes).
-- `beta.2` atomic rollback depends on `beta.1` WAL.
+- Explicit per-transaction handles shipped in alpha.7. Beta.2 hardens their integration with the beta.1 persistence boundary.
+- Transaction admission, visibility, failure and cancellation contracts must be designed and prototyped by alpha.9, before alpha.10 freezes the API.
+- In-memory rollback does not inherently depend on WAL. Disk recovery depends on the agreed beta.1 recovery protocol and adapter guarantees.
 - `alpha.10` `Collection<T>` type-precision audit depends on `alpha.9` AI move (import paths change before types solidify).
 
 Nothing in the release train depends on `beta.3`. rc.1 branches off `beta.3` cleanly because `beta.3` is additive-only.
@@ -135,6 +154,7 @@ Nothing in the release train depends on `beta.3`. rc.1 branches off `beta.3` cle
 
 | Risk | Owning release | Mitigation |
 |---|---|---|
+| Lifecycle or save admission escapes transaction ownership | alpha.7/alpha.8 | Test saves queued before and during transactions, retained handles, reload, reconnect, rename and definition changes. |
 | Store-split regressions drift sub-records | alpha.8 | Field-count assertion per sub-record. CI fails if a new field lands in one without its sibling. |
 | On-disk format lock-in | alpha.8 | Fixture file per format version (`tests/fixtures/format-v1.dat`, `v2`, `v3`). Loader tests round-trip each. |
 | `applyUpdate` strictness breaks users relying on lenient behavior | alpha.9 | One release of warning mode before throwing. `MIGRATION.md` documents the migration path. |
@@ -173,7 +193,9 @@ Additional gates by release:
 
 | Release | Extra gate |
 |---|---|
-| alpha.8 | Format fixture round-trip tests pass for v1 and v2 |
+| alpha.7 | Safety regressions, installed export/error identity and declaration tests, alpha.6 data compatibility |
+| alpha.8 | Lifecycle/handle matrix, adapter capability conformance and format fixture round trips for v1 and v2 |
+| alpha.9 | Transaction/persistence contract prototypes and positive/negative query API tests |
 | alpha.10 | `tsd` positive and negative cases green. `api-surface.md` snapshot committed |
 | beta.1 | 1000-run crash fault injection passes. Hot-path benchmark within 1.05× alpha.6 |
 | beta.2 | Fire-and-forget + nested async tx tests green on every runtime (including browser) |
@@ -242,8 +264,8 @@ Do NOT cut:
 - Hybrid DataStore (beta.1) - blocks scalability story and hot-path performance charter
 - WAL (beta.1) - blocks reliability claim
 - Unified save strategy (beta.1) - blocks correct error reporting
-- Isolation rename (beta.2) - doc/behavior divergence is a credibility issue
-- Per-tx `Collection` wrappers (beta.2) - closes ambient-state fragility and preserves isomorphic semantics
+- Accurate transaction contracts (design validated by alpha.9, hardened in beta.2) - rollback snapshots must never be described as snapshot isolation
+- Explicit transaction ownership (implemented in alpha.7, hardened in beta.2) - preserve the capability and lifetime guarantees through storage changes
 - `UpdateDescriptor<T>` precision fix (alpha.10) - last chance to fix a type that silently lets bad updates compile
 - MCP sanitization (alpha.9) - security hardening
 - Package exports (alpha.10) - users following the `.d.ts` hit runtime errors today
