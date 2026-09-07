@@ -6,6 +6,15 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 #### Implemented for 4.0.0-alpha.7 (unreleased)
 
+Implementation is complete; installed-package verification and release preparation remain separate. See [migration guidance](https://github.com/TarekRaafat/skalex/blob/master/MIGRATION.md) for callback restrictions, HTTP configuration and failure behavior.
+
+- [x] Filesystem cleanup preserves legal collection names; collection scopes use canonical identifiers; HTTP Origin and Host checks precede dispatch.
+- [x] Consistent primary IDs, index updates and bounded synchronous commit recovery, with persistence blocked after failed recovery.
+- [x] Ordered persistence and protected historical restore; completed upsert prefixes receive normal bookkeeping.
+- [x] Correct ID operators, missing-field queries, sorted projections, strict-schema timestamps and embedded memory summaries.
+- [x] Opt-in cloned reads; existing shallow/live defaults remain documented.
+- [x] Shared mutation preparation and pipeline entry, plus consumer Symbol.asyncDispose declaration support.
+
 - [x] Durable incomplete-batch warnings with explicit `acknowledgeIncompleteFlush()` after inspection or repair.
 
 - [x] Restricted transaction and migration handles: explicit collection/query capabilities, no forwarding of database persistence or lifecycle methods; narrow TypeScript interfaces and runtime regression coverage.
@@ -94,7 +103,6 @@ What's coming next and what's already shipped. Skalex v4 delivered the AI-first 
 
 **DX & tooling**
 - [ ] Normalize connector subpath exports - add `require` / CJS bundles for all connector subpaths (alpha.6 shipped `types` entries; CJS deferred because it requires per-connector rollup outputs)
-- [ ] Make `Symbol.asyncDispose` / `Symbol.dispose` declarations in `src/index.d.ts` tolerant of consumer tsconfigs targeting `lib: ES2022` or earlier - today's declaration triggers `TS2550` for those consumers even though Node 18+ supports `await using` at runtime. Regression-guard strategy needs design (zero-dep constraint rules out `tsc`-based checks; presence check via grep is brittle; tsd's existing compile-check only covers the default lib target)
 - [ ] `create-skalex`: scaffolding CLI - `npm create skalex@latest` for instant project setup with runtime-specific templates
 - [ ] Interactive playground: browser-based sandbox hosted on the docs site - try Skalex with zero installation
 - [ ] Test utilities: `createTestDb(options?)` helper pre-configured with MemoryAdapter for frictionless unit and integration testing

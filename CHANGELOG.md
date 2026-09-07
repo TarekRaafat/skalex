@@ -9,7 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [4.0.0-alpha.7] - TBD
 
-Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, primary-ID races, and document/index consistency alongside the shared mutation-pipeline refactors. No new database methods or serialized payload format changes. Temporary files use a reserved naming scheme; ambiguous legacy files are preserved for inspection.
+Correctness and code-quality release. Fix filesystem cleanup, MCP authorization, primary-ID races, and document/index consistency alongside the shared mutation-pipeline refactors. Adds explicit cloned reads and incomplete-flush acknowledgement, with restricted transaction callbacks and stricter HTTP validation. No serialized payload format changes. Temporary files use a reserved naming scheme; ambiguous legacy files are preserved for inspection.
 
 ### Breaking Changes
 
@@ -67,6 +67,8 @@ Correctness and code-quality release. Fix filesystem cleanup, MCP authorization,
 - **`Symbol.asyncDispose` type resolution under `lib: ES2022` and earlier** - `src/index.d.ts` declares `[Symbol.asyncDispose](): Promise<void>` to support `await using db = new Skalex(...)`, but that symbol lives in `lib.esnext.disposable` (TS 5.2+). Consumers whose tsconfig targets `lib: ES2022` or earlier hit `TS2550` when their compiler read the declaration file. A top-of-file `/// <reference lib="esnext.disposable" />` directive now pulls the symbol in regardless of the consumer's `lib` setting. Runtime `await using` already worked on Node 18+; this fixes only the point-of-adoption type error. A zero-dependency guard (`npm run verify:lib-ref`, in the mandatory gate) asserts the directive stays at the top of the file - where a triple-slash reference is effective - so a refactor cannot silently drop or demote it.
 
 ### Tests
+
+- Verify installed tarball exports, CJS CRUD and lazy HTTP loading on Node/Bun; load and update alpha.6 JSON/gz data with and without encryption. Compile isolated consumers under ES2022/ES2024 with NodeNext/Bundler resolution, including a negative disposal-reference control.
 
 - All 1266 tests pass, including transaction ownership/lifetime, filesystem classification, MCP authorization, concurrent-ID, persistence-name, and document/index consistency regressions. Ownership checks also run against the built Node, Bun, Deno and browser artifacts.
 - Add a reusable scan/index equality invariant covering regular, unique, and compound index lifecycles. Add 30 commit-recovery regressions to the normal gate and exercise recovery against built artifacts in all four runtimes. One-shot fault injection verifies bounded recovery, not arbitrary failure atomicity.

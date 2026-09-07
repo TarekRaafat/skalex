@@ -4,7 +4,7 @@ The path from alpha.6 to the 4.0.0 stable release. This document is the public s
 
 ## Release scope
 
-- alpha.7 - DRY cleanup
+- alpha.7 - Correctness, reliability and DRY cleanup
 - alpha.8 - Persistence foundation
 - alpha.9 - Correctness and security
 - alpha.10 - Final public API surface
@@ -27,6 +27,14 @@ These hold for every release on the path to 4.0.0.
 6. **Docs and code move together.** A behavior change without matching JSDoc, `.d.ts`, `ARCHITECTURE.md`, and `README.md` updates is incomplete.
 
 ---
+
+## 1.3 Alpha.7 release boundary
+
+Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
+
+Implementation is complete for this scope; release qualification is in progress. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+
+Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Retain the existing critical-issue policy: the choice between a narrow safety patch and direct alpha.7 delivery must be recorded explicitly before publication. Completing the audit is not authorization to publish or an exception to that policy.
 
 ## 1.4 Document ownership decision
 
@@ -85,7 +93,7 @@ alpha.7 → alpha.8 → alpha.9 → alpha.10   │   beta.1 → beta.2 → beta.
 ## 3. Dependency graph
 
 ```
-alpha.7 (DRY)
+alpha.7 (correctness, reliability + DRY)
    │
    ▼
 alpha.8 (store split + format v2 + serializer extract)
