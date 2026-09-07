@@ -32,9 +32,9 @@ These hold for every release on the path to 4.0.0.
 
 Alpha.7 includes the original shared-pipeline cleanup and the verified filesystem, authorization, mutation, query, memory and persistence fixes described in CHANGELOG.md. Transaction/migration callback restrictions and HTTP request validation require migration guidance. Explicit cloned reads and incomplete-flush acknowledgement are additive public capabilities.
 
-Architecture and API follow-up fixes are implemented. Local qualification covers 1306 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Release materials are dated 2026-09-07. Publication approval remains pending. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
+Architecture and API follow-up fixes are implemented. Local qualification covers 1306 unit/integration tests, declaration and package contracts, four runtime smoke suites, and installed alpha.6 migration checks. Release materials are dated 2026-09-07. Alpha.7 is published under the npm alpha tag, with stable latest unchanged at 3.2.5. No WAL, new storage engine, snapshot-isolation redesign or core/AI extraction is added to alpha.7. Later release items remain subject to their own design and verification.
 
-Before publication, verify an installed tarball, alpha.6 data compatibility, consumer declarations and the final release metadata. Delivery decision (2026-09-07): deliver the qualified fixes directly in alpha.7 instead of preparing a separate alpha.6 safety patch. This author-approved, release-specific exception reflects the completed alpha.7 safety work and migration qualification. The critical-issue policy remains unchanged for future incidents. This delivery decision does not authorize publication.
+Publication verification passed for the exact registry archive, alpha.6 data compatibility, consumer declarations, GitHub CI and deployed migration documentation. Delivery decision (2026-09-07): deliver the qualified fixes directly in alpha.7 instead of preparing a separate alpha.6 safety patch. This author-approved, release-specific exception reflects the completed alpha.7 safety work and migration qualification. The critical-issue policy remains unchanged for future incidents. Publication was subsequently authorized and verified on 2026-09-07.
 
 ## 1.4 Required alpha.7 follow-up and later design work
 
@@ -93,6 +93,52 @@ Preparation before expanding implementation:
 3. Extend measurement coverage to registered hooks, autosave, embeddings and larger datasets as the relevant work starts. Keep ordinary CRUD measurements separate from those optional costs.
 4. Report core gzip size, package archive size and lazy-module transfer separately. Keep the current hard core budget. Consider additional lazy-entry budgets during the package split without silently widening existing limits.
 5. Keep alpha.7 bounded. Optional micro-optimizations must not delay the safety release for an open-ended performance campaign. After any accepted change, refresh the documentation bundle and qualify the final installed tarball before publication.
+
+## 1.4c Operational safety requirements
+
+These are design requirements for the next lifecycle and persistence work, not capabilities shipped in alpha.7. Alpha.8 produces contract decisions and acceptance-test specifications. Alpha.9 validates selected designs with prototypes before the alpha.10 API freeze. Shipping new public APIs requires an explicit scope decision and an assigned release. Existing WAL, writer-guard, diagnostics, backpressure and incremental-persistence commitments remain in place.
+
+| Requirement | Planning owner | Delivery boundary |
+| --- | --- | --- |
+| Enforced read-only access | alpha.8 lifecycle and adapter design | Public API and implementation release undecided |
+| Shutdown admission and drain | alpha.8 lifecycle design, alpha.9 prototype validation | Integrate with agreed lifecycle work, do not infer delivery from the close alias |
+| Consistent backup and verified restoration | alpha.8 persistence contract design | Evaluate implementation with the persistence boundary, no backup API release promised |
+| Same-process instance exclusion | Existing filesystem writer guard, beta.3 #15 | Explicit acceptance requirement of that guard |
+| Avoid redundant close writes | Existing unified save and incremental persistence work | Compatibility requirement, no dirty-only default shortcut |
+
+### Enforced read-only access
+
+Specify behavior from adapter construction through connect, queries and close. No directory creation, orphan deletion, metadata writes, migrations, TTL deletion or persistence through library-controlled paths. Mutations and explicit persistence requests reject with typed errors before effects. Close releases resources without saving. Specify pending-migration, incomplete-flush and future WAL-recovery behavior rather than silently repairing storage.
+
+Decide whether the guarantee covers storage only or also in-memory mutation through shared nested values. Existing shallow reads do not imply immutability. A read-only connection is not a consistent snapshot of a concurrently changing database. Define reader/writer coexistence separately. Query hooks and external adapters require explicit capability boundaries, not an impossible promise to control arbitrary user code.
+
+Acceptance: a spy adapter records zero modifying calls across the lifecycle, read-only filesystem fixtures remain unchanged, missing paths are not created, and mutation/migration/cleanup attempts have the specified result. Cover TTL, cached queries, encryption wrappers and failure paths.
+
+### Shutdown admission and drain
+
+Define when closing begins and which operations have already been accepted. Reject new work, settle accepted work that is still awaiting hooks or embeddings, and coordinate queued/active transactions before final persistence and resource release. Waiting for the adapter queue alone is insufficient. Specify deferred hooks, reentrant calls, repeated close, close during connect, failure retry, timeouts and disposal behavior. A timeout must not imply that accepted work was saved or safely canceled.
+
+Acceptance: deterministic latches cover work paused before persistence, transaction commit/rollback, concurrent close calls, late submissions, save failure and retries. Report unsaved or uncertain state without hiding the original error. Keep process signals and browser unload handling in application integration unless separately approved. The close alias alone supplies no drain guarantee.
+
+### Consistent backup and verified restoration
+
+Choose explicitly between the last committed state and current memory including unsaved changes. Start the design with writes paused at a defined boundary, including accepted-operation draining and transaction handling. Do not assume that sequential file copies or checksums establish cross-collection consistency.
+
+Include all required collection data, metadata, migration history, changelog and format information. Define required WAL state once its protocol exists. Preserve encryption configuration without embedding production keys in backups. Checksums detect byte damage, not consistency or authenticity. Restore into a separate destination, validate the manifest, then reopen and verify document identities, types, metadata and representative queries before any destination switch.
+
+Acceptance: round trips across supported formats and encryption wrappers, missing/corrupt/mixed-generation files, wrong keys, partial copy, restore failure and pending writes. Failed verification preserves the source and previous usable destination. Document post-backup write reconciliation and distinguish database backup restoration from changelog replay, soft-delete restore and WAL recovery. API naming remains undecided. Online snapshots and automatic rollback are outside this proposal.
+
+### Same-process instance exclusion
+
+The planned writer guard must distinguish instances as well as processes. A PID is not an instance identity. Define canonical storage identity, symbolic-link aliases, adapter wrappers, acquisition races, failed-connect cleanup, release ownership and stale-lock handling. A failed second opener must never remove the first opener's lock. Explicitly decide read-only coexistence and guard defaults. Preserve the existing opt-in plan unless a separate compatibility decision changes it.
+
+Acceptance: two instances in one process, two processes, equivalent paths, wrappers, failed acquisition, disconnect/reopen and stale owners. This detects unsupported concurrent writers, it does not add multi-writer support or snapshot isolation.
+
+### Avoid redundant close writes
+
+Define unchanged relative to the last successfully persisted representation, including collection creation, deletion, configuration and metadata. Existing dirty flags alone cannot establish this because shallow nested references can change without tracking. Preserve full-save behavior or approve and document a distinct ownership contract.
+
+Acceptance: clean close, one changed collection among many, new empty collections, metadata-only changes, shared nested edits, mutations during I/O, coalesced saves, failed saves and retry, and adapter fallbacks. Measure write counts, bytes, CPU, memory and elapsed time. Do not replace write cost with unconditional cloning or serialization caches without measured justification. Incremental page flushing alone does not satisfy these shutdown tests.
 
 ## 1.5 Critical-issue lane
 
@@ -226,7 +272,7 @@ Additional gates by release:
 | Release | Extra gate |
 |---|---|
 | alpha.7 | Safety regressions, installed export/error identity and declaration tests, alpha.6 data compatibility |
-| alpha.8 | Lifecycle/handle matrix, adapter capability conformance and format fixture round trips for v1 and v2 |
+| alpha.8 | Lifecycle/handle matrix, adapter capability conformance, format fixture round trips for v1 and v2, and explicit operational-safety decisions/test specifications from section 1.4c |
 | alpha.9 | Transaction/persistence contract prototypes and positive/negative query API tests |
 | alpha.10 | `tsd` positive and negative cases green. `api-surface.md` snapshot committed |
 | beta.1 | 1000-run crash fault injection passes. Hot-path benchmark within 1.05× alpha.6 |

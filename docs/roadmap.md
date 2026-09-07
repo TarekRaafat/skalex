@@ -19,13 +19,25 @@ Required follow-up:
 - [x] Align package exports, connector error identity and method-specific declarations.
 - [x] Verify installed consumers, alpha.6 migrations, declarations and all four runtime targets.
 - [x] Record direct alpha.7 delivery and date the release materials.
-- [ ] Obtain publishing approval.
+- [x] Publish alpha.7 under alpha and verify registry integrity, with stable latest unchanged.
 
 See [migration guidance](migration.md) for implemented behavior and upgrade requirements. Pending items above are not claims that the implementation already supports them.
 
 ## Alpha.8: lifecycle and persistence foundation
 
 Define lifecycle transitions and handle validity. Strengthen store ownership, extract serialization, version persisted formats and specify supported values. Make adapter capabilities accurate, including through encryption wrappers. Verify reconnect/load/rename/reset behavior and legacy format compatibility.
+
+### Operational safety design
+
+The [operational safety requirements](https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14c-operational-safety-requirements) define the next design work:
+
+- Enforced read-only access across construction, connect, queries and close, with explicit mutation rejection and no automatic storage maintenance.
+- Shutdown that stops new admissions, settles accepted work and reports persistence failures. A close alias alone does not provide this.
+- A consistent backup boundary and separately verified restoration. Begin with writes paused, distinguish committed storage from unsaved memory, and do not mistake checksums for snapshot consistency.
+- Same-process instance exclusion as an explicit requirement of the existing filesystem writer guard.
+- Fewer redundant writes on close while preserving full-save behavior, including shared nested edits, new collections and metadata.
+
+Alpha.8 defines these contracts and test specifications. Alpha.9 validates selected designs before the API freeze. New read-only, drain and backup API delivery requires an explicit scope decision. These are not current alpha.7 capabilities. WAL, backpressure, diagnostics, writer guards and incremental persistence retain their existing commitments.
 
 ## Alpha.9: query contracts and design validation
 
@@ -45,9 +57,10 @@ WAL and incremental persistence remain committed v4 work. Benchmarks must includ
 
 ## Performance and bundle opportunities
 
-The [performance work register](https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14b-performance-and-footprint-work) records evaluation windows, dependencies and acceptance evidence. These candidates come from code inspection, not confirmed performance or bundle-size gains. Benefits remain unverified unless backed by recorded measurements. Each requires thorough correctness, compatibility, runtime, workload and delivery-cost investigation before implementation, and may be rejected. Existing release commitments remain unchanged. The two alpha.7 candidates below were investigated and excluded, rather than left unverified.
+The [performance work register](https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14b-performance-and-footprint-work) records evaluation windows, dependencies and acceptance evidence. These candidates come from code inspection, not confirmed performance or bundle-size gains. Benefits remain unverified unless backed by recorded measurements. Each requires thorough correctness, compatibility, runtime, workload and delivery-cost investigation before implementation, and may be rejected. Existing release commitments remain unchanged. The alpha.7 candidates below were investigated and excluded, rather than left unverified.
 
 - Alpha.7 evaluated remaining empty find-hook dispatch and single-document uniqueness bookkeeping. Neither was adopted because improvements did not hold across the required workloads. Keep the benchmark and behavior tests for future investigation.
+- Grouped filesystem-save prototypes improved close time locally but did not establish neutral performance elsewhere. Neither ships in alpha.7. Revisit eligibility and bounded concurrency during adapter design, retaining failure draining and transaction barriers.
 - Alpha.8/alpha.9 can evaluate unsorted page projection/population and compound-index use in findOne after pinning ordering and failure semantics.
 - Alpha.9/alpha.10 evaluates provider loading and MCP package boundaries as part of the planned package split. Track core bytes, total package size and first-use loading separately.
 - Beta performance work includes the planned filter cache, operator-only updates and incremental persistence. Removing redundant flush preflight requires proven adapter atomicity first.

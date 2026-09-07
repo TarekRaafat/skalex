@@ -242,6 +242,8 @@ All connectors ship inside the package under `src/connectors/` and are distribut
 
 Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
+Operational safety design: https://github.com/TarekRaafat/skalex/blob/master/design/v4-release-plan.md#14c-operational-safety-requirements. Alpha.8 specifies enforced read-only access, shutdown admission/drain and a consistent backup/verified restoration boundary. Alpha.9 validates selected contracts before the API freeze. New public API delivery is undecided. Extend the existing writer guard requirements to same-process instances and persistence acceptance tests to redundant close writes without losing shared nested edits or metadata. These are not alpha.7 features. Read-only is not snapshot isolation, checksums do not prove consistency, WAL is not a backup, and a close alias does not drain accepted work.
+
 **Sync & multi-device:** pluggable push/pull replication (REST, WebSocket, CouchDB/PouchDB, Supabase, Firebase). Multi-tab BroadcastChannel sync. Partial/filtered replication. CRDT field-level merging with presence tracking
 
 **Query & schema:** additional query operators (`$exists`, `$type`, `$size`, `$all`, `$elemMatch`). Aggregation pipeline (`$group`, `$project`, `$unwind`, `$lookup`). Full-text search with inverted index and `$text` operator. Cursor-based pagination. `db.stream()` async generator for large result sets. Schema change safety with `addMigration({ dryRun: true })`. Zod schema integration. QueryCache invalidation on schema change
@@ -258,7 +260,7 @@ Full roadmap: https://tarekraafat.github.io/skalex/#/roadmap
 
 **Storage adapters:** `SQLiteWASMAdapter` (browser-native SQLite via official WASM build). `IndexedDB` adapter. `PostgresAdapter`. `BetterSQLite3Adapter`. `RedisAdapter`. `MongoAdapter`. `BunPostgresAdapter`. `DenoKVAdapter`
 
-**Resilience & memory:** plugin hook timeouts. `db.close()` graceful shutdown with SIGTERM/`beforeunload` handler. Write-Ahead Log (WAL) for crash safety. `db.size()` memory footprint reporting. `db.on('memoryWarning', cb)` memory pressure events. Memory budgets with LRU eviction. Per-collection transaction locking. Copy-on-write transaction isolation. Crash recovery beyond sentinel warning. Persistence state encapsulation
+**Resilience & memory:** plugin hook timeouts. A planned close alias, with shutdown/drain semantics and signal integration subject to separate contract decisions. Write-Ahead Log (WAL) for crash safety. `db.size()` memory footprint reporting. `db.on('memoryWarning', cb)` memory pressure events. Memory budgets with LRU eviction. Per-collection transaction locking. Copy-on-write transaction isolation. Crash recovery beyond sentinel warning. Persistence state encapsulation
 
 **DX & tooling:** `create-skalex` scaffolding CLI. Interactive browser playground. `createTestDb()` test helper. `db.rest()` auto-REST API. `db.graphql()` auto-GraphQL API. `db.compact()`. OpenTelemetry integration. Actionable error messages with codes. Prisma/Drizzle schema import. `@skalex/devtools` browser extension. `npx skalex` REPL. Query explain/execution plan. Migration rollback (`down()` support). Automated backup & restore. NDJSON/Parquet export formats. Stress and performance test suite. Performance characteristics documentation. Dataset size and memory architecture guide. Custom serializer protocol guide
 
